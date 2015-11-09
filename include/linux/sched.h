@@ -1776,6 +1776,9 @@ struct task_struct {
 	unsigned long	task_state_change;
 #endif
 	int pagefault_disabled;
+#ifdef CONFIG_OKERNEL
+	unsigned long okernel_flags;
+#endif
 /* CPU-specific state of this task */
 	struct thread_struct thread;
 /*
