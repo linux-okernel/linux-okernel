@@ -1551,6 +1551,86 @@ static const struct file_operations proc_pid_set_comm_operations = {
 	.release	= single_release,
 };
 
+
+#ifdef CONFIG_OKERNEL
+
+#if 1
+static ssize_t okernel_status_write(struct file *file, const char __user *buf,
+				size_t count, loff_t *offset)
+{
+
+	struct inode *inode = file_inode(file);
+	struct task_struct *p;
+	char buffer[PROC_NUMBUF];
+
+	unsigned long okernel_status;
+	int err;
+
+	memset(buffer, 0, sizeof(buffer));
+	if (count > sizeof(buffer) - 1)
+		count = sizeof(buffer) - 1;
+	if (copy_from_user(buffer, buf, count))
+		return -EFAULT;
+
+	err = kstrtoul(strstrip(buffer), 0, &okernel_status);
+	if (err < 0)
+		return err;
+
+	
+	p = get_proc_task(inode);
+
+	if (!p)
+		return -ESRCH;
+
+	p->okernel_status = okernel_status;
+
+	printk(KERN_ERR "okernel: set process (%d) outer-kernel status (%lu)\n",
+	       task_pid_nr(p), p->okernel_status);
+	
+	put_task_struct(p);
+
+	return count;
+}
+#endif
+
+static int okernel_status_show(struct seq_file *m, void *v)
+{
+	struct inode *inode = m->private;
+	struct task_struct *p;
+
+	p = get_proc_task(inode);
+	if (!p)
+		return -ESRCH;
+
+	task_lock(p);
+	seq_printf(m, "%lu\n", p->okernel_status);
+	task_unlock(p);
+
+	put_task_struct(p);
+
+	return 0;
+}
+
+static int okernel_status_open(struct inode *inode, struct file *filp)
+{
+	return single_open(filp, okernel_status_show, inode);
+}
+
+static const struct file_operations proc_okernel_operations = {
+	.open		= okernel_status_open,
+	.read		= seq_read,
+	.write		= okernel_status_write,
+	.release	= single_release,
+};
+#endif /* CONFIG_OKERNEL */
+
+
+
+
+
+
+
+
 static int proc_exe_link(struct dentry *dentry, struct path *exe_path)
 {
 	struct task_struct *task;
@@ -2834,6 +2914,9 @@ static const struct pid_entry tgid_base_stuff[] = {
 #endif
 #ifdef CONFIG_CHECKPOINT_RESTORE
 	REG("timers",	  S_IRUGO, proc_timers_operations),
+#endif
+#ifdef CONFIG_OKERNEL
+	REG("okernel",    S_IRUGO|S_IWUSR, proc_okernel_operations),
 #endif
 };
 
