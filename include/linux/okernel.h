@@ -4,7 +4,7 @@
  * Copyright (C) 2015 - Chris Dalton (cid@hpe.com), HPE Corp.
  * Suport for splitting the kernel into inner and outer regions,
  * we the aim of achieving some degree of intra-kernel protection.
- * Processes marked as 'PKERNEL' run under vmx non-root mode (x86).
+ * Processes marked as 'OKERNEL' run under vmx non-root mode (x86).
  * They enter the kernel in that mode too (outer-kernel mode) 
  * thus giving a (inner kernel - running in root-mode vmx on x86)
  * a control point where restrictions can be put in place, e.g. enforce
@@ -18,10 +18,17 @@
 
 /* 
  * Flags to control initial vmx non-root mode setup from user-space 
- * and subsequent scheduling / fork, etc. behaviour.
+ * and subsequent scheduling / fork, etc. behaviour.  
+ * Applies to task struct okernel entry for a process. By default, this
+ * is set to OKERNEL_OFF. A userspace process can set the state to 
+ * OKERNEL_ON_EXEC before exec'ing a program executable. Within the exec
+ * handling in the kernel, this flag is checked to see whether to launch
+ * the executable within a VMX container. Processes runnning within a 
+ * VMX container have task->okernel set to OKERNEL_ACTIVE.
  *
  */
-#define PKERNEL_ON_EXEC 1
-#define PKERNEL 2
+#define OKERNEL_OFF     0
+#define OKERNEL_ON_EXEC 1
+#define OKERNEL_ACTIVE  2
 
 #endif /* _LINUX_OKERNEL_H */

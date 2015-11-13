@@ -1777,6 +1777,7 @@ struct task_struct {
 #endif
 	int pagefault_disabled;
 #ifdef CONFIG_OKERNEL
+	/* Can be one of OKERNEL_0FF, OKERNEL_ON_EXEC, OKERNEL_ACTIVE */
 	unsigned long okernel_status;
 #endif
 /* CPU-specific state of this task */
