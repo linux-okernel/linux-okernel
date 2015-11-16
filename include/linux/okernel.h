@@ -31,4 +31,13 @@
 #define OKERNEL_ON_EXEC 1
 #define OKERNEL_ACTIVE  2
 
+/* Set during okernel_init() at boot and used to gate access to /proc/<pid>/okernel
+ * state setting,i.e. don't allow a process to be put in OKERNEL_ON_EXEC state if
+ * the okernel functionality is not enabled.
+ */
+
+
+#ifdef CONFIG_OKERNEL
+extern int okernel_enabled;
+#endif 
 #endif /* _LINUX_OKERNEL_H */

@@ -87,6 +87,7 @@
 #include <linux/slab.h>
 #include <linux/flex_array.h>
 #include <linux/posix-timers.h>
+#include <linux/okernel.h>
 #ifdef CONFIG_HARDWALL
 #include <asm/hardwall.h>
 #endif
@@ -1553,8 +1554,6 @@ static const struct file_operations proc_pid_set_comm_operations = {
 
 
 #ifdef CONFIG_OKERNEL
-
-#if 1
 static ssize_t okernel_status_write(struct file *file, const char __user *buf,
 				size_t count, loff_t *offset)
 {
@@ -1566,6 +1565,11 @@ static ssize_t okernel_status_write(struct file *file, const char __user *buf,
 	unsigned long okernel_status;
 	int err;
 
+	if(!okernel_enabled){
+		printk(KERN_ERR "okernel: not properly enabled in the kernel.\n");
+		return -EPERM;
+	}
+	
 	memset(buffer, 0, sizeof(buffer));
 	if (count > sizeof(buffer) - 1)
 		count = sizeof(buffer) - 1;
@@ -1591,7 +1595,6 @@ static ssize_t okernel_status_write(struct file *file, const char __user *buf,
 
 	return count;
 }
-#endif
 
 static int okernel_status_show(struct seq_file *m, void *v)
 {
