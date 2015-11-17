@@ -461,13 +461,15 @@ static __init int __vmx_enable(struct vmcs *vmxon_buf)
 	u64 old, test_bits;
 
 	printk(KERN_ERR "okernel: __vmx_enable 0.\n");
+	
 	if (read_cr4() & X86_CR4_VMXE)
 		return -EBUSY;
 
 	printk(KERN_ERR "okernel: __vmx_enable 1.\n");
-	
-	rdmsrl(MSR_IA32_FEATURE_CONTROL, old);
 
+
+	rdmsrl(MSR_IA32_FEATURE_CONTROL, old);
+#if 0
 	if(old & FEATURE_CONTROL_LOCKED){
 		if(!(old & FEATURE_CONTROL_VMXON_ENABLED_OUTSIDE_SMX)){
 			printk(KERN_ERR "okernel: __vmx_enable vxmon disabled by FW.\n");
@@ -486,8 +488,8 @@ static __init int __vmx_enable(struct vmcs *vmxon_buf)
 		}
 		printk(KERN_ERR "okernel __vmx_enable VMXON enabled.\n");
 	}
-
-#if 0
+#endif
+#if 1
 	test_bits = FEATURE_CONTROL_LOCKED;
 	test_bits |= FEATURE_CONTROL_VMXON_ENABLED_OUTSIDE_SMX;
 
@@ -497,9 +499,8 @@ static __init int __vmx_enable(struct vmcs *vmxon_buf)
 	*/
 	if ((old & test_bits) != test_bits) {
 		/* enable and lock */
-		printk(KERN_ERR "okernel: VMX_FEATURE_CONTROL NOT ENABLED.\n");
-		return -1;
-		//wrmsrl(MSR_IA32_FEATURE_CONTROL, old | test_bits);
+		printk(KERN_ERR "okernel: VMX_FEATURE_CONTROL NOT ENABLED - fixing...\n");
+		wrmsrl(MSR_IA32_FEATURE_CONTROL, old | test_bits);
 	}
 #endif
 
@@ -533,7 +534,7 @@ static __init void vmx_enable(void *unused)
 		goto failed;
 
 	__this_cpu_write(vmx_enabled, 1);
-	native_store_gdt(this_cpu_ptr(&host_gdt));
+	//native_store_gdt(this_cpu_ptr(&host_gdt));
 
 	printk(KERN_INFO "vmx: VMX enabled on CPU %d\n",
 	       raw_smp_processor_id());
@@ -612,12 +613,13 @@ int __init vmx_init(void)
         }
         /* FIXME: do we need APIC virtualization (flexpriority?) */
 	/* cid: Neeed to look at this */ 
-        memset(msr_bitmap, 0xff, PAGE_SIZE);
+#if 0
+	memset(msr_bitmap, 0xff, PAGE_SIZE);
         __vmx_disable_intercept_for_msr(msr_bitmap, MSR_FS_BASE);
         __vmx_disable_intercept_for_msr(msr_bitmap, MSR_GS_BASE);
 
         set_bit(0, vmx_vpid_bitmap); /* 0 is reserved for host */
-
+#endif
 	printk(KERN_ERR "okernel: vmx_init 1.\n");
 #if 0   // no-percpu
 	// Assume single logical cpu for now...
