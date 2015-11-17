@@ -300,10 +300,9 @@ static __init int setup_vmcs_config(struct vmcs_config *vmcs_conf)
 		return -EIO;
 
 	min =
-#ifdef CONFIG_X86_64
+
 	      CPU_BASED_CR8_LOAD_EXITING |
 	      CPU_BASED_CR8_STORE_EXITING |
-#endif
 	      CPU_BASED_CR3_LOAD_EXITING |
 	      CPU_BASED_CR3_STORE_EXITING |
 	      CPU_BASED_MOV_DR_EXITING |
@@ -316,11 +315,11 @@ static __init int setup_vmcs_config(struct vmcs_config *vmcs_conf)
 	if (adjust_vmx_controls(min, opt, MSR_IA32_VMX_PROCBASED_CTLS,
 				&_cpu_based_exec_control) < 0)
 		return -EIO;
-#ifdef CONFIG_X86_64
+
 	if ((_cpu_based_exec_control & CPU_BASED_TPR_SHADOW))
 		_cpu_based_exec_control &= ~CPU_BASED_CR8_LOAD_EXITING &
 					   ~CPU_BASED_CR8_STORE_EXITING;
-#endif
+
 	if (_cpu_based_exec_control & CPU_BASED_ACTIVATE_SECONDARY_CONTROLS) {
 		min2 = 0;
 		opt2 =  SECONDARY_EXEC_WBINVD_EXITING |
@@ -333,11 +332,7 @@ static __init int setup_vmcs_config(struct vmcs_config *vmcs_conf)
 					&_cpu_based_2nd_exec_control) < 0)
 			return -EIO;
 	}
-#ifndef CONFIG_X86_64
-	if (!(_cpu_based_2nd_exec_control &
-				SECONDARY_EXEC_VIRTUALIZE_APIC_ACCESSES))
-		_cpu_based_exec_control &= ~CPU_BASED_TPR_SHADOW;
-#endif
+
 	if (_cpu_based_2nd_exec_control & SECONDARY_EXEC_ENABLE_EPT) {
 		/* CR3 accesses and invlpg don't need to cause VM Exits when EPT
 		   enabled */
@@ -349,9 +344,9 @@ static __init int setup_vmcs_config(struct vmcs_config *vmcs_conf)
 	}
 
 	min = 0;
-#ifdef CONFIG_X86_64
+
 	min |= VM_EXIT_HOST_ADDR_SPACE_SIZE;
-#endif
+
 //	opt = VM_EXIT_SAVE_IA32_PAT | VM_EXIT_LOAD_IA32_PAT;
 	opt = 0;
 	if (adjust_vmx_controls(min, opt, MSR_IA32_VMX_EXIT_CTLS,
@@ -371,11 +366,10 @@ static __init int setup_vmcs_config(struct vmcs_config *vmcs_conf)
 	if ((vmx_msr_high & 0x1fff) > PAGE_SIZE)
 		return -EIO;
 
-#ifdef CONFIG_X86_64
+
 	/* IA-32 SDM Vol 3B: 64-bit CPUs always have VMX_BASIC_MSR[48]==0. */
 	if (vmx_msr_high & (1u<<16))
 		return -EIO;
-#endif
 
 	/* Require Write-Back (WB) memory type for VMCS accesses. */
 	if (((vmx_msr_high >> 18) & 15) != 6)
@@ -452,23 +446,56 @@ static __init int __vmx_enable(struct vmcs *vmxon_buf)
 	u64 phys_addr = __pa(vmxon_buf);
 	u64 old, test_bits;
 
+	printk(KERN_ERR "okernel: __vmx_enable 0.\n");
 	if (read_cr4() & X86_CR4_VMXE)
 		return -EBUSY;
 
+	printk(KERN_ERR "okernel: __vmx_enable 1.\n");
+	
 	rdmsrl(MSR_IA32_FEATURE_CONTROL, old);
 
+	if(old & FEATURE_CONTROL_LOCKED){
+		if(!(old & FEATURE_CONTROL_VMXON_ENABLED_OUTSIDE_SMX)){
+			printk(KERN_ERR "okernel: __vmx_enable vxmon disabled by FW.\n");
+			return -1;
+		}
+	} else { /* try enable since feature not locked */
+		printk(KERN_ERR "okernel __vmx_enable trying to enable VMXON.\n");
+		old |= FEATURE_CONTROL_VMXON_ENABLED_OUTSIDE_SMX;
+		old |= FEATURE_CONTROL_LOCKED;
+		wrmsrl(MSR_IA32_FEATURE_CONTROL, old);
+		rdmsrl(MSR_IA32_FEATURE_CONTROL, old);
+
+		if(!(old & FEATURE_CONTROL_VMXON_ENABLED_OUTSIDE_SMX)){
+			printk(KERN_ERR "okernel: __vmx_enable failed to enable VXMON.\n");
+			return -1;
+		}
+		printk(KERN_ERR "okernel __vmx_enable VMXON enabled.\n");
+	}
+
+#if 0
 	test_bits = FEATURE_CONTROL_LOCKED;
 	test_bits |= FEATURE_CONTROL_VMXON_ENABLED_OUTSIDE_SMX;
+
+	/*
 	if (tboot_enabled())
 		test_bits |= FEATURE_CONTROL_VMXON_ENABLED_INSIDE_SMX;
-
+	*/
 	if ((old & test_bits) != test_bits) {
 		/* enable and lock */
-		wrmsrl(MSR_IA32_FEATURE_CONTROL, old | test_bits);
+		printk(KERN_ERR "okernel: VMX_FEATURE_CONTROL NOT ENABLED.\n");
+		return -1;
+		//wrmsrl(MSR_IA32_FEATURE_CONTROL, old | test_bits);
 	}
+#endif
+
+	printk(KERN_DEBUG "okernel __vmx_enable: 2.\n");
 	write_cr4(read_cr4() | X86_CR4_VMXE);
 
-	__vmxon(phys_addr);
+	printk(KERN_ERR "okernel: __vmx_enable 3.\n");
+	//__vmxon(phys_addr);
+	printk(KERN_ERR "okernel: __vmx_enable 4 physaddr (%#lx)\n", (unsigned long)phys_addr);
+	
 	//vpid_sync_vcpu_global();
 	//ept_sync_global();
 
@@ -535,12 +562,15 @@ int __init vmx_init(void)
 {
 	int r, cpu, ret;
 	struct vmcs *vmxon_buf;
-	
+
+	__this_cpu_write(vmx_enabled, 0);
         if (!cpu_has_vmx()) {
 		printk(KERN_ERR "vmx: CPU does not support VT-x\n");
 		return -EIO;
 	}
 
+	printk(KERN_ERR "okernel: vmx_init 0.\n");
+	
 	if (setup_vmcs_config(&vmcs_config) < 0)
 		return -EIO;
 	
@@ -571,29 +601,40 @@ int __init vmx_init(void)
 
         set_bit(0, vmx_vpid_bitmap); /* 0 is reserved for host */
 
+	printk(KERN_ERR "okernel: vmx_init 1.\n");
 #if 1
 	// Assume single logical cpu for now...
+
 	cpu = 0;
 	vmxon_buf = __vmx_alloc_vmcs(cpu);
 
+	printk(KERN_ERR "okernel: vmx_init 2.\n");
+	
 	if (!vmxon_buf) {
 		vmx_free_vmxon_areas();
 		return -ENOMEM;
 	}
 
+	printk(KERN_ERR "okernel: vmx_init 3.\n");
+	
 	if ((ret = __vmx_enable(vmxon_buf)))
 		goto failed;
 
-	vmx_enabled = 1;
+	printk(KERN_ERR "okernel: vmx_init 4.\n");
+	__this_cpu_write(vmx_enabled, 1);
+	//vmx_enabled = 1;
 	
 	//native_store_gdt(this_cpu_ptr(&host_gdt));
 
-	printk(KERN_INFO "vmx: VMX enabled on CPU %d\n",
-	       raw_smp_processor_id());
+	//printk(KERN_INFO "vmx: VMX enabled on CPU %d\n",
+	//       raw_smp_processor_id());
+
+	printk(KERN_ERR "vmx: VMX enabled on CPU\n");
 	return 0;
 
 failed:
-	atomic_inc(&vmx_enable_failed);
+	printk(KERN_ERR "okernel: vmx_init 5.\n");
+
 	printk(KERN_ERR "vmx: failed to enable VMX, err = %d\n", ret);
 	return -EIO;
 #endif

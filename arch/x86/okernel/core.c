@@ -10,7 +10,7 @@ int okernel_enabled;
 
 static int __init okernel_init(void)
 {
-	printk(KERN_DEBUG "okernel_init: 1\n");
+	printk(KERN_ERR "okernel_init: 1\n");
 
 	if((vmx_init())){
 		printk(KERN_ERR "okernel: failed to initialize x86 vmx extensions.\n");
@@ -18,7 +18,7 @@ static int __init okernel_init(void)
 		return -1;
 	}
 
-	printk(KERN_DEBUG "okernel_init: 2\n");
+	printk(KERN_ERR "okernel_init: 2\n");
 	okernel_enabled = 1;
 	return 0;
 }
