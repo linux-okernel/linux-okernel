@@ -150,90 +150,7 @@ static inline bool cpu_has_vmx_ept_ad_bits(void)
 	return vmx_capability.ept & VMX_EPT_AD_BIT;
 }
 
-#if 0
-static void vmcs_clear(struct vmcs *vmcs)
-{
-	u64 phys_addr = __pa(vmcs);
-	u8 error;
 
-	asm volatile (ASM_VMX_VMCLEAR_RAX "; setna %0"
-		      : "=qm"(error) : "a"(&phys_addr), "m"(phys_addr)
-		      : "cc", "memory");
-	if (error)
-		printk(KERN_ERR "kvm: vmclear fail: %p/%llx\n",
-		       vmcs, phys_addr);
-}
-
-static void vmcs_load(struct vmcs *vmcs)
-{
-	u64 phys_addr = __pa(vmcs);
-	u8 error;
-
-	asm volatile (ASM_VMX_VMPTRLD_RAX "; setna %0"
-			: "=qm"(error) : "a"(&phys_addr), "m"(phys_addr)
-			: "cc", "memory");
-	if (error)
-		printk(KERN_ERR "vmx: vmptrld %p/%llx failed\n",
-		       vmcs, phys_addr);
-}
-#endif
-
-static __always_inline u16 vmcs_read16(unsigned long field)
-{
-	return vmcs_readl(field);
-}
-
-static __always_inline u32 vmcs_read32(unsigned long field)
-{
-	return vmcs_readl(field);
-}
-
-static __always_inline u64 vmcs_read64(unsigned long field)
-{
-#ifdef CONFIG_X86_64
-	return vmcs_readl(field);
-#else
-	return vmcs_readl(field) | ((u64)vmcs_readl(field+1) << 32);
-#endif
-}
-
-#if 0
-static noinline void vmwrite_error(unsigned long field, unsigned long value)
-{
-	printk(KERN_ERR "vmwrite error: reg %lx value %lx (err %d)\n",
-	       field, value, vmcs_read32(VM_INSTRUCTION_ERROR));
-	dump_stack();
-}
-
-static void vmcs_writel(unsigned long field, unsigned long value)
-{
-	u8 error;
-
-	asm volatile (ASM_VMX_VMWRITE_RAX_RDX "; setna %0"
-		       : "=q"(error) : "a"(value), "d"(field) : "cc");
-	if (unlikely(error))
-		vmwrite_error(field, value);
-}
-
-static void vmcs_write16(unsigned long field, u16 value)
-{
-	vmcs_writel(field, value);
-}
-
-static void vmcs_write32(unsigned long field, u32 value)
-{
-	vmcs_writel(field, value);
-}
-
-static void vmcs_write64(unsigned long field, u64 value)
-{
-	vmcs_writel(field, value);
-#ifndef CONFIG_X86_64
-	asm volatile ("");
-	vmcs_writel(field+1, value >> 32);
-#endif
-}
-#endif
 
 
 
@@ -394,7 +311,40 @@ static __init int setup_vmcs_config(struct vmcs_config *vmcs_conf)
 	return 0;
 }
 
+static inline void __invept(int ext, u64 eptp, gpa_t gpa)
+{
+	struct {
+		u64 eptp, gpa;
+	} operand = {eptp, gpa};
 
+	asm volatile (ASM_VMX_INVEPT
+			/* CF==1 or ZF==1 --> rc = -1 */
+			"; ja 1f ; ud2 ; 1:\n"
+			: : "a" (&operand), "c" (ext) : "cc", "memory");
+}
+
+static inline void ept_sync_global(void)
+{
+	if (cpu_has_vmx_invept_global())
+		__invept(VMX_EPT_EXTENT_GLOBAL, 0, 0);
+}
+
+static inline void ept_sync_context(u64 eptp)
+{
+	if (cpu_has_vmx_invept_context())
+		__invept(VMX_EPT_EXTENT_CONTEXT, eptp, 0);
+	else
+		ept_sync_global();
+}
+
+static inline void ept_sync_individual_addr(u64 eptp, gpa_t gpa)
+{
+	if (cpu_has_vmx_invept_individual_addr())
+		__invept(VMX_EPT_EXTENT_INDIVIDUAL_ADDR,
+				eptp, gpa);
+	else
+		ept_sync_context(eptp);
+}
 
 
 
@@ -436,6 +386,70 @@ static inline void __vmxoff(void)
 	asm volatile (ASM_VMX_VMXOFF : : : "cc");
 }
 
+static inline void __invvpid(int ext, u16 vpid, gva_t gva)
+{
+    struct {
+	u64 vpid : 16;
+	u64 rsvd : 48;
+	u64 gva;
+    } operand = { vpid, 0, gva };
+
+    asm volatile (ASM_VMX_INVVPID
+		  /* CF==1 or ZF==1 --> rc = -1 */
+		  "; ja 1f ; ud2 ; 1:"
+		  : : "a"(&operand), "c"(ext) : "cc", "memory");
+}
+
+static inline void vpid_sync_vcpu_single(u16 vpid)
+{
+	if (vpid == 0)
+		return;
+
+	if (cpu_has_vmx_invvpid_single())
+		__invvpid(VMX_VPID_EXTENT_SINGLE_CONTEXT, vpid, 0);
+}
+
+static inline void vpid_sync_vcpu_global(void)
+{
+	if (cpu_has_vmx_invvpid_global())
+		__invvpid(VMX_VPID_EXTENT_ALL_CONTEXT, 0, 0);
+}
+
+static inline void vpid_sync_context(u16 vpid)
+{
+	if (cpu_has_vmx_invvpid_single())
+		vpid_sync_vcpu_single(vpid);
+	else
+		vpid_sync_vcpu_global();
+}
+
+#if 0
+static void vmcs_clear(struct vmcs *vmcs)
+{
+	u64 phys_addr = __pa(vmcs);
+	u8 error;
+
+	asm volatile (ASM_VMX_VMCLEAR_RAX "; setna %0"
+		      : "=qm"(error) : "a"(&phys_addr), "m"(phys_addr)
+		      : "cc", "memory");
+	if (error)
+		printk(KERN_ERR "kvm: vmclear fail: %p/%llx\n",
+		       vmcs, phys_addr);
+}
+
+static void vmcs_load(struct vmcs *vmcs)
+{
+	u64 phys_addr = __pa(vmcs);
+	u8 error;
+
+	asm volatile (ASM_VMX_VMPTRLD_RAX "; setna %0"
+			: "=qm"(error) : "a"(&phys_addr), "m"(phys_addr)
+			: "cc", "memory");
+	if (error)
+		printk(KERN_ERR "vmx: vmptrld %p/%llx failed\n",
+		       vmcs, phys_addr);
+}
+#endif
 
 /**
  * __vmx_enable - low-level enable of VMX mode on the current CPU
@@ -493,11 +507,11 @@ static __init int __vmx_enable(struct vmcs *vmxon_buf)
 	write_cr4(read_cr4() | X86_CR4_VMXE);
 
 	printk(KERN_ERR "okernel: __vmx_enable 3.\n");
-	//__vmxon(phys_addr);
+	__vmxon(phys_addr);
 	printk(KERN_ERR "okernel: __vmx_enable 4 physaddr (%#lx)\n", (unsigned long)phys_addr);
 	
-	//vpid_sync_vcpu_global();
-	//ept_sync_global();
+	vpid_sync_vcpu_global();
+	ept_sync_global();
 
 	return 0;
 }
@@ -560,10 +574,13 @@ static void vmx_free_vmxon_areas(void)
 
 int __init vmx_init(void)
 {
-	int r, cpu, ret;
+	int r, cpu;
+#if 0   // no-percpu
+	int ret;
 	struct vmcs *vmxon_buf;
-
 	__this_cpu_write(vmx_enabled, 0);
+#endif // no-percpu
+
         if (!cpu_has_vmx()) {
 		printk(KERN_ERR "vmx: CPU does not support VT-x\n");
 		return -EIO;
@@ -594,7 +611,7 @@ int __init vmx_init(void)
                 return -ENOMEM;
         }
         /* FIXME: do we need APIC virtualization (flexpriority?) */
-
+	/* cid: Neeed to look at this */ 
         memset(msr_bitmap, 0xff, PAGE_SIZE);
         __vmx_disable_intercept_for_msr(msr_bitmap, MSR_FS_BASE);
         __vmx_disable_intercept_for_msr(msr_bitmap, MSR_GS_BASE);
@@ -602,7 +619,7 @@ int __init vmx_init(void)
         set_bit(0, vmx_vpid_bitmap); /* 0 is reserved for host */
 
 	printk(KERN_ERR "okernel: vmx_init 1.\n");
-#if 1
+#if 0   // no-percpu
 	// Assume single logical cpu for now...
 
 	cpu = 0;
@@ -637,9 +654,9 @@ failed:
 
 	printk(KERN_ERR "vmx: failed to enable VMX, err = %d\n", ret);
 	return -EIO;
-#endif
+#endif // no-percpu
 	
-#if 0
+#if 1
 	for_each_possible_cpu(cpu) {
 		struct vmcs *vmxon_buf;
 
