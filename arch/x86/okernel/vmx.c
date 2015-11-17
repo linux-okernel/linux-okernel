@@ -74,10 +74,10 @@
 
 static atomic_t vmx_enable_failed;
 
-//static DECLARE_BITMAP(vmx_vpid_bitmap, VMX_NR_VPIDS);
+static DECLARE_BITMAP(vmx_vpid_bitmap, VMX_NR_VPIDS);
 //static DEFINE_SPINLOCK(vmx_vpid_lock);
 
-//static unsigned long *msr_bitmap;
+static unsigned long *msr_bitmap;
 
 static DEFINE_PER_CPU(struct vmcs *, vmxarea);
 static DEFINE_PER_CPU(struct desc_ptr, host_gdt);
@@ -234,6 +234,27 @@ static void vmcs_write64(unsigned long field, u64 value)
 #endif
 }
 #endif
+
+
+
+static void __vmx_disable_intercept_for_msr(unsigned long *msr_bitmap, u32 msr)
+{
+	int f = sizeof(unsigned long);
+	/*
+	 * See Intel PRM Vol. 3, 20.6.9 (MSR-Bitmap Address). Early manuals
+	 * have the write-low and read-high bitmap offsets the wrong way round.
+	 * We can control MSRs 0x00000000-0x00001fff and 0xc0000000-0xc0001fff.
+	 */
+	if (msr <= 0x1fff) {
+		__clear_bit(msr, msr_bitmap + 0x000 / f); /* read-low */
+		__clear_bit(msr, msr_bitmap + 0x800 / f); /* write-low */
+	} else if ((msr >= 0xc0000000) && (msr <= 0xc0001fff)) {
+		msr &= 0x1fff;
+		__clear_bit(msr, msr_bitmap + 0x400 / f); /* read-high */
+		__clear_bit(msr, msr_bitmap + 0xc00 / f); /* write-high */
+	}
+}
+
 
 static __init int adjust_vmx_controls(u32 ctl_min, u32 ctl_opt,
 				      u32 msr, u32 *result)
@@ -512,7 +533,8 @@ static void vmx_free_vmxon_areas(void)
 
 int __init vmx_init(void)
 {
-	int r, cpu;
+	int r, cpu, ret;
+	struct vmcs *vmxon_buf;
 	
         if (!cpu_has_vmx()) {
 		printk(KERN_ERR "vmx: CPU does not support VT-x\n");
@@ -536,7 +558,46 @@ int __init vmx_init(void)
 		printk(KERN_ERR "vmx: ability to load EFER register is required\n");
 		return -EIO;
 	}
+	
+	msr_bitmap = (unsigned long *)__get_free_page(GFP_KERNEL);
+        if (!msr_bitmap) {
+                return -ENOMEM;
+        }
+        /* FIXME: do we need APIC virtualization (flexpriority?) */
 
+        memset(msr_bitmap, 0xff, PAGE_SIZE);
+        __vmx_disable_intercept_for_msr(msr_bitmap, MSR_FS_BASE);
+        __vmx_disable_intercept_for_msr(msr_bitmap, MSR_GS_BASE);
+
+        set_bit(0, vmx_vpid_bitmap); /* 0 is reserved for host */
+
+#if 1
+	// Assume single logical cpu for now...
+	cpu = 0;
+	vmxon_buf = __vmx_alloc_vmcs(cpu);
+
+	if (!vmxon_buf) {
+		vmx_free_vmxon_areas();
+		return -ENOMEM;
+	}
+
+	if ((ret = __vmx_enable(vmxon_buf)))
+		goto failed;
+
+	vmx_enabled = 1;
+	
+	//native_store_gdt(this_cpu_ptr(&host_gdt));
+
+	printk(KERN_INFO "vmx: VMX enabled on CPU %d\n",
+	       raw_smp_processor_id());
+	return 0;
+
+failed:
+	atomic_inc(&vmx_enable_failed);
+	printk(KERN_ERR "vmx: failed to enable VMX, err = %d\n", ret);
+	return -EIO;
+#endif
+	
 #if 0
 	for_each_possible_cpu(cpu) {
 		struct vmcs *vmxon_buf;
@@ -561,12 +622,14 @@ int __init vmx_init(void)
 		r = -EBUSY;
 		goto failed2;
 	}
-#endif
+
         return 0;
+
 	
 failed2:
 	on_each_cpu(vmx_disable, NULL, 1);
 failed1:
 	vmx_free_vmxon_areas();
 	return r;
+#endif
 }
