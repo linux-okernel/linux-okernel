@@ -4,7 +4,8 @@
 #include <linux/types.h>
 #include <linux/okernel.h>
 
-#include "vmx.h"
+#include "vmx-simple.h"
+
 
 int okernel_enabled;
 
