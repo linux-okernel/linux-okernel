@@ -27,35 +27,12 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifndef __CORE_TYPES_H
-#define __CORE_TYPES_H
+#ifndef _CORE_VT_H
+#define _CORE_VT_H
 
-#define NULL			((void *)0)
+#include "vt_asm.h"
 
-typedef signed char		i8;
-typedef signed short int	i16;
-typedef signed int		i32;
-typedef signed long  long int	i64;
-typedef unsigned char		u8;
-typedef unsigned int		phys32_t;
-typedef unsigned long long int	phys_t;
+extern __init int vt_init(void);
 
-
-union mem {
-	u8 byte;
-	u16 word;
-	u32 dword;
-	u64 qword;
-};
-
-typedef union {
-	u8 byte;
-	u16 word;
-	u32 dword;
-	u64 qword;
-	u8 bytes[8];
-	u16 words[4];
-	u32 dwords[2];
-} core_mem_t;
 
 #endif

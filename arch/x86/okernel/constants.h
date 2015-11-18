@@ -31,7 +31,7 @@
 #define _CORE_CONSTANTS_H
 #include <linux/smp.h>
 
-/* HPL specific defines to control behaviour - will move to the config
+/* HPE Labs specific defines to control behaviour - will move to the config
  * files / scripts at some point. 
 */
 

@@ -842,6 +842,6 @@ asm_xsetbv (u32 c, u32 a, u32 d)
 		      : "c" (c), "a" (a), "d" (d));
 }
 
-extern __init int vt_init(void);
+
 
 #endif

@@ -5,7 +5,7 @@
 #include <linux/okernel.h>
 
 #include "constants.h"
-#include "vt_simple.h"
+#include "vt.h"
 
 
 int okernel_enabled;
