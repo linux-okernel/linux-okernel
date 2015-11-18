@@ -29,6 +29,7 @@
 
 #ifndef _CORE_CONSTANTS_H
 #define _CORE_CONSTANTS_H
+#include <linux/smp.h>
 
 /* HPL specific defines to control behaviour - will move to the config
  * files / scripts at some point. 
@@ -36,13 +37,13 @@
 
 #define HPL_DEBUG
 #ifdef HPL_DEBUG
-#define HDEBUG(args) (printf("hpldbg: cpu(%d) %s: ", currentcpu->cpunum, __func__), printf args)
+#define HDEBUG(args) (printk(KERN_ERR "ok: cpu(%d) %s: ", raw_smp_processor_id(), __func__), printk args)
 #else
 #define HDEBUG(args)
 #endif
 //#define HPL_DEBUG2
 #ifdef HPL_DEBUG2
-#define HDEBUG2(args) (printf("hpldbg2: cpu(%d) %s: ", currentcpu->cpunum, __func__), printf args)
+#define HDEBUG2(args) (printk(KERN_ERR "ok: cpu(%d) %s: ", raw_smp_processor_id(), __func__), printk args)
 #else
 #define HDEBUG2(args)
 #endif

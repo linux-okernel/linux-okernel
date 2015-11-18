@@ -4,6 +4,7 @@
 #include <linux/types.h>
 #include <linux/okernel.h>
 
+#include "constants.h"
 #include "vmx-simple.h"
 
 
@@ -11,7 +12,7 @@ int okernel_enabled;
 
 static int __init okernel_init(void)
 {
-	printk(KERN_ERR "okernel_init: 1\n");
+	HDEBUG(("Start initialization...\n"));
 
 	if((vmx_init())){
 		printk(KERN_ERR "okernel: failed to initialize x86 vmx extensions.\n");
@@ -19,14 +20,14 @@ static int __init okernel_init(void)
 		return -1;
 	}
 
-	printk(KERN_ERR "okernel_init: 2\n");
 	okernel_enabled = 1;
+	HDEBUG(("Enabled, initialization done.\n"));
 	return 0;
 }
 
 static void __exit okernel_exit(void)
 {
-	printk(KERN_DEBUG "okernel: exit called.\n");
+	HDEBUG(("exit called.\n"));
 }
 
 module_init(okernel_init);

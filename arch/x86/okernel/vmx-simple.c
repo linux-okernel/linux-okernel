@@ -27,22 +27,23 @@ check_vmx (void)
 	if (c & CPUID_1_ECX_VMX_BIT) {
 		/* VMX operation is supported. */
 	} else {
-		printk(KERN_ERR "VMX operation is not supported.\n");
+		printk(KERN_ERR "okernel: VMX operation is not supported.\n");
 		return -1;
 	}
-#if 1
+	
 	/* 19.7 ENABLING AND ENTERING VMX OPERATION */
 msr_enable_loop:
 	asm_rdmsr64 (MSR_IA32_FEATURE_CONTROL, &tmp);
 	if (tmp & MSR_IA32_FEATURE_CONTROL_LOCK_BIT) {
 		if (tmp & MSR_IA32_FEATURE_CONTROL_VMXON_BIT) {
 			/* VMXON is enabled. */
+			HDEBUG(("VMXON is enabled.\n"));
 		} else {
-			printk (KERN_ERR "VMXON is disabled.\n");
+			printk (KERN_ERR "okernel: VMXON is disabled.\n");
 			return -1;
 		}
 	} else {
-		printk (KERN_ERR "Trying to enable VMXON.\n");
+		HDEBUG(("Trying to enable VMXON.\n"));
 		tmp |= MSR_IA32_FEATURE_CONTROL_VMXON_BIT;
 		tmp |= MSR_IA32_FEATURE_CONTROL_LOCK_BIT;
 		asm_wrmsr64 (MSR_IA32_FEATURE_CONTROL, tmp);
@@ -50,17 +51,16 @@ msr_enable_loop:
 	}
 
 	return 0;
-#endif
 }
 
 int __init vmx_init(void)
 {
 	
-	printk(KERN_ERR "vmx_init: 1\n");
+	HDEBUG(("Checking for vmx availability...\n"));
 	if(check_vmx()){
-		printk(KERN_ERR "okernel vmx_init: VMX not available.\n");
+		printk(KERN_ERR "okernel: VMX not available.\n");
 		return -1;
 	}
-	printk(KERN_ERR "okernel vmx_init: VMX is available.\n");
+	HDEBUG(("VMX is available.\n"));
 	return 0;
 }
