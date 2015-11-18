@@ -15,21 +15,12 @@
 #include "vt_asm.h"
 #include "vt.h"
 
-//DEFINE_PER_CPU(struct vt_pcpu_data *, vt);
+
 
 DEFINE_PER_CPU(unsigned long *, fred);
+DEFINE_PER_CPU(struct vt_pcpu_data *, vt);
 
 
-
-struct vt_pcpu_data {
-	u32 vmcs_revision_identifier;
-	void *vmxon_region_virt;
-	u64 vmxon_region_phys;
-	u64 vmcs_region_phys;
-        bool ept_support;
-        bool vpid_support;
-        bool unrestricted_guest_support;
-};
 
 
 
@@ -236,14 +227,14 @@ int __init vt_init(void)
 	for_each_possible_cpu(cpu) {
 		unsigned long *p;
 		unsigned long *q;
-		struct page *page;
-
+		struct page *pg;
+		struct vt_pcpu_data* vt_p;
 
 		HDEBUG(("Allocatin data and initializing...\n"));
 
-		page = alloc_pages_exact_node(cpu_to_node(cpu), GFP_KERNEL, 0);
+		pg = alloc_pages_exact_node(cpu_to_node(cpu), GFP_KERNEL, 0);
 		
-		p = page_address(page);
+		p = page_address(pg);
 
 		if(!p){
 			printk(KERN_ERR "okernel: Failed to alloc data.\n");
@@ -256,6 +247,28 @@ int __init vt_init(void)
 		*q = 2;
 
 		HDEBUG(("Set data per cpu: %lu\n", *(per_cpu(fred, cpu))));
+
+		
+		HDEBUG(("Allocating percpu page...\n"));
+
+		pg = alloc_pages_exact_node(cpu_to_node(cpu), GFP_KERNEL, 0);
+
+		vt_p = page_address(pg);
+		
+		if(!vt_p){
+			printk(KERN_ERR "okernel: failed to allocate per-cpu page for VT info.\n");
+			return -ENOMEM;
+		}
+	
+		HDEBUG(("allocated kernel vaddr (%#lx)\n", (unsigned long)vt_p));
+
+		memset(vt_p, 0, PAGE_SIZE);
+
+		per_cpu(vt, cpu) = vt_p;
+
+		HDEBUG(("Allocating per-cpu page...done. (%#lx)\n",
+			(unsigned long)per_cpu(vt, cpu)));
+		
 	}
 #endif
 #if 0

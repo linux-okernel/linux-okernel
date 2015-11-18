@@ -32,6 +32,16 @@
 
 #include "vt_asm.h"
 
+struct vt_pcpu_data {
+	u32 vmcs_revision_identifier;
+	void *vmxon_region_virt;
+	u64 vmxon_region_phys;
+	u64 vmcs_region_phys;
+        bool ept_support;
+        bool vpid_support;
+        bool unrestricted_guest_support;
+};
+
 extern __init int vt_init(void);
 
 
