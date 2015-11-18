@@ -1,1 +1,1 @@
-obj-y	:= core.o vmx-simple.o
+obj-y	:= core.o vt_simple.o

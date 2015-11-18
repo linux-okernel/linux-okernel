@@ -5,7 +5,7 @@
 #include <linux/okernel.h>
 
 #include "constants.h"
-#include "vmx-simple.h"
+#include "vt_simple.h"
 
 
 int okernel_enabled;
@@ -14,7 +14,7 @@ static int __init okernel_init(void)
 {
 	HDEBUG(("Start initialization...\n"));
 
-	if((vmx_init())){
+	if((vt_init())){
 		printk(KERN_ERR "okernel: failed to initialize x86 vmx extensions.\n");
 		okernel_enabled = 0;
 		return -1;
