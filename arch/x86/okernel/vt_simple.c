@@ -271,18 +271,66 @@ int __init vt_init(void)
 		
 	}
 #endif
-#if 0
-	test_val = 0;
+#if 1
 	for_each_possible_cpu(cpu) {
-		test_val++;
-		per_cpu(vt.vmxon_region_phys, cpu) = test_val; 
-	}
+		struct page *pg;
+		struct vt_pcpu_data* vt_p;
+		u64 *vaddr_p;
+	
+		HDEBUG(("Allocating percpu page...\n"));
 
-	test_val = 0;
+		pg = alloc_pages_exact_node(cpu_to_node(cpu), GFP_KERNEL, 0);
 
-	for_each_possible_cpu(cpu) {
-		test_val = per_cpu(vt.vmxon_region_phys, cpu);
-		HDEBUG(("percpu val read back: %lu\n", test_val));
+		vt_p = page_address(pg);
+		
+		if(!vt_p){
+			printk(KERN_ERR "okernel: failed to allocate per-cpu page for VT info.\n");
+			return -ENOMEM;
+		}
+	
+		HDEBUG(("allocated kernel vaddr (%#lx)\n", (unsigned long)vt_p));
+
+		memset(vt_p, 0, PAGE_SIZE);
+
+		per_cpu(vt, cpu) = vt_p;
+
+		HDEBUG(("Allocating per-cpu page...done. (%#lx)\n",
+			(unsigned long)per_cpu(vt, cpu)));
+
+		HDEBUG(("Allocating VMXON page...\n"));
+		if(!(pg = alloc_pages_exact_node(cpu_to_node(cpu), GFP_KERNEL, 0))){
+			printk(KERN_ERR "okernel: failed to allocate page for VMXON.\n");
+			return 0;
+		}
+		HDEBUG(("Allocating VMXON page...done.\n"));
+
+
+		
+
+		vaddr_p = page_address(pg);
+
+		if(!vaddr_p){
+			printk(KERN_ERR "okernel: failed to alloc vregion page.\n");
+			return -ENOMEM;
+		}
+
+		HDEBUG(("Clearing vregion page...\n"));
+
+		memset(vaddr_p, 0, PAGE_SIZE);
+			 
+		HDEBUG(("Clearing vregion page...done.\n"));
+
+		HDEBUG(("Setting page in percpu data vt...\n"));
+
+		vt_p = per_cpu(vt, cpu);
+		vt_p->vmxon_region_virt = (void*)vaddr_p;
+		vt_p->vmxon_region_phys = __pa(vaddr_p);
+		
+		
+		HDEBUG(("Setting page in percpu data (virt:%#lx phys:%#lx) ...done.\n",
+			(unsigned long)vt_p->vmxon_region_virt,
+			(unsigned long)vt_p->vmxon_region_phys));
+		
 	}
 #endif
 #if 0
