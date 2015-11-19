@@ -1557,7 +1557,6 @@ static const struct file_operations proc_pid_set_comm_operations = {
 static ssize_t okernel_status_write(struct file *file, const char __user *buf,
 				size_t count, loff_t *offset)
 {
-
 	struct inode *inode = file_inode(file);
 	struct task_struct *p;
 	char buffer[PROC_NUMBUF];
@@ -1565,11 +1564,6 @@ static ssize_t okernel_status_write(struct file *file, const char __user *buf,
 	unsigned long okernel_status;
 	int err;
 
-	if(!okernel_enabled){
-		printk(KERN_ERR "okernel: not properly enabled in the kernel.\n");
-		return -EPERM;
-	}
-	
 	memset(buffer, 0, sizeof(buffer));
 	if (count > sizeof(buffer) - 1)
 		count = sizeof(buffer) - 1;
@@ -1579,7 +1573,6 @@ static ssize_t okernel_status_write(struct file *file, const char __user *buf,
 	err = kstrtoul(strstrip(buffer), 0, &okernel_status);
 	if (err < 0)
 		return err;
-
 	
 	p = get_proc_task(inode);
 
@@ -1602,6 +1595,7 @@ static int okernel_status_show(struct seq_file *m, void *v)
 	struct task_struct *p;
 
 	p = get_proc_task(inode);
+
 	if (!p)
 		return -ESRCH;
 
