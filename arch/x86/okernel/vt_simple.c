@@ -16,14 +16,8 @@
 #include "vt_asm.h"
 #include "vt.h"
 
-
-
 DEFINE_PER_CPU(unsigned long *, fred);
 DEFINE_PER_CPU(struct vt_pcpu_data *, vt);
-
-
-
-
 
 /* Check whether VMX is usable
    Return value:

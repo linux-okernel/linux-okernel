@@ -1564,6 +1564,12 @@ static ssize_t okernel_status_write(struct file *file, const char __user *buf,
 	unsigned long okernel_status;
 	int err;
 
+	/* cid: temp hack to show we passed okernel enabling */
+	if(!okernel_enabled){
+		printk(KERN_ERR "okernel: not properly enabled in the kernel.\n");
+		return -EPERM;
+	}
+
 	memset(buffer, 0, sizeof(buffer));
 	if (count > sizeof(buffer) - 1)
 		count = sizeof(buffer) - 1;
