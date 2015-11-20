@@ -287,6 +287,7 @@ vt_ept_available(void)
 	HDEBUG(("invpcid  ctrl supported.\n"));
 
 	/* Optional */
+	HDEBUG(("Check for optional features:\n"));
 	if((vmx_proc_ctrls2 & VMCS_PROC_BASED_VMEXEC_CTL2_VMFUNC_BIT)){
 		vt_info.vmfunc_support = true;
 		HDEBUG(("vmfunc ctrl supported.\n"));
@@ -295,10 +296,10 @@ vt_ept_available(void)
 	if((vmx_proc_ctrls2 & VMCS_PROC_BASED_VMEXEC_CTL2_EPTVIOL_BIT)){
 		vt_info.eptviol_support = true;
 		HDEBUG(("EPTVIOL ctrl supported.\n"));
-		return 0; 
 	}
 
 	/* Detailed EPT support */
+	HDEBUG(("Check for detailed EPT support:\n"));
 	asm_rdmsr(MSR_IA32_VMX_EPT_VPID_CAP, &vmx_ept_msr);
 	vt_info.vmx_ept_msr = vmx_ept_msr;
 
