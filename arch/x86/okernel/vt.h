@@ -44,12 +44,15 @@ struct vt_pcpu_data {
 
 struct vt_data {
 	ulong vmx_basic;
-	ulong vmx_proc_ctrls;
+	ulong vmx_proc_ctrls_0;
+	ulong vmx_proc_ctrls_1;
 	ulong vmx_proc_ctrls2;
 	ulong vmx_ept_msr;
 	ulong vmx_pin_ctrls;
-	ulong vmexit_ctrls;
-	ulong vmentry_ctrls;
+	ulong vmexit_ctrls_0;
+	ulong vmexit_ctrls_1;
+	ulong vmentry_ctrls_0;
+	ulong vmentry_ctrls_1;
 	bool  vmfunc_support;
 	bool  eptviol_support;
 };
