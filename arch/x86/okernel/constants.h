@@ -330,6 +330,25 @@ shadow pagetables and realmode cpu emulation. */
 #define VMCS_PROC_BASED_VMEXEC_CTL2_XSAVES_BIT          0x100000
 #define VMCS_PROC_BASED_VMEXEC_CTL2_TSC_BIT             0x2000000
 
+
+/* EPT / VPID capabilities*/
+#define VMCS_EPT_XO     0x1
+#define VMCS_EPT_PW4    0x40
+#define VMCS_EPT_UC     0x100
+#define VMCS_EPT_WB     0x4000
+#define VMCS_EPT_2MB    0x10000
+#define VMCS_EPT_1GB    0x20000
+#define VMCS_EPT_INVEPT 0x100000
+#define VMCS_EPT_ADEPT  0x200000
+#define VMCS_EPT_IEPTS  0x2000000
+#define VMCS_EPT_IEPTA  0x4000000
+
+#define VMCS_EPT_INVPID  0x100000000
+#define VMCS_EPT_INVPIDI 0x10000000000
+#define VMCS_EPT_INVPIDS 0x20000000000
+#define VMCS_EPT_INVPIDA 0x40000000000
+#define VMCS_EPT_INVPIDG 0x80000000000
+
 #define VMCS_ENTRY_CTL_LOAD_IA32EFER                    0x8000
 #define VMCS_EXIT_CTL_SAVE_IA32EFER                     0x100000
 #define VMCS_EXIT_CTL_LOAD_IA32EFER                     0x200000

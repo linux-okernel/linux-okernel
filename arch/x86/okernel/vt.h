@@ -42,6 +42,19 @@ struct vt_pcpu_data {
         bool unrestricted_guest_support;
 };
 
+struct vt_data {
+	ulong vmx_basic;
+	ulong vmx_proc_ctrls;
+	ulong vmx_proc_ctrls2;
+	ulong vmx_ept_msr;
+	ulong vmx_pin_ctrls;
+	ulong vmexit_ctrls;
+	ulong vmentry_ctrls;
+	bool  vmfunc_support;
+	bool  eptviol_support;
+};
+
+
 extern __init int vt_init(void);
 
 

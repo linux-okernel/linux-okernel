@@ -16,8 +16,8 @@
 #include "vt_asm.h"
 #include "vt.h"
 
-DEFINE_PER_CPU(unsigned long *, fred);
 DEFINE_PER_CPU(struct vt_pcpu_data *, vt);
+static struct vt_data vt_info;
 
 /* Check whether VMX is usable
    Return value:
@@ -95,11 +95,9 @@ vt__vmx_init (int cpu)
 	}
 	
 	HDEBUG(("allocated kernel vaddr (%#lx)\n", (unsigned long)vt_p));
-	
+
 	memset(vt_p, 0, PAGE_SIZE);
-	
 	per_cpu(vt, cpu) = vt_p;
-	
 	HDEBUG(("Allocating per-cpu page...done. (%#lx)\n",
 		(unsigned long)per_cpu(vt, cpu)));
 	
@@ -118,17 +116,13 @@ vt__vmx_init (int cpu)
 	}
 	
 	HDEBUG(("Clearing vregion page...\n"));
-	
 	memset(vaddr_p, 0, PAGE_SIZE);
-	
 	HDEBUG(("Clearing vregion page...done.\n"));
-	
+
 	HDEBUG(("Setting page in percpu data vt...\n"));
-	
 	vt_p = per_cpu(vt, cpu);
 	vt_p->vmxon_region_virt = (void*)vaddr_p;
 	vt_p->vmxon_region_phys = __pa(vaddr_p);
-		
 	HDEBUG(("Set region(vp) percpu (virt:%#lx phys:%#lx)\n",
 		(unsigned long)vt_p->vmxon_region_virt,
 		(unsigned long)vt_p->vmxon_region_phys));
@@ -231,9 +225,13 @@ vt_ept_available(void)
 	ulong vmx_proc_ctrls2 = 0;
 	ulong vmx_ept_msr  = 0;
 
+	memset(&vt_info, 0, sizeof(vt_info));
+
 	/* Check if IA32_VMX_TRUE_PROCBASED_CTLS supported */
 	asm_rdmsr(MSR_IA32_VMX_BASIC, &vmx_basic);
 
+	vt_info.vmx_basic = vmx_basic;
+	
 	if(vmx_basic & MSR_IA32_VMX_BASIC_TRUE_MSR_BIT){
 		HDEBUG(("IA32_VMX_BASIC_TRUE_MSR supported.\n"));
 		asm_rdmsr(MSR_IA32_VMX_TRUE_PROCBASED_CTLS, &vmx_proc_ctrls);
@@ -242,31 +240,30 @@ vt_ept_available(void)
 		asm_rdmsr(MSR_IA32_VMX_PROCBASED_CTLS, &vmx_proc_ctrls);
 	}
 
+	vt_info.vmx_proc_ctrls = vmx_proc_ctrls;
 	
 	if(!((vmx_proc_ctrls >> 32) &  VMCS_PROC_BASED_VMEXEC_CTL_ENABLE_2NDRY_BIT)){
-  	    HDEBUG(("2ndry controls not available.\n"));	    
+  	    HDEBUG(("2ndry controls not available, e.g. no EPT.\n"));	    
 	    return 0;
 	}
 	
 	HDEBUG(("2ndry proc based controls can be enabled.\n"));
 	asm_rdmsr(MSR_IA32_VMX_PROCBASED_CTLS2, &vmx_proc_ctrls2);
 	HDEBUG(("2ndry proc based ctrls: %lX\n", vmx_proc_ctrls2));
+
+	vt_info.vmx_proc_ctrls = vmx_proc_ctrls2;
 	
 	// bottom 32 bits are allowed 0 settings - always 0. Top
 	// 32 are allowed 1 settings so we check against these.
 	vmx_proc_ctrls2  = vmx_proc_ctrls2 >> 32;
 	HDEBUG(("2ndary ctrls allowed 1 settings: %lX\n", vmx_proc_ctrls2));
+
 	if(!(vmx_proc_ctrls2 & VMCS_PROC_BASED_VMEXEC_CTL2_EPT_BIT)){
 	    HDEBUG(("EPT ctrl not supported.\n"));
 	    return 0;
 	}
-
-	HDEBUG(("EPT feature supported.\n"));	
-	//currentcpu->vt.ept_support = 1;
-
-	asm_rdmsr(MSR_IA32_VMX_EPT_VPID_CAP, &vmx_ept_msr);
-	HDEBUG(("vmx EPT msr  : %lX\n", vmx_ept_msr));
-
+	HDEBUG(("EPT feature supported.\n"));
+	
 	/* We could use EPT without UG or VPID support but this
 	 * complicates the code quite a bit so for now we rquire EPT,
 	 * UG and VPID. 
@@ -275,9 +272,7 @@ vt_ept_available(void)
 	    HDEBUG(("UG ctrl not supported.\n"));
 	    return 0;
 	}
-	
 	HDEBUG(("UG ctrl  supported.\n"));
-	//currentcpu->vt.unrestricted_guest_support = 1;
 
 	if(!(vmx_proc_ctrls2 & VMCS_PROC_BASED_VMEXEC_CTL2_VPID_BIT)){
 	    HDEBUG(("vpid ctrl not supported.\n"));
@@ -291,19 +286,69 @@ vt_ept_available(void)
 	}
 	HDEBUG(("invpcid  ctrl supported.\n"));
 
-	if(!(vmx_proc_ctrls2 & VMCS_PROC_BASED_VMEXEC_CTL2_VMFUNC_BIT)){
-		HDEBUG(("vmfunc ctrl not supported.\n"));
-		return 0; 
+	/* Optional */
+	if((vmx_proc_ctrls2 & VMCS_PROC_BASED_VMEXEC_CTL2_VMFUNC_BIT)){
+		vt_info.vmfunc_support = true;
+		HDEBUG(("vmfunc ctrl supported.\n"));
 	}
-	HDEBUG(("vmfunc  ctrl supported.\n"));
-
-	if(!(vmx_proc_ctrls2 & VMCS_PROC_BASED_VMEXEC_CTL2_EPTVIOL_BIT)){
-		HDEBUG(("EPTVIOL ctrl not supported.\n"));
-		return 0; 
-	}
-	HDEBUG(("eptviol ctrl supported.\n"));
 	
-	//currentcpu->vt.vpid_support = 1;    
+	if((vmx_proc_ctrls2 & VMCS_PROC_BASED_VMEXEC_CTL2_EPTVIOL_BIT)){
+		vt_info.eptviol_support = true;
+		HDEBUG(("EPTVIOL ctrl supported.\n"));
+		return 0; 
+	}
+
+	/* Detailed EPT support */
+	asm_rdmsr(MSR_IA32_VMX_EPT_VPID_CAP, &vmx_ept_msr);
+	vt_info.vmx_ept_msr = vmx_ept_msr;
+
+	HDEBUG(("vmx EPT msr  : %lX\n", vmx_ept_msr));
+	
+	if(vmx_ept_msr & VMCS_EPT_XO){
+		HDEBUG(("EPT XO supported.\n"));
+	}
+	if(vmx_ept_msr & VMCS_EPT_PW4){
+		HDEBUG(("EPT PW4 supported.\n"));
+	}
+	if(vmx_ept_msr & VMCS_EPT_UC){
+		HDEBUG(("EPT XC supported.\n"));
+	}
+	if(vmx_ept_msr & VMCS_EPT_WB){
+		HDEBUG(("EPT WB supported.\n"));
+	}
+	if(vmx_ept_msr & VMCS_EPT_2MB){
+		HDEBUG(("EPT 2MB supported.\n"));
+	}
+	if(vmx_ept_msr & VMCS_EPT_1GB){
+		HDEBUG(("EPT 1GB supported.\n"));
+	}
+	if(vmx_ept_msr & VMCS_EPT_INVEPT){
+		HDEBUG(("EPT INVEPT supported.\n"));
+	}
+	if(vmx_ept_msr & VMCS_EPT_ADEPT){
+		HDEBUG(("EPT DEPT supported.\n"));
+	}
+	if(vmx_ept_msr & VMCS_EPT_IEPTS){
+		HDEBUG(("EPT IEPTS supported.\n"));
+	}
+	if(vmx_ept_msr & VMCS_EPT_IEPTA){
+		HDEBUG(("EPT IEPTA supported.\n"));
+	}
+	if(vmx_ept_msr & VMCS_EPT_INVPID){
+		HDEBUG(("EPT INVPID supported.\n"));
+	}
+	if(vmx_ept_msr & VMCS_EPT_INVPIDI){
+		HDEBUG(("EPT INVPIDI supported.\n"));
+	}
+	if(vmx_ept_msr & VMCS_EPT_INVPIDS){
+		HDEBUG(("EPT INVPIDS supported.\n"));
+	}
+	if(vmx_ept_msr & VMCS_EPT_INVPIDA){
+		HDEBUG(("EPT INVPIDA supported.\n"));
+	}
+	if(vmx_ept_msr & VMCS_EPT_INVPIDG){
+		HDEBUG(("EPT INVPIDG supported.\n"));
+	}
 	return 1;
 }
 
