@@ -66,8 +66,24 @@ vt__vmx_init (int cpu)
 	struct page *pg;
 	struct vt_pcpu_data* vt_p;
 	u64 *vaddr_p;
+	u32 dummy, size;
 	
 	HDEBUG(("Allocating percpu page...\n"));
+
+	/*
+	  Check size of page required for vmxon + vmcs region: bits 44:32 (mask 0x1FFF).
+	  Should be no greater than 4096. We want to assume it can fit in a single page.
+	*/
+	asm_rdmsr32 (MSR_IA32_VMX_BASIC, &dummy, &size);
+
+	size = (size & 0x1fff);
+
+	HDEBUG(("vmxon / vmcs region size (%u)\n", size));
+
+	if(size > PAGE_SIZE){
+		printk("okernel: vmxon/vmcs region size > PAGE_SIZE.\n");
+		return -ENOMEM;
+	}
 	
 	pg = alloc_pages_exact_node(cpu_to_node(cpu), GFP_KERNEL, 0);
 	
@@ -160,18 +176,14 @@ vt__vmxon (int cpu)
 
 	
 	/* set VMXE bit to enable VMX */
-	
+        /* Make sure kernel shadow copy of cr4 updated too */	
 	HDEBUG(("Setting VMXE in CR4...\n"));
-
-        /* Make sure kernel shadow copy of cr4 updated too */
 	cr4_set_bits(X86_CR4_VMXE);
-
 	HDEBUG(("Setting VMXE in CR4...done.\n"));
 
 	/* write a VMCS revision identifier */
 	HDEBUG(("Setting VMCS revision id...\n"));
 	asm_rdmsr32 (MSR_IA32_VMX_BASIC, &revision_id, &dummy);
-
 	HDEBUG(("Revision_id as read: %u\n", revision_id));
 	       
 	vt_p = per_cpu(vt, cpu);
@@ -184,9 +196,6 @@ vt__vmxon (int cpu)
 	HDEBUG(("Writing VMCS revision id...\n"));
 	vt_p->vmcs_revision_identifier = revision_id;
 	HDEBUG(("Writing VMCS revision id...done\n"));
-
-
-
 	HDEBUG(("Writing VMCS revision id to region_virt...\n"));
 
 	p = (u32*)vt_p->vmxon_region_virt;
@@ -208,6 +217,96 @@ vt__vmxon (int cpu)
 	return 1;
 }
 
+int 
+vt_ept_available(void)
+{
+	/* 
+         * cid - find EPT/UG/VPID capabilities. Check bit 55 to see if
+	 * allowed settings from proc ctrls are valid. May break down
+	 * this into individual capabilities at some point.
+	 */
+
+	ulong vmx_basic = 0;
+	ulong vmx_proc_ctrls  = 0;
+	ulong vmx_proc_ctrls2 = 0;
+	ulong vmx_ept_msr  = 0;
+
+	/* Check if IA32_VMX_TRUE_PROCBASED_CTLS supported */
+	asm_rdmsr(MSR_IA32_VMX_BASIC, &vmx_basic);
+
+	if(vmx_basic & MSR_IA32_VMX_BASIC_TRUE_MSR_BIT){
+		HDEBUG(("IA32_VMX_BASIC_TRUE_MSR supported.\n"));
+		asm_rdmsr(MSR_IA32_VMX_TRUE_PROCBASED_CTLS, &vmx_proc_ctrls);
+	} else {
+		HDEBUG(("IA32_VMX_BASIC_TRUE_MSR not supported.\n"));
+		asm_rdmsr(MSR_IA32_VMX_PROCBASED_CTLS, &vmx_proc_ctrls);
+	}
+
+	
+	if(!((vmx_proc_ctrls >> 32) &  VMCS_PROC_BASED_VMEXEC_CTL_ENABLE_2NDRY_BIT)){
+  	    HDEBUG(("2ndry controls not available.\n"));	    
+	    return 0;
+	}
+	
+	HDEBUG(("2ndry proc based controls can be enabled.\n"));
+	asm_rdmsr(MSR_IA32_VMX_PROCBASED_CTLS2, &vmx_proc_ctrls2);
+	HDEBUG(("2ndry proc based ctrls: %lX\n", vmx_proc_ctrls2));
+	
+	// bottom 32 bits are allowed 0 settings - always 0. Top
+	// 32 are allowed 1 settings so we check against these.
+	vmx_proc_ctrls2  = vmx_proc_ctrls2 >> 32;
+	HDEBUG(("2ndary ctrls allowed 1 settings: %lX\n", vmx_proc_ctrls2));
+	if(!(vmx_proc_ctrls2 & VMCS_PROC_BASED_VMEXEC_CTL2_EPT_BIT)){
+	    HDEBUG(("EPT ctrl not supported.\n"));
+	    return 0;
+	}
+
+	HDEBUG(("EPT feature supported.\n"));	
+	//currentcpu->vt.ept_support = 1;
+
+	asm_rdmsr(MSR_IA32_VMX_EPT_VPID_CAP, &vmx_ept_msr);
+	HDEBUG(("vmx EPT msr  : %lX\n", vmx_ept_msr));
+
+	/* We could use EPT without UG or VPID support but this
+	 * complicates the code quite a bit so for now we rquire EPT,
+	 * UG and VPID. 
+	 */
+	if(!(vmx_proc_ctrls2 &  VMCS_PROC_BASED_VMEXEC_CTL2_UG_BIT)){
+	    HDEBUG(("UG ctrl not supported.\n"));
+	    return 0;
+	}
+	
+	HDEBUG(("UG ctrl  supported.\n"));
+	//currentcpu->vt.unrestricted_guest_support = 1;
+
+	if(!(vmx_proc_ctrls2 & VMCS_PROC_BASED_VMEXEC_CTL2_VPID_BIT)){
+	    HDEBUG(("vpid ctrl not supported.\n"));
+	    return 0; 
+	}
+	HDEBUG(("vpid ctrl supported.\n"));
+
+	if(!(vmx_proc_ctrls2 & VMCS_PROC_BASED_VMEXEC_CTL2_INVPCID_BIT)){
+	    HDEBUG(("invpcid ctrl not supported.\n"));
+	    return 0; 
+	}
+	HDEBUG(("invpcid  ctrl supported.\n"));
+
+	if(!(vmx_proc_ctrls2 & VMCS_PROC_BASED_VMEXEC_CTL2_VMFUNC_BIT)){
+		HDEBUG(("vmfunc ctrl not supported.\n"));
+		return 0; 
+	}
+	HDEBUG(("vmfunc  ctrl supported.\n"));
+
+	if(!(vmx_proc_ctrls2 & VMCS_PROC_BASED_VMEXEC_CTL2_EPTVIOL_BIT)){
+		HDEBUG(("EPTVIOL ctrl not supported.\n"));
+		return 0; 
+	}
+	HDEBUG(("eptviol ctrl supported.\n"));
+	
+	//currentcpu->vt.vpid_support = 1;    
+	return 1;
+}
+
 
 int vt_init(void)
 {
@@ -218,7 +317,15 @@ int vt_init(void)
 		printk(KERN_ERR "okernel: VMX not available.\n");
 		return -1;
 	}
+
 	HDEBUG(("VMX is available.\n"));
+
+	if(!vt_ept_available()){
+		printk(KERN_ERR "okernel: required EPT support not available.\n");
+		return -1;
+	}
+
+	HDEBUG(("EPT and supporting features are available.\n"));
 
 	/* We need to do this per-cpu */
 	HDEBUG(("Entering root-mode vmx...\n"));
