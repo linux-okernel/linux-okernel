@@ -1525,8 +1525,6 @@ static int do_execveat_common(int fd, struct filename *filename,
 	
 	current->in_execve = 1;
 
-       
-
 	
 	file = do_open_execat(fd, filename, flags);
 	retval = PTR_ERR(file);
@@ -1593,6 +1591,19 @@ static int do_execveat_common(int fd, struct filename *filename,
 		goto out;
 
 	/* execve succeeded */
+
+	current->fs->in_exec = 0;
+	current->in_execve = 0;
+	
+
+	acct_update_integrals(current);
+	task_numa_free(current);
+	free_bprm(bprm);
+	kfree(pathbuf);
+	putname(filename);
+	if (displaced)
+		put_files_struct(displaced);
+
 #ifdef CONFIG_OKERNEL
 	/* Start to lift process onto a vcpu - may vary where we do
 	   this, e.g. not until after re-sched.  Also need to work 
@@ -1606,15 +1617,6 @@ static int do_execveat_common(int fd, struct filename *filename,
 		}
 	}
 #endif
-	current->fs->in_exec = 0;
-	current->in_execve = 0;
-	acct_update_integrals(current);
-	task_numa_free(current);
-	free_bprm(bprm);
-	kfree(pathbuf);
-	putname(filename);
-	if (displaced)
-		put_files_struct(displaced);
 	return retval;
 
 out:

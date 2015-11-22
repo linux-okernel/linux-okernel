@@ -74,6 +74,7 @@
 #include <linux/binfmts.h>
 #include <linux/context_tracking.h>
 #include <linux/compiler.h>
+#include <linux/okernel.h>
 
 #include <asm/switch_to.h>
 #include <asm/tlb.h>
@@ -2991,6 +2992,10 @@ static void __sched __schedule(void)
 	unsigned long *switch_count;
 	struct rq *rq;
 	int cpu;
+#ifdef CONFIG_OKERNEL
+	unsigned long *prev_okernel_state;
+	unsigned long *next_okernel_state;
+#endif
 
 	cpu = smp_processor_id();
 	rq = cpu_rq(cpu);
@@ -3050,8 +3055,50 @@ static void __sched __schedule(void)
 		rq->curr = next;
 		++*switch_count;
 
+#ifdef CONFIG_OKERNEL
+		/* 
+		   About to suspend one kernel thread and resume another. We may be in
+		   non-root mode here if we came into the kernel via process context (as
+		   opposed to timer interupt, etc.). Need to switch out of non-root mode
+		   if we are in it. Potential optimization if we are switching to a process
+		   within the same VMCS context: may not need to switch out of non-root
+		   mode in that case.
+		*/
+		prev_okernel_state = &prev->okernel_status;
+		next_okernel_state = &next->okernel_status;
+
+		if(*prev_okernel_state == OKERNEL_ON){
+			printk(KERN_ERR "ok sched cs: prev process OKERNEL_ON.\n");
+		}
+#endif
+		
+#if 0
+		printk(KERN_ERR "ok sched 1: next (%#lx) prev (%#lx)\n",
+		       (unsigned long)next, (unsigned long)prev);
+#endif
+				       
 		rq = context_switch(rq, prev, next); /* unlocks the rq */
+		
+		/* Back in a 'resumed' kernel thread now. The resumed kernel 
+		   thread may need switching to non-root mode mode here.
+		   If okernel_state == OKERNEL_ON or OKERNEL_ON_EXEC for the new task, then 
+		   call okernel_activate(). 
+		*/
+#if 0
+		printk(KERN_ERR "ok sched 2: next (%#lx) prev (%#lx)\n",
+		       (unsigned long)next, (unsigned long)prev);
+#endif
 		cpu = cpu_of(rq);
+
+#ifdef CONFIG_OKERNEL
+		if(*next_okernel_state == OKERNEL_ON_EXEC){
+			*next_okernel_state = OKERNEL_ON;
+		}
+		if(*next_okernel_state == OKERNEL_ON){
+			printk(KERN_ERR "ok sced cs: need to lift next process on to a VCPU.\n");
+			//okernel_activate();
+		}
+#endif
 	} else {
 		lockdep_unpin_lock(&rq->lock);
 		raw_spin_unlock_irq(&rq->lock);
