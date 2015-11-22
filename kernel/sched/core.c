@@ -2995,7 +2995,8 @@ static void __sched __schedule(void)
 #ifdef CONFIG_OKERNEL
 	unsigned long *prev_okernel_state;
 	unsigned long *next_okernel_state;
-	int next_okernel_vcpu;
+	int *next_okernel_vcpu;
+	int *prev_okernel_vcpu;
 #endif
 
 	cpu = smp_processor_id();
@@ -3067,11 +3068,16 @@ static void __sched __schedule(void)
 		*/
 		prev_okernel_state = &prev->okernel_status;
 		next_okernel_state = &next->okernel_status;
-		next_okernel_vcpu = next->okernel_vcpu;
+		next_okernel_vcpu = &next->okernel_vcpu;
+		prev_okernel_vcpu = &prev->okernel_vcpu;
 			
 		if(*prev_okernel_state == OKERNEL_ON){
 			printk(KERN_ERR "ok sched cs: prev process OKERNEL_ON: next (%#lx) prev (%#lx)\n",
 			       (unsigned long)next, (unsigned long)prev);
+		}
+		if(*prev_okernel_state == OKERNEL_ON_EXEC){
+			printk(KERN_ERR "ok sched cs: prev proc OKERNEL_ON_EXEC vcpu(%d) next (%#lx) prev (%#lx)\n",
+			       *prev_okernel_vcpu, (unsigned long)next, (unsigned long)prev);
 		}
 #endif
 		
@@ -3097,8 +3103,8 @@ static void __sched __schedule(void)
 #ifdef CONFIG_OKERNEL
 		if(*next_okernel_state == OKERNEL_ON_EXEC){
 			printk(KERN_ERR "ok sched: vcpu == (%d)  next (%#lx) prev (%#lx)\n",
-			       next_okernel_vcpu, (unsigned long)next, (unsigned long)prev);
-			if(next_okernel_vcpu == 3){
+			       *next_okernel_vcpu, (unsigned long)next, (unsigned long)prev);
+			if(*next_okernel_vcpu == 3){
 				/* Wait till exec fully set up - may need to lock. */
 				*next_okernel_state = OKERNEL_ON;
 			}
