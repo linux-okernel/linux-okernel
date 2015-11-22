@@ -1486,7 +1486,8 @@ static int do_execveat_common(int fd, struct filename *filename,
 	struct file *file;
 	struct files_struct *displaced;
 	int retval;
-
+	
+	
 	if (IS_ERR(filename))
 		return PTR_ERR(filename);
 
@@ -1613,7 +1614,9 @@ static int do_execveat_common(int fd, struct filename *filename,
         */
 	if(okernel_enabled){
 		if(current->okernel_status == OKERNEL_ON_EXEC){
-			okernel_setup();
+			okernel_setup(&current->okernel_vcpu);
+			printk(KERN_ERR "ok: set vcpu == (%d) current: (%#lx)\n",
+			       current->okernel_vcpu, (unsigned long)current);
 		}
 	}
 #endif

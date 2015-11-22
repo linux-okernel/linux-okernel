@@ -1780,7 +1780,7 @@ struct task_struct {
 	/* Can be one of OKERNEL_0FF, OKERNEL_ON_EXEC, OKERNEL_ACTIVE */
 	unsigned long okernel_status;
 	/* Replace with pointer to vcpu specific data */
-	void *okernel_vpcu;
+	int okernel_vcpu;
 #endif
 /* CPU-specific state of this task */
 	struct thread_struct thread;

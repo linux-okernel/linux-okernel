@@ -2995,6 +2995,7 @@ static void __sched __schedule(void)
 #ifdef CONFIG_OKERNEL
 	unsigned long *prev_okernel_state;
 	unsigned long *next_okernel_state;
+	int next_okernel_vcpu;
 #endif
 
 	cpu = smp_processor_id();
@@ -3066,9 +3067,11 @@ static void __sched __schedule(void)
 		*/
 		prev_okernel_state = &prev->okernel_status;
 		next_okernel_state = &next->okernel_status;
-
+		next_okernel_vcpu = next->okernel_vcpu;
+			
 		if(*prev_okernel_state == OKERNEL_ON){
-			printk(KERN_ERR "ok sched cs: prev process OKERNEL_ON.\n");
+			printk(KERN_ERR "ok sched cs: prev process OKERNEL_ON: next (%#lx) prev (%#lx)\n",
+			       (unsigned long)next, (unsigned long)prev);
 		}
 #endif
 		
@@ -3076,8 +3079,9 @@ static void __sched __schedule(void)
 		printk(KERN_ERR "ok sched 1: next (%#lx) prev (%#lx)\n",
 		       (unsigned long)next, (unsigned long)prev);
 #endif
-				       
+		/* Context of kernel thread A */		       
 		rq = context_switch(rq, prev, next); /* unlocks the rq */
+		/* Context of kernel thread B */
 		
 		/* Back in a 'resumed' kernel thread now. The resumed kernel 
 		   thread may need switching to non-root mode mode here.
@@ -3092,10 +3096,16 @@ static void __sched __schedule(void)
 
 #ifdef CONFIG_OKERNEL
 		if(*next_okernel_state == OKERNEL_ON_EXEC){
-			*next_okernel_state = OKERNEL_ON;
+			printk(KERN_ERR "ok sched: vcpu == (%d)  next (%#lx) prev (%#lx)\n",
+			       next_okernel_vcpu, (unsigned long)next, (unsigned long)prev);
+			if(next_okernel_vcpu == 3){
+				/* Wait till exec fully set up - may need to lock. */
+				*next_okernel_state = OKERNEL_ON;
+			}
 		}
 		if(*next_okernel_state == OKERNEL_ON){
-			printk(KERN_ERR "ok sced cs: need to lift next process on to a VCPU.\n");
+			printk(KERN_ERR "ok sced cs: need lift next proc to VCPU: next (%#lx) prev (%#lx)\n",
+			       (unsigned long)next, (unsigned long)prev);
 			//okernel_activate();
 		}
 #endif

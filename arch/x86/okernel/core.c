@@ -15,8 +15,9 @@ MODULE_DESCRIPTION("Okernel intra-kernel protection");
 int okernel_enabled;
 
 
-int okernel_setup(void)
+int okernel_setup(int *vcpu)
 {
+	*vcpu = 3;
 	HDEBUG(("called.\n"));
 	return 1;
 }

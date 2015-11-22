@@ -39,7 +39,7 @@
 
 #ifdef CONFIG_OKERNEL
 extern int okernel_enabled;
-int okernel_setup(void);
+int okernel_setup(int* vcpu);
 int okernel_activate(void);
 #endif 
 #endif /* _LINUX_OKERNEL_H */
