@@ -15,6 +15,18 @@ MODULE_DESCRIPTION("Okernel intra-kernel protection");
 int okernel_enabled;
 
 
+int okernel_setup(void)
+{
+	HDEBUG(("called.\n"));
+	return 1;
+}
+
+int okernel_activate(void)
+{
+	HDEBUG(("called.\n"));
+	return 1;
+}
+
 
 static int __init okernel_init(void)
 {
@@ -37,6 +49,8 @@ static void  __exit okernel_exit(void)
 }
 
 EXPORT_SYMBOL(okernel_enabled);
+EXPORT_SYMBOL(okernel_setup);
+EXPORT_SYMBOL(okernel_activate);
 module_init(okernel_init)
 module_exit(okernel_exit)
 

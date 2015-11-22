@@ -29,7 +29,7 @@
  */
 #define OKERNEL_OFF     0
 #define OKERNEL_ON_EXEC 1
-#define OKERNEL_ACTIVE  2
+#define OKERNEL_ON      2
 
 /* Set during okernel_init() at boot and used to gate access to /proc/<pid>/okernel
  * state setting,i.e. don't allow a process to be put in OKERNEL_ON_EXEC state if
@@ -39,5 +39,7 @@
 
 #ifdef CONFIG_OKERNEL
 extern int okernel_enabled;
+int okernel_setup(void);
+int okernel_activate(void);
 #endif 
 #endif /* _LINUX_OKERNEL_H */

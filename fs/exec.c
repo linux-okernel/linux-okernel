@@ -56,6 +56,7 @@
 #include <linux/pipe_fs_i.h>
 #include <linux/oom.h>
 #include <linux/compat.h>
+#include <linux/okernel.h>
 
 #include <asm/uaccess.h>
 #include <asm/mmu_context.h>
@@ -1519,8 +1520,14 @@ static int do_execveat_common(int fd, struct filename *filename,
 		goto out_free;
 
 	check_unsafe_exec(bprm);
+
+	
+	
 	current->in_execve = 1;
 
+       
+
+	
 	file = do_open_execat(fd, filename, flags);
 	retval = PTR_ERR(file);
 	if (IS_ERR(file))
@@ -1586,6 +1593,19 @@ static int do_execveat_common(int fd, struct filename *filename,
 		goto out;
 
 	/* execve succeeded */
+#ifdef CONFIG_OKERNEL
+	/* Start to lift process onto a vcpu - may vary where we do
+	   this, e.g. not until after re-sched.  Also need to work 
+	   through possible cpu migration issues. Current plan is to
+	   have a corresponding call to okernel_activate() as part
+           of switch_to checking.
+        */
+	if(okernel_enabled){
+		if(current->okernel_status == OKERNEL_ON_EXEC){
+			okernel_setup();
+		}
+	}
+#endif
 	current->fs->in_exec = 0;
 	current->in_execve = 0;
 	acct_update_integrals(current);
