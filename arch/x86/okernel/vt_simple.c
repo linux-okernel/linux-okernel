@@ -27,6 +27,23 @@ static u64 ept_phys = 0;
 /* Need to fix this...adjust dynamically based on real physical regions */
 #define END_PHYSICAL 0x3FFEFFFFF /* with 1GB physical memory */
 
+/* Check if in vmx non-root mode or not. We rely on the fact that we mask the real value
+   of CR4.VMXE and so reads of CR4 from a vcpu will not see it set. We do not plan to 
+   supported nested use of VMX...
+*/
+int in_vmx_nr_mode(void)
+{
+	unsigned long cr4;
+
+	asm_rdcr4(&cr4);
+	
+	if(cr4 & X86_CR4_VMXE)
+		return 0;
+	return 1;
+}
+		       
+	
+
 static int
 no_cache_region(u64 addr, u64 size)
 {
@@ -162,7 +179,7 @@ vt__vmx_init (int cpu)
 
 	if(size > PAGE_SIZE){
 		printk("okernel: vmxon/vmcs region size > PAGE_SIZE.\n");
-		return -ENOMEM;
+		return 0;
 	}
 	
 	pg = alloc_pages_exact_node(cpu_to_node(cpu), GFP_KERNEL, 0);
@@ -171,7 +188,7 @@ vt__vmx_init (int cpu)
 	
 	if(!vt_p){
 		printk(KERN_ERR "okernel: failed to allocate per-cpu page for VT info.\n");
-		return -ENOMEM;
+		return 0;
 	}
 	
 	HDEBUG(("allocated kernel vaddr (%#lx)\n", (unsigned long)vt_p));
@@ -192,7 +209,7 @@ vt__vmx_init (int cpu)
 	
 	if(!vaddr_p){
 		printk(KERN_ERR "okernel: failed to alloc vregion page.\n");
-		return -ENOMEM;
+		return 0;
 	}
 	
 	HDEBUG(("Clearing vregion page...\n"));
@@ -247,6 +264,7 @@ vt__vmxon (int cpu)
 	cr4 |= cr4_0;
 	asm_wrcr4 (cr4);
 	HDEBUG(("Applying fixed CR0,CR4 bits...done.\n"));
+		
 
 	/* set VMXE bit to enable VMX */
         /* Make sure kernel shadow copy of cr4 updated too */	
@@ -712,10 +730,16 @@ int vt_init(void)
 	HDEBUG(("Entering root-mode vmx...\n"));
 	for_each_possible_cpu(cpu) { 
 		HDEBUG(("calling vt__vmx_init on cpu: %d\n", cpu));
-		(void)vt__vmx_init(cpu);
+		if(!vt__vmx_init(cpu)){
+			printk(KERN_ERR "okernel: vmx_init failed.\n");
+		}
 		HDEBUG(("calling vt__vmxon on cpu: %d\n", cpu));
-		vt__vmxon(cpu);
+		if(!vt__vmxon(cpu)){
+			printk(KERN_ERR "okernel: vmxon failed.\n");
+			return -1;
+		}
 	}
 	HDEBUG(("Now running in root-mode vmx.\n"));
 	return 0;
 }
+EXPORT_SYMBOL(in_vmx_nr_mode);

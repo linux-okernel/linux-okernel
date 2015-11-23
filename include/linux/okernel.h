@@ -40,6 +40,8 @@
 #ifdef CONFIG_OKERNEL
 extern int okernel_enabled;
 int okernel_setup(int* vcpu);
-int okernel_activate(void);
+int okernel_enter(void);
+int in_vmx_nr_mode(void);
+void okernel_schedule_helper(void);
 #endif 
 #endif /* _LINUX_OKERNEL_H */

@@ -2986,7 +2986,11 @@ again:
  *
  * WARNING: must be called with preemption disabled!
  */
+#ifdef CONFIG_OKERNEL
 static void __sched __schedule(void)
+#else
+void __sched __schedule(void);
+#endif
 {
 	struct task_struct *prev, *next;
 	unsigned long *switch_count;
@@ -3058,14 +3062,6 @@ static void __sched __schedule(void)
 		++*switch_count;
 
 #ifdef CONFIG_OKERNEL
-		/* 
-		   About to suspend one kernel thread and resume another. We may be in
-		   non-root mode here if we came into the kernel via process context (as
-		   opposed to timer interupt, etc.). Need to switch out of non-root mode
-		   if we are in it. Potential optimization if we are switching to a process
-		   within the same VMCS context: may not need to switch out of non-root
-		   mode in that case.
-		*/
 		prev_okernel_state = &prev->okernel_status;
 		next_okernel_state = &next->okernel_status;
 		next_okernel_vcpu = &next->okernel_vcpu;
@@ -3101,18 +3097,19 @@ static void __sched __schedule(void)
 		cpu = cpu_of(rq);
 
 #ifdef CONFIG_OKERNEL
+		/* Lift (a clone of this) process onto a vcpu.  This original process remains
+		   here in the okernel_enter() loop, whilst the cloned process continues execution
+		   in VMX non-root mode. In
+		*/
+
 		if(*next_okernel_state == OKERNEL_ON_EXEC){
 			printk(KERN_ERR "ok sched: vcpu == (%d)  next (%#lx) prev (%#lx)\n",
 			       *next_okernel_vcpu, (unsigned long)next, (unsigned long)prev);
 			if(*next_okernel_vcpu == 3){
 				/* Wait till exec fully set up - may need to lock. */
 				*next_okernel_state = OKERNEL_ON;
-			}
-		}
-		if(*next_okernel_state == OKERNEL_ON){
-			printk(KERN_ERR "ok sced cs: need lift next proc to VCPU: next (%#lx) prev (%#lx)\n",
-			       (unsigned long)next, (unsigned long)prev);
-			//okernel_activate();
+				okernel_enter();
+			} 
 		}
 #endif
 	} else {
@@ -3122,6 +3119,32 @@ static void __sched __schedule(void)
 
 	balance_callback(rq);
 }
+
+#ifdef CONFIG_OKERNEL
+void __sched __ok_schedule(void)
+{
+	__schedule();
+}
+
+void  __sched okernel_schedule(void)
+{
+	if(in_vmx_nr_mode()){
+		__ok_schedule();
+	} else {
+		__schedule();
+	}
+#if 0
+	if(okernel_enabled){
+		if(!in_vmx_nr_mode()){
+			__schedule();
+		} else {
+			printk(KERN_ERR "okernel: calling okernel_schedule_helper.\n");
+			ok_schedule();
+		}
+	}
+#endif
+}
+#endif
 
 static inline void sched_submit_work(struct task_struct *tsk)
 {
@@ -3142,7 +3165,11 @@ asmlinkage __visible void __sched schedule(void)
 	sched_submit_work(tsk);
 	do {
 		preempt_disable();
+#ifdef CONFIG_OKERNEL
+		okernel_schedule();
+#else
 		__schedule();
+#endif
 		sched_preempt_enable_no_resched();
 	} while (need_resched());
 }
@@ -3183,7 +3210,11 @@ static void __sched notrace preempt_schedule_common(void)
 {
 	do {
 		preempt_active_enter();
+#ifdef CONFIG_OKERNEL
+		okernel_schedule();
+#else
 		__schedule();
+#endif
 		preempt_active_exit();
 
 		/*
@@ -3248,7 +3279,11 @@ asmlinkage __visible void __sched notrace preempt_schedule_notrace(void)
 		 * an infinite recursion.
 		 */
 		prev_ctx = exception_enter();
+#ifdef CONFIG_OKERNEL
+		okernel_schedule();
+#else
 		__schedule();
+#endif
 		exception_exit(prev_ctx);
 
 		barrier();
@@ -3277,7 +3312,11 @@ asmlinkage __visible void __sched preempt_schedule_irq(void)
 	do {
 		preempt_active_enter();
 		local_irq_enable();
+#ifdef CONFIG_OKERNEL
+		okernel_schedule();
+#else
 		__schedule();
+#endif
 		local_irq_disable();
 		preempt_active_exit();
 	} while (need_resched());
@@ -8521,3 +8560,7 @@ void dump_cpu_task(int cpu)
 	pr_info("Task dump for CPU %d:\n", cpu);
 	sched_show_task(cpu_curr(cpu));
 }
+
+#ifdef CONFIG_OKERNEL
+EXPORT_SYMBOL(__ok_schedule);
+#endif
