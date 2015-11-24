@@ -3130,20 +3130,11 @@ void __sched __ok_schedule(void)
 void  __sched okernel_schedule(void)
 {
 	if(in_vmx_nr_mode()){
-		__ok_schedule();
+		//__ok_schedule();
+		okernel_schedule_helper();
 	} else {
 		__schedule();
 	}
-#if 0
-	if(okernel_enabled){
-		if(!in_vmx_nr_mode()){
-			__schedule();
-		} else {
-			printk(KERN_ERR "okernel: calling okernel_schedule_helper.\n");
-			ok_schedule();
-		}
-	}
-#endif
 }
 #endif
 

@@ -20,7 +20,7 @@ void okernel_schedule_helper(void)
 	int a = 0;
 	
 	a++;
-	HDEBUG(("called a: (%d)\n", a));
+	//HDEBUG(("called a: (%d)\n", a));
 	__ok_schedule();
 }
 
@@ -50,7 +50,7 @@ void okernel_dump_stack_info(void)
 	sp  = current_stack_pointer();
 	end_stack = sp0 - THREAD_SIZE;
 
-	printk(KERN_ERR  "okernel: thread size (%lu) thread_info* (%#lx) stack in-use (%#lx) (%lu)\n",
+	printk(KERN_ERR  "okernel: thread/stack size (%lu) thread_info* (%#lx) stack in-use (%#lx) (%lu)\n",
 	       THREAD_SIZE, (unsigned long)current_thread_info(), okernel_stack_use(), okernel_stack_use());
 	printk(KERN_ERR "okernel: stack sp0 (%#lx) current sp (%#lx) end stack (%#lx)\n",
 	       sp0, sp, sp0-THREAD_SIZE);
