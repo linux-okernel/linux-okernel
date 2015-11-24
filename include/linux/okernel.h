@@ -44,5 +44,6 @@ int okernel_enter(void);
 int in_vmx_nr_mode(void);
 void okernel_schedule_helper(void);
 void okernel_dump_stack_info(void);
+void okernel_test_stack_clean_and_jmp(int a, int b, int c, int d, int e, int f);
 #endif 
 #endif /* _LINUX_OKERNEL_H */

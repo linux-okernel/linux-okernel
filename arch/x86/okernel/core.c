@@ -56,6 +56,30 @@ void okernel_dump_stack_info(void)
 	       sp0, sp, sp0-THREAD_SIZE);
 }
 
+void okernel_test_stack_clean_and_jmp(int a, int b, int c, int d, int e, int f)
+{
+	unsigned long tmpl;
+
+	a = 1; b = 2;
+	
+	//asm("mov $.Lokernel_clone_rip, %0" : "=r"(tmpl));
+	asm("mov $okernel_clone_rip, %0" : "=r"(tmpl));
+	asm("push %r12 ");
+	HDEBUG(("cloned thread RIP will be set to: (%#lx)\n", tmpl));
+	
+	
+	HDEBUG(("1 (before clean and jmp: a(%d), b(%d))\n", a, b));
+
+	// Do the clean and jmp as though this function has returned.
+	asm("jmp okernel_clone_rip ");
+	
+	a++; b++;
+	HDEBUG(("2 (after clean and jmp: a(%d) b(%d) - shouldn't get here!)\n", a, b));
+	
+	asm("okernel_clone_rip: ");
+	return;
+}
+
 static int __init okernel_init(void)
 {
 	HDEBUG(("Start initialization...\n"));
@@ -76,7 +100,7 @@ static void  __exit okernel_exit(void)
 	okernel_enabled = 0;
 	HDEBUG(("exit called.\n"));
 }
-
+EXPORT_SYMBOL(okernel_test_stack_clean_and_jmp);
 EXPORT_SYMBOL(okernel_schedule_helper);
 EXPORT_SYMBOL(okernel_enabled);
 EXPORT_SYMBOL(okernel_setup);
