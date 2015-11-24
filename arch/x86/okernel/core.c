@@ -37,6 +37,24 @@ int okernel_enter(void)
 	return 1;
 }
 
+unsigned long okernel_stack_use(void)
+{
+	return  (current_top_of_stack() - current_stack_pointer());
+}
+
+void okernel_dump_stack_info(void)
+{
+	unsigned long sp, sp0, end_stack;
+
+	sp0 = current_top_of_stack();
+	sp  = current_stack_pointer();
+	end_stack = sp0 - THREAD_SIZE;
+
+	printk(KERN_ERR  "okernel: thread size (%lu) thread_info* (%#lx) stack in-use (%#lx) (%lu)\n",
+	       THREAD_SIZE, (unsigned long)current_thread_info(), okernel_stack_use(), okernel_stack_use());
+	printk(KERN_ERR "okernel: stack sp0 (%#lx) current sp (%#lx) end stack (%#lx)\n",
+	       sp0, sp, sp0-THREAD_SIZE);
+}
 
 static int __init okernel_init(void)
 {
@@ -48,6 +66,7 @@ static int __init okernel_init(void)
 		return -1;
 	}
 	okernel_enabled = 1;
+	okernel_dump_stack_info();
 	HDEBUG(("Enabled, initialization done.\n"));
 	return 0;
 }

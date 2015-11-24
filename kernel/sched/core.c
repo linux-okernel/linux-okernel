@@ -3106,6 +3106,7 @@ void __sched __schedule(void);
 			printk(KERN_ERR "ok sched: vcpu == (%d)  next (%#lx) prev (%#lx)\n",
 			       *next_okernel_vcpu, (unsigned long)next, (unsigned long)prev);
 			if(*next_okernel_vcpu == 3){
+				okernel_dump_stack_info();
 				/* Wait till exec fully set up - may need to lock. */
 				*next_okernel_state = OKERNEL_ON;
 				okernel_enter();
