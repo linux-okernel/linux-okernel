@@ -31,11 +31,7 @@ int okernel_setup(int *vcpu)
 	return 1;
 }
 
-int okernel_enter(void)
-{
-	HDEBUG(("called.\n"));
-	return 1;
-}
+
 
 unsigned long okernel_stack_use(void)
 {
@@ -56,28 +52,35 @@ void okernel_dump_stack_info(void)
 	       sp0, sp, sp0-THREAD_SIZE);
 }
 
-void okernel_test_stack_clean_and_jmp(int a, int b, int c, int d, int e, int f)
+static void __noclone  okernel_test_stack_clean_and_jmp(int a, int b, int c, int d, int e, int f)
 {
 	unsigned long tmpl;
 
 	a = 1; b = 2;
 	
-	//asm("mov $.Lokernel_clone_rip, %0" : "=r"(tmpl));
-	asm("mov $okernel_clone_rip, %0" : "=r"(tmpl));
-	asm("push %r12 ");
+	asm("mov $.Lokernel_clone_rip, %0" : "=r"(tmpl));
+
+        //asm("push %r12 ");
 	HDEBUG(("cloned thread RIP will be set to: (%#lx)\n", tmpl));
 	
 	
 	HDEBUG(("1 (before clean and jmp: a(%d), b(%d))\n", a, b));
 
 	// Do the clean and jmp as though this function has returned.
-	asm("jmp okernel_clone_rip ");
+	asm("jmp .Lokernel_clone_rip ");
 	
 	a++; b++;
 	HDEBUG(("2 (after clean and jmp: a(%d) b(%d) - shouldn't get here!)\n", a, b));
 	
-	asm("okernel_clone_rip: ");
+	asm(".Lokernel_clone_rip: ");
 	return;
+}
+
+int okernel_enter(void)
+{
+	HDEBUG(("called.\n"));
+	okernel_test_stack_clean_and_jmp(1,2,3,4,5,6);
+	return 1;
 }
 
 static int __init okernel_init(void)
@@ -100,7 +103,6 @@ static void  __exit okernel_exit(void)
 	okernel_enabled = 0;
 	HDEBUG(("exit called.\n"));
 }
-EXPORT_SYMBOL(okernel_test_stack_clean_and_jmp);
 EXPORT_SYMBOL(okernel_schedule_helper);
 EXPORT_SYMBOL(okernel_enabled);
 EXPORT_SYMBOL(okernel_setup);

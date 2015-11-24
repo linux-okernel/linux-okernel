@@ -3109,7 +3109,7 @@ void __sched __schedule(void);
 				okernel_dump_stack_info();
 				/* Wait till exec fully set up - may need to lock. */
 				*next_okernel_state = OKERNEL_ON;
-				okernel_test_stack_clean_and_jmp(1, 2, 3, 4, 5, 6);
+				okernel_enter();
 			} 
 		}
 #endif
