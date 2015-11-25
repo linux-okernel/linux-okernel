@@ -3001,6 +3001,7 @@ void __sched __schedule(void);
 	unsigned long *next_okernel_state;
 	int *next_okernel_vcpu;
 	int *prev_okernel_vcpu;
+	int64_t ret;
 #endif
 
 	cpu = smp_processor_id();
@@ -3109,7 +3110,7 @@ void __sched __schedule(void);
 				okernel_dump_stack_info();
 				/* Wait till exec fully set up - may need to lock. */
 				*next_okernel_state = OKERNEL_ON;
-				okernel_enter();
+				(void)okernel_enter(&ret);
 			} 
 		}
 #endif

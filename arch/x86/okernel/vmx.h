@@ -5,6 +5,7 @@
 
 #include <linux/mmu_notifier.h>
 #include <linux/types.h>
+//#include <asm/tlbflush.h>
 #include <asm/vmx.h>
 #include <linux/kvm_types.h>
 
@@ -30,6 +31,29 @@
 #endif
 
 
+#define HPL_DEBUG
+#ifdef HPL_DEBUG
+#define HDEBUG(args) (printk(KERN_ERR "ok: cpu(%d) %s: ", raw_smp_processor_id(), __func__), printk args)
+#else
+#define HDEBUG(args)
+#endif
+//#define HPL_DEBUG2
+#ifdef HPL_DEBUG2
+#define HDEBUG2(args) (printk(KERN_ERR "ok: cpu(%d) %s: ", raw_smp_processor_id(), __func__), printk args)
+#else
+#define HDEBUG2(args)
+#endif
+
+
+#if 0
+#define read_cr4 native_read_cr4
+
+void write_cr4(unsigned long cr4_val)
+{
+	this_cpu_write(cpu_tlbstate.cr4, cr4);
+	__write_cr4(cr4_val);
+}
+#endif
 
 DECLARE_PER_CPU(struct vmx_vcpu *, local_vcpu);
 

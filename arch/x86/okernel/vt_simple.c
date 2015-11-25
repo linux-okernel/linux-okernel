@@ -33,13 +33,13 @@ static u64 ept_phys = 0;
 */
 
 
-static int dummy_in_vmx_nr_mode(void)
+static inline int dummy_in_vmx_nr_mode(void)
 {
 	return 0;
 }
 
 
-static int real_in_vmx_nr_mode(void)
+static inline int real_in_vmx_nr_mode(void)
 {
 	unsigned long cr4;
 
@@ -53,7 +53,7 @@ static int real_in_vmx_nr_mode(void)
 
 static int (*in_vmx_nr_mode)(void) = dummy_in_vmx_nr_mode;	
 
-int is_in_vmx_nr_mode(void)
+inline int is_in_vmx_nr_mode(void)
 {
 	return in_vmx_nr_mode();
 }

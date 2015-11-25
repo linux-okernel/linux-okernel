@@ -5,8 +5,9 @@
 #include <linux/fs.h>
 #include <linux/okernel.h>
 
-#include "constants.h"
-#include "vt.h"
+//#include "constants.h"
+//#include "vt.h"
+#include "vmx.h"
 
 MODULE_LICENSE("GPL");
 MODULE_DESCRIPTION("Okernel intra-kernel protection");
@@ -77,17 +78,18 @@ static void __noclone  okernel_test_stack_clean_and_jmp(int a, int b, int c, int
 	return;
 }
 
-int okernel_enter(void)
+int okernel_enter(int64_t *ret)
 {
 	HDEBUG(("called.\n"));
 	okernel_test_stack_clean_and_jmp(1,2,3,4,5,6);
-	return 1;
+	//return vmx_launch(ret);
+	return ret;
 }
 
 static int __init okernel_init(void)
 {
 	HDEBUG(("Start initialization...\n"));
-	if((vt_init())){
+	if((vmx_init())){
 		printk(KERN_ERR "okernel: failed to initialize x86 vmx extensions.\n");
 		okernel_enabled = 0;
 		return -1;

@@ -1,9 +1,9 @@
 /*
- *  vmx.c - The Intel VT-x driver for intra-kernel protection
- * using vt-x features. This file is partially derived from 
+ * vmx.c - The Intel VT-x driver for intra-kernel protection
+ * using vt-x features. This file is derived from 
  * the dune code base which itself is dervied from the kvm
  * code base (with the hope that we can possibly at some point 
- * share code.
+ * share code).
  *
  * Author: C I Dalton <cid@hpe.com> 2015
  *
@@ -51,6 +51,7 @@
 #include <linux/highmem.h>
 #include <linux/sched.h>
 #include <linux/moduleparam.h>
+#include <linux/ftrace.h>
 #include <linux/slab.h>
 #include <linux/tboot.h>
 #include <linux/init.h>
@@ -64,12 +65,11 @@
 #include <asm/unistd_64.h>
 #include <asm/virtext.h>
 #include <asm/percpu.h>
-#include <asm/paravirt.h>
+//#include <asm/paravirt.h>
+
+#include <asm/tlbflush.h>
 
 #include "vmx.h"
-
-#define write_cr4 native_write_cr4
-#define read_cr4 native_read_cr4
 
 
 static atomic_t vmx_enable_failed;
@@ -95,6 +95,33 @@ static struct vmcs_config {
 } vmcs_config;
 
 struct vmx_capability vmx_capability;
+
+
+static inline int dummy_in_vmx_nr_mode(void)
+{
+	return 0;
+}
+
+
+static inline int real_in_vmx_nr_mode(void)
+{
+	unsigned long cr4;
+
+	cr4 = native_read_cr4();
+	
+	if(cr4 & X86_CR4_VMXE)
+		return 0;
+	return 1;
+}
+
+
+static int (*in_vmx_nr_mode)(void) = dummy_in_vmx_nr_mode;	
+
+inline int is_in_vmx_nr_mode(void)
+{
+	return in_vmx_nr_mode();
+}
+
 
 static inline bool cpu_has_secondary_exec_ctrls(void)
 {
@@ -152,8 +179,6 @@ static inline bool cpu_has_vmx_ept_ad_bits(void)
 
 
 
-
-
 static void __vmx_disable_intercept_for_msr(unsigned long *msr_bitmap, u32 msr)
 {
 	int f = sizeof(unsigned long);
@@ -171,7 +196,6 @@ static void __vmx_disable_intercept_for_msr(unsigned long *msr_bitmap, u32 msr)
 		__clear_bit(msr, msr_bitmap + 0xc00 / f); /* write-high */
 	}
 }
-
 
 static __init int adjust_vmx_controls(u32 ctl_min, u32 ctl_opt,
 				      u32 msr, u32 *result)
@@ -462,7 +486,7 @@ static __init int __vmx_enable(struct vmcs *vmxon_buf)
 
 	printk(KERN_ERR "okernel: __vmx_enable 0.\n");
 	
-	if (read_cr4() & X86_CR4_VMXE)
+	if (native_read_cr4() & X86_CR4_VMXE)
 		return -EBUSY;
 
 	printk(KERN_ERR "okernel: __vmx_enable 1.\n");
@@ -505,7 +529,7 @@ static __init int __vmx_enable(struct vmcs *vmxon_buf)
 #endif
 
 	printk(KERN_DEBUG "okernel __vmx_enable: 2.\n");
-	write_cr4(read_cr4() | X86_CR4_VMXE);
+	cr4_set_bits(X86_CR4_VMXE);
 
 	printk(KERN_ERR "okernel: __vmx_enable 3.\n");
 	__vmxon(phys_addr);
@@ -534,7 +558,7 @@ static __init void vmx_enable(void *unused)
 		goto failed;
 
 	__this_cpu_write(vmx_enabled, 1);
-	//native_store_gdt(this_cpu_ptr(&host_gdt));
+	native_store_gdt(this_cpu_ptr(&host_gdt));
 
 	printk(KERN_INFO "vmx: VMX enabled on CPU %d\n",
 	       raw_smp_processor_id());
@@ -552,7 +576,7 @@ static void vmx_disable(void *unused)
 {
 	if (__this_cpu_read(vmx_enabled)) {
 		__vmxoff();
-		write_cr4(read_cr4() & ~X86_CR4_VMXE);
+		cr4_clear_bits(X86_CR4_VMXE);
 		__this_cpu_write(vmx_enabled, 0);
 	}
 }
@@ -576,11 +600,6 @@ static void vmx_free_vmxon_areas(void)
 int __init vmx_init(void)
 {
 	int r, cpu;
-#if 0   // no-percpu
-	int ret;
-	struct vmcs *vmxon_buf;
-	__this_cpu_write(vmx_enabled, 0);
-#endif // no-percpu
 
         if (!cpu_has_vmx()) {
 		printk(KERN_ERR "vmx: CPU does not support VT-x\n");
@@ -613,7 +632,7 @@ int __init vmx_init(void)
         }
         /* FIXME: do we need APIC virtualization (flexpriority?) */
 	/* cid: Neeed to look at this */ 
-#if 0
+#if 1
 	memset(msr_bitmap, 0xff, PAGE_SIZE);
         __vmx_disable_intercept_for_msr(msr_bitmap, MSR_FS_BASE);
         __vmx_disable_intercept_for_msr(msr_bitmap, MSR_GS_BASE);
@@ -621,44 +640,7 @@ int __init vmx_init(void)
         set_bit(0, vmx_vpid_bitmap); /* 0 is reserved for host */
 #endif
 	printk(KERN_ERR "okernel: vmx_init 1.\n");
-#if 0   // no-percpu
-	// Assume single logical cpu for now...
-
-	cpu = 0;
-	vmxon_buf = __vmx_alloc_vmcs(cpu);
-
-	printk(KERN_ERR "okernel: vmx_init 2.\n");
-	
-	if (!vmxon_buf) {
-		vmx_free_vmxon_areas();
-		return -ENOMEM;
-	}
-
-	printk(KERN_ERR "okernel: vmx_init 3.\n");
-	
-	if ((ret = __vmx_enable(vmxon_buf)))
-		goto failed;
-
-	printk(KERN_ERR "okernel: vmx_init 4.\n");
-	__this_cpu_write(vmx_enabled, 1);
-	//vmx_enabled = 1;
-	
-	//native_store_gdt(this_cpu_ptr(&host_gdt));
-
-	//printk(KERN_INFO "vmx: VMX enabled on CPU %d\n",
-	//       raw_smp_processor_id());
-
-	printk(KERN_ERR "vmx: VMX enabled on CPU\n");
-	return 0;
-
-failed:
-	printk(KERN_ERR "okernel: vmx_init 5.\n");
-
-	printk(KERN_ERR "vmx: failed to enable VMX, err = %d\n", ret);
-	return -EIO;
-#endif // no-percpu
-	
-#if 1
+ 
 	for_each_possible_cpu(cpu) {
 		struct vmcs *vmxon_buf;
 
@@ -682,7 +664,8 @@ failed:
 		r = -EBUSY;
 		goto failed2;
 	}
-
+	
+	in_vmx_nr_mode = real_in_vmx_nr_mode;
         return 0;
 
 	
@@ -691,5 +674,4 @@ failed2:
 failed1:
 	vmx_free_vmxon_areas();
 	return r;
-#endif
 }
