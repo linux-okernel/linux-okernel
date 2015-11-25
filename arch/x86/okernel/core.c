@@ -83,7 +83,7 @@ int okernel_enter(int64_t *ret)
 	HDEBUG(("called.\n"));
 	okernel_test_stack_clean_and_jmp(1,2,3,4,5,6);
 	//return vmx_launch(ret);
-	return ret;
+	return *ret;
 }
 
 static int __init okernel_init(void)

@@ -97,6 +97,36 @@ enum vmx_reg {
 };
 
 
+struct vmx_vcpu {
+	int cpu;
+	int vpid;
+	int launched;
+
+	//struct mmu_notifier mmu_notifier;
+	spinlock_t ept_lock;
+	unsigned long ept_root;
+	unsigned long eptp;
+	bool ept_ad_enabled;
+
+	u8  fail;
+	u64 exit_reason;
+	u64 host_rsp;
+	u64 regs[NR_VCPU_REGS];
+	u64 cr2;
+
+	int shutdown;
+	int ret_code;
+
+	struct msr_autoload {
+		unsigned nr;
+		struct vmx_msr_entry guest[NR_AUTOLOAD_MSRS];
+		struct vmx_msr_entry host[NR_AUTOLOAD_MSRS];
+	} msr_autoload;
+
+	struct vmcs *vmcs;
+	void *syscall_tbl;
+};
+
 extern __init int vmx_init(void);
 extern void vmx_exit(void);
 

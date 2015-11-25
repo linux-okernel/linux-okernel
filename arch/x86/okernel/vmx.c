@@ -75,7 +75,7 @@
 static atomic_t vmx_enable_failed;
 
 static DECLARE_BITMAP(vmx_vpid_bitmap, VMX_NR_VPIDS);
-//static DEFINE_SPINLOCK(vmx_vpid_lock);
+static DEFINE_SPINLOCK(vmx_vpid_lock);
 
 static unsigned long *msr_bitmap;
 
@@ -474,6 +474,228 @@ static void vmcs_load(struct vmcs *vmcs)
 		       vmcs, phys_addr);
 }
 #endif
+
+/*-------------------------------------------------------------------------------------*/
+/*  start: vmx__launch releated code                                                   */
+/*-------------------------------------------------------------------------------------*/
+
+
+/**
+ * vmx_alloc_vmcs - allocates a VMCS region
+ *
+ * NOTE: Assumes the new region will be used by the current CPU.
+ *
+ * Returns a valid VMCS region.
+ */
+static struct vmcs *vmx_alloc_vmcs(void)
+{
+	return __vmx_alloc_vmcs(raw_smp_processor_id());
+}
+
+
+/**
+ * vmx_allocate_vpid - reserves a vpid and sets it in the VCPU
+ * @vmx: the VCPU
+ */
+static int vmx_allocate_vpid(struct vmx_vcpu *vmx)
+{
+	int vpid;
+
+	vmx->vpid = 0;
+
+	spin_lock(&vmx_vpid_lock);
+	vpid = find_first_zero_bit(vmx_vpid_bitmap, VMX_NR_VPIDS);
+	if (vpid < VMX_NR_VPIDS) {
+		vmx->vpid = vpid;
+		__set_bit(vpid, vmx_vpid_bitmap);
+	}
+	spin_unlock(&vmx_vpid_lock);
+
+	return vpid >= VMX_NR_VPIDS;
+}
+
+#if 0
+/**
+ * vmx_free_vpid - frees a vpid
+ * @vmx: the VCPU
+ */
+static void vmx_free_vpid(struct vmx_vcpu *vmx)
+{
+	spin_lock(&vmx_vpid_lock);
+	if (vmx->vpid != 0)
+		__clear_bit(vmx->vpid, vmx_vpid_bitmap);
+	spin_unlock(&vmx_vpid_lock);
+}
+#endif
+
+/**
+ * vmx_create_vcpu - allocates and initializes a new virtual cpu
+ *
+ * Returns: A new VCPU structure
+ */
+static struct vmx_vcpu * vmx_create_vcpu(void)
+{
+	struct vmx_vcpu *vcpu = kmalloc(sizeof(struct vmx_vcpu), GFP_KERNEL);
+	if (!vcpu)
+		return NULL;
+
+	memset(vcpu, 0, sizeof(*vcpu));
+
+	vcpu->vmcs = vmx_alloc_vmcs();
+	if (!vcpu->vmcs)
+		goto fail_vmcs;
+
+	if (vmx_allocate_vpid(vcpu))
+		goto fail_vpid;
+
+	vcpu->cpu = -1;
+	//vcpu->syscall_tbl = (void *) &dune_syscall_tbl;
+
+#if 0
+	spin_lock_init(&vcpu->ept_lock);
+	if (vmx_init_ept(vcpu))
+		goto fail_ept;
+	vcpu->eptp = construct_eptp(vcpu->ept_root);
+
+	vmx_get_cpu(vcpu);
+	vmx_setup_vmcs(vcpu);
+	vmx_setup_initial_guest_state(conf);
+	vmx_put_cpu(vcpu);
+
+	if (cpu_has_vmx_ept_ad_bits()) {
+		vcpu->ept_ad_enabled = true;
+		printk(KERN_INFO "vmx: enabled EPT A/D bits");
+	}
+	if (vmx_create_ept(vcpu))
+		goto fail_ept;
+
+	return vcpu;
+
+fail_ept:
+	vmx_free_vpid(vcpu);
+#endif
+fail_vpid:
+	vmx_free_vmcs(vcpu->vmcs);
+fail_vmcs:
+	kfree(vcpu);
+	return NULL;
+}
+
+
+
+
+/**
+ * vmx_launch - the main loop for a VMX Dune process
+ * @conf: the launch configuration
+ */
+int vmx_launch(int64_t *ret_code)
+{
+	int ret, done = 0;
+	struct vmx_vcpu *vcpu = vmx_create_vcpu();
+	if (!vcpu)
+		return -ENOMEM;
+
+	printk(KERN_ERR "vmx: created VCPU (VPID %d)\n",
+	       vcpu->vpid);
+
+#if 0
+	while (1) {
+		vmx_get_cpu(vcpu);
+
+		/*
+		 * We assume that a Dune process will always use
+		 * the FPU whenever it is entered, and thus we go
+		 * ahead and load FPU state here. The reason is
+		 * that we don't monitor or trap FPU usage inside
+		 * a Dune process.
+		 */
+		if (!__thread_has_fpu(current))
+			math_state_restore();
+
+		local_irq_disable();
+
+		if (need_resched()) {
+			local_irq_enable();
+			vmx_put_cpu(vcpu);
+			cond_resched();
+			continue;
+		}
+
+		if (signal_pending(current)) {
+			int signr;
+			siginfo_t info;
+			uint32_t x;
+
+			local_irq_enable();
+			vmx_put_cpu(vcpu);
+
+			spin_lock_irq(&current->sighand->siglock);
+			signr = dequeue_signal(current, &current->blocked,
+					       &info);
+			spin_unlock_irq(&current->sighand->siglock);
+			if (!signr)
+				continue;
+
+			if (signr == SIGKILL) {
+				printk(KERN_INFO "vmx: got sigkill, dying");
+				vcpu->ret_code = ((ENOSYS) << 8);
+				break;
+			}
+
+			x  = DUNE_SIGNAL_INTR_BASE + signr;
+			x |= INTR_INFO_VALID_MASK;
+
+			vmcs_write32(VM_ENTRY_INTR_INFO_FIELD, x);
+			continue;
+		}
+
+		ret = vmx_run_vcpu(vcpu);
+
+		local_irq_enable();
+
+		if (ret == EXIT_REASON_VMCALL ||
+		    ret == EXIT_REASON_CPUID) {
+			vmx_step_instruction();
+		}
+
+		vmx_put_cpu(vcpu);
+
+		if (ret == EXIT_REASON_VMCALL)
+			vmx_handle_syscall(vcpu);
+		else if (ret == EXIT_REASON_CPUID)
+			vmx_handle_cpuid(vcpu);
+		else if (ret == EXIT_REASON_EPT_VIOLATION)
+			done = vmx_handle_ept_violation(vcpu);
+		else if (ret == EXIT_REASON_EXCEPTION_NMI) {
+			if (vmx_handle_nmi_exception(vcpu))
+				done = 1;
+		} else if (ret != EXIT_REASON_EXTERNAL_INTERRUPT) {
+			printk(KERN_INFO "unhandled exit: reason %d, exit qualification %x\n",
+			       ret, vmcs_read32(EXIT_QUALIFICATION));
+			vmx_dump_cpu(vcpu);
+			done = 1;
+		}
+
+		if (done || vcpu->shutdown)
+			break;
+	}
+
+	printk(KERN_ERR "vmx: destroying VCPU (VPID %d)\n",
+	       vcpu->vpid);
+
+	*ret_code = vcpu->ret_code;
+	vmx_destroy_vcpu(vcpu);
+#endif
+	return 0;
+}
+
+/*-------------------------------------------------------------------------------------*/
+/*  end: vmx__launch releated code                                                     */
+/*-------------------------------------------------------------------------------------*/
+
+
+
+
 
 /**
  * __vmx_enable - low-level enable of VMX mode on the current CPU
