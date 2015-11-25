@@ -3,6 +3,8 @@ config OKERNEL
         depends on DEBUG_KERNEL
         depends on X86
         depends on !VIRTUALIZATION
+        select PREEMPT_NOTIFIERS
+        select MMU_NOTIFIER
         default n
         ---help---
           Suport for splitting the kernel into inner and outer regions.
