@@ -59,6 +59,4 @@ struct vt_data {
 
 
 extern __init int vt_init(void);
-
-
 #endif

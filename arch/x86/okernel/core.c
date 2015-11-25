@@ -15,12 +15,13 @@ extern void __ok_schedule(void);
 
 int okernel_enabled;
 
+
 void okernel_schedule_helper(void)
 {
 	int a = 0;
 	
 	a++;
-	//HDEBUG(("called a: (%d)\n", a));
+	HDEBUG(("called a: (%d)\n", a));
 	__ok_schedule();
 }
 
@@ -86,7 +87,6 @@ int okernel_enter(void)
 static int __init okernel_init(void)
 {
 	HDEBUG(("Start initialization...\n"));
-	
 	if((vt_init())){
 		printk(KERN_ERR "okernel: failed to initialize x86 vmx extensions.\n");
 		okernel_enabled = 0;

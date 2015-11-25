@@ -38,10 +38,11 @@
 
 
 #ifdef CONFIG_OKERNEL
+int is_in_vmx_nr_mode(void);
 extern int okernel_enabled;
 int okernel_setup(int* vcpu);
 int okernel_enter(void);
-int in_vmx_nr_mode(void);
+
 void okernel_schedule_helper(void);
 void okernel_dump_stack_info(void);
 #endif 

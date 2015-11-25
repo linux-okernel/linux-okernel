@@ -31,7 +31,15 @@ static u64 ept_phys = 0;
    of CR4.VMXE and so reads of CR4 from a vcpu will not see it set. We do not plan to 
    supported nested use of VMX...
 */
-int in_vmx_nr_mode(void)
+
+
+static int dummy_in_vmx_nr_mode(void)
+{
+	return 0;
+}
+
+
+static int real_in_vmx_nr_mode(void)
 {
 	unsigned long cr4;
 
@@ -41,8 +49,14 @@ int in_vmx_nr_mode(void)
 		return 0;
 	return 1;
 }
-		       
-	
+
+
+static int (*in_vmx_nr_mode)(void) = dummy_in_vmx_nr_mode;	
+
+int is_in_vmx_nr_mode(void)
+{
+	return in_vmx_nr_mode();
+}
 
 static int
 no_cache_region(u64 addr, u64 size)
@@ -739,7 +753,8 @@ int vt_init(void)
 			return -1;
 		}
 	}
+	in_vmx_nr_mode = real_in_vmx_nr_mode;
 	HDEBUG(("Now running in root-mode vmx.\n"));
 	return 0;
 }
-EXPORT_SYMBOL(in_vmx_nr_mode);
+EXPORT_SYMBOL(is_in_vmx_nr_mode);

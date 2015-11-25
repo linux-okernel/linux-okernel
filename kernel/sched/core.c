@@ -3129,7 +3129,7 @@ void __sched __ok_schedule(void)
 
 void  __sched okernel_schedule(void)
 {
-	if(in_vmx_nr_mode()){
+	if(is_in_vmx_nr_mode()){
 		//__ok_schedule();
 		okernel_schedule_helper();
 	} else {
