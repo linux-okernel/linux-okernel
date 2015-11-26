@@ -9,6 +9,11 @@
 #include <asm/vmx.h>
 #include <linux/kvm_types.h>
 
+
+#define GPA_STACK_SIZE  ((unsigned long) 1 << 28) /* 256 megabytes */
+#define GPA_MAP_SIZE    (((unsigned long) 1 << 31) - GPA_STACK_SIZE) /* 1.75 gigabytes */
+#define LG_ALIGN(addr)  ((addr + (1 << 21) - 1) & ~((1 << 21) - 1))
+
 #if !defined(VMX_EPT_AD_BIT)
 #define VMX_EPT_AD_BIT          (1ull << 21)
 #define VMX_EPT_AD_ENABLE_BIT   (1ull << 6)
@@ -102,7 +107,7 @@ struct vmx_vcpu {
 	int vpid;
 	int launched;
 
-	//struct mmu_notifier mmu_notifier;
+	struct mmu_notifier mmu_notifier;
 	spinlock_t ept_lock;
 	unsigned long ept_root;
 	unsigned long eptp;
@@ -129,6 +134,20 @@ struct vmx_vcpu {
 
 extern __init int vmx_init(void);
 extern void vmx_exit(void);
+
+//extern int vmx_launch(struct dune_config *conf, int64_t *ret_code);
+
+extern int vmx_init_ept(struct vmx_vcpu *vcpu);
+extern int vmx_create_ept(struct vmx_vcpu *vcpu);
+extern void vmx_destroy_ept(struct vmx_vcpu *vcpu);
+
+extern int
+vmx_do_ept_fault(struct vmx_vcpu *vcpu, unsigned long gpa,
+                 unsigned long gva, int fault_flags);
+
+extern void vmx_ept_sync_vcpu(struct vmx_vcpu *vcpu);
+extern void vmx_ept_sync_individual_addr(struct vmx_vcpu *vcpu, gpa_t gpa);
+
 
 static __always_inline unsigned long vmcs_readl(unsigned long field)
 {

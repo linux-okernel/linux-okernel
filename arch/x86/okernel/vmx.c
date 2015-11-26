@@ -478,6 +478,53 @@ static void vmcs_load(struct vmcs *vmcs)
 /*-------------------------------------------------------------------------------------*/
 /*  start: vmx__launch releated code                                                   */
 /*-------------------------------------------------------------------------------------*/
+static void __vmx_sync_helper(void *ptr)
+{
+	struct vmx_vcpu *vcpu = ptr;
+
+	ept_sync_context(vcpu->eptp);
+}
+
+struct sync_addr_args {
+	struct vmx_vcpu *vcpu;
+	gpa_t gpa;
+};
+
+
+static void __vmx_sync_individual_addr_helper(void *ptr)
+{
+	struct sync_addr_args *args = ptr;
+
+	ept_sync_individual_addr(args->vcpu->eptp,
+				 (args->gpa & ~(PAGE_SIZE - 1)));
+}
+
+/**
+ * vmx_ept_sync_global - used to evict everything in the EPT
+ * @vcpu: the vcpu
+ */
+void vmx_ept_sync_vcpu(struct vmx_vcpu *vcpu)
+{
+	smp_call_function_single(vcpu->cpu,
+		__vmx_sync_helper, (void *) vcpu, 1);
+}
+
+/**
+ * vmx_ept_sync_individual_addr - used to evict an individual address
+ * @vcpu: the vcpu
+ * @gpa: the guest-physical address
+ */
+void vmx_ept_sync_individual_addr(struct vmx_vcpu *vcpu, gpa_t gpa)
+{
+	struct sync_addr_args args;
+	args.vcpu = vcpu;
+	args.gpa = gpa;
+
+	smp_call_function_single(vcpu->cpu,
+		__vmx_sync_individual_addr_helper, (void *) &args, 1);
+}
+
+
 static u64 construct_eptp(unsigned long root_hpa)
 {
 	u64 eptp;
@@ -526,7 +573,6 @@ static int vmx_allocate_vpid(struct vmx_vcpu *vmx)
 	return vpid >= VMX_NR_VPIDS;
 }
 
-#if 0
 /**
  * vmx_free_vpid - frees a vpid
  * @vmx: the VCPU
@@ -538,7 +584,6 @@ static void vmx_free_vpid(struct vmx_vcpu *vmx)
 		__clear_bit(vmx->vpid, vmx_vpid_bitmap);
 	spin_unlock(&vmx_vpid_lock);
 }
-#endif
 
 /**
  * vmx_create_vcpu - allocates and initializes a new virtual cpu
@@ -563,12 +608,13 @@ static struct vmx_vcpu * vmx_create_vcpu(void)
 	vcpu->cpu = -1;
 	//vcpu->syscall_tbl = (void *) &dune_syscall_tbl;
 
-#if 0
+
 	spin_lock_init(&vcpu->ept_lock);
 	if (vmx_init_ept(vcpu))
 		goto fail_ept;
 	vcpu->eptp = construct_eptp(vcpu->ept_root);
 
+#if 0
 	vmx_get_cpu(vcpu);
 	vmx_setup_vmcs(vcpu);
 	vmx_setup_initial_guest_state(conf);
@@ -582,10 +628,9 @@ static struct vmx_vcpu * vmx_create_vcpu(void)
 		goto fail_ept;
 
 	return vcpu;
-
+#endif
 fail_ept:
 	vmx_free_vpid(vcpu);
-#endif
 fail_vpid:
 	vmx_free_vmcs(vcpu->vmcs);
 fail_vmcs:
