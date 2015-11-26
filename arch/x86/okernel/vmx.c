@@ -82,6 +82,7 @@ static unsigned long *msr_bitmap;
 static DEFINE_PER_CPU(struct vmcs *, vmxarea);
 static DEFINE_PER_CPU(struct desc_ptr, host_gdt);
 static DEFINE_PER_CPU(int, vmx_enabled);
+DEFINE_PER_CPU(struct vmx_vcpu *, local_vcpu);
 
 static struct vmcs_config {
 	int size;
@@ -177,25 +178,178 @@ static inline bool cpu_has_vmx_ept_ad_bits(void)
 	return vmx_capability.ept & VMX_EPT_AD_BIT;
 }
 
-
-
-static void __vmx_disable_intercept_for_msr(unsigned long *msr_bitmap, u32 msr)
+/*-------------------------------------------------------------------------------------*/
+/* code moved                                                                          */
+/*-------------------------------------------------------------------------------------*/
+static inline void __invept(int ext, u64 eptp, gpa_t gpa)
 {
-	int f = sizeof(unsigned long);
-	/*
-	 * See Intel PRM Vol. 3, 20.6.9 (MSR-Bitmap Address). Early manuals
-	 * have the write-low and read-high bitmap offsets the wrong way round.
-	 * We can control MSRs 0x00000000-0x00001fff and 0xc0000000-0xc0001fff.
-	 */
-	if (msr <= 0x1fff) {
-		__clear_bit(msr, msr_bitmap + 0x000 / f); /* read-low */
-		__clear_bit(msr, msr_bitmap + 0x800 / f); /* write-low */
-	} else if ((msr >= 0xc0000000) && (msr <= 0xc0001fff)) {
-		msr &= 0x1fff;
-		__clear_bit(msr, msr_bitmap + 0x400 / f); /* read-high */
-		__clear_bit(msr, msr_bitmap + 0xc00 / f); /* write-high */
-	}
+	struct {
+		u64 eptp, gpa;
+	} operand = {eptp, gpa};
+
+	asm volatile (ASM_VMX_INVEPT
+			/* CF==1 or ZF==1 --> rc = -1 */
+			"; ja 1f ; ud2 ; 1:\n"
+			: : "a" (&operand), "c" (ext) : "cc", "memory");
 }
+
+static inline void ept_sync_global(void)
+{
+	if (cpu_has_vmx_invept_global())
+		__invept(VMX_EPT_EXTENT_GLOBAL, 0, 0);
+}
+
+static inline void ept_sync_context(u64 eptp)
+{
+	if (cpu_has_vmx_invept_context())
+		__invept(VMX_EPT_EXTENT_CONTEXT, eptp, 0);
+	else
+		ept_sync_global();
+}
+
+static inline void ept_sync_individual_addr(u64 eptp, gpa_t gpa)
+{
+	if (cpu_has_vmx_invept_individual_addr())
+		__invept(VMX_EPT_EXTENT_INDIVIDUAL_ADDR,
+				eptp, gpa);
+	else
+		ept_sync_context(eptp);
+}
+
+static inline void __vmxon(u64 addr)
+{
+	asm volatile (ASM_VMX_VMXON_RAX
+			: : "a"(&addr), "m"(addr)
+			: "memory", "cc");
+}
+
+static inline void __vmxoff(void)
+{
+	asm volatile (ASM_VMX_VMXOFF : : : "cc");
+}
+
+static inline void __invvpid(int ext, u16 vpid, gva_t gva)
+{
+    struct {
+	u64 vpid : 16;
+	u64 rsvd : 48;
+	u64 gva;
+    } operand = { vpid, 0, gva };
+
+    asm volatile (ASM_VMX_INVVPID
+		  /* CF==1 or ZF==1 --> rc = -1 */
+		  "; ja 1f ; ud2 ; 1:"
+		  : : "a"(&operand), "c"(ext) : "cc", "memory");
+}
+
+static inline void vpid_sync_vcpu_single(u16 vpid)
+{
+	if (vpid == 0)
+		return;
+
+	if (cpu_has_vmx_invvpid_single())
+		__invvpid(VMX_VPID_EXTENT_SINGLE_CONTEXT, vpid, 0);
+}
+
+static inline void vpid_sync_vcpu_global(void)
+{
+	if (cpu_has_vmx_invvpid_global())
+		__invvpid(VMX_VPID_EXTENT_ALL_CONTEXT, 0, 0);
+}
+
+static inline void vpid_sync_context(u16 vpid)
+{
+	if (cpu_has_vmx_invvpid_single())
+		vpid_sync_vcpu_single(vpid);
+	else
+		vpid_sync_vcpu_global();
+}
+
+/*--------------------------------------------------------------------------------------------*/
+
+
+static void vmcs_clear(struct vmcs *vmcs)
+{
+	u64 phys_addr = __pa(vmcs);
+	u8 error;
+
+	asm volatile (ASM_VMX_VMCLEAR_RAX "; setna %0"
+		      : "=qm"(error) : "a"(&phys_addr), "m"(phys_addr)
+		      : "cc", "memory");
+	if (error)
+		printk(KERN_ERR "kvm: vmclear fail: %p/%llx\n",
+		       vmcs, phys_addr);
+}
+
+static void vmcs_load(struct vmcs *vmcs)
+{
+	u64 phys_addr = __pa(vmcs);
+	u8 error;
+
+	asm volatile (ASM_VMX_VMPTRLD_RAX "; setna %0"
+			: "=qm"(error) : "a"(&phys_addr), "m"(phys_addr)
+			: "cc", "memory");
+	if (error)
+		printk(KERN_ERR "vmx: vmptrld %p/%llx failed\n",
+		       vmcs, phys_addr);
+}
+
+static __always_inline u16 vmcs_read16(unsigned long field)
+{
+	return vmcs_readl(field);
+}
+
+static __always_inline u32 vmcs_read32(unsigned long field)
+{
+	return vmcs_readl(field);
+}
+
+static __always_inline u64 vmcs_read64(unsigned long field)
+{
+#ifdef CONFIG_X86_64
+	return vmcs_readl(field);
+#else
+	return vmcs_readl(field) | ((u64)vmcs_readl(field+1) << 32);
+#endif
+}
+
+static noinline void vmwrite_error(unsigned long field, unsigned long value)
+{
+	printk(KERN_ERR "vmwrite error: reg %lx value %lx (err %d)\n",
+	       field, value, vmcs_read32(VM_INSTRUCTION_ERROR));
+	dump_stack();
+}
+
+static void vmcs_writel(unsigned long field, unsigned long value)
+{
+	u8 error;
+
+	asm volatile (ASM_VMX_VMWRITE_RAX_RDX "; setna %0"
+		       : "=q"(error) : "a"(value), "d"(field) : "cc");
+	if (unlikely(error))
+		vmwrite_error(field, value);
+}
+
+static void vmcs_write16(unsigned long field, u16 value)
+{
+	vmcs_writel(field, value);
+}
+
+static void vmcs_write32(unsigned long field, u32 value)
+{
+	vmcs_writel(field, value);
+}
+
+static void vmcs_write64(unsigned long field, u64 value)
+{
+	vmcs_writel(field, value);
+#ifndef CONFIG_X86_64
+	asm volatile ("");
+	vmcs_writel(field+1, value >> 32);
+#endif
+}
+
+
 
 static __init int adjust_vmx_controls(u32 ctl_min, u32 ctl_opt,
 				      u32 msr, u32 *result)
@@ -335,40 +489,7 @@ static __init int setup_vmcs_config(struct vmcs_config *vmcs_conf)
 	return 0;
 }
 
-static inline void __invept(int ext, u64 eptp, gpa_t gpa)
-{
-	struct {
-		u64 eptp, gpa;
-	} operand = {eptp, gpa};
 
-	asm volatile (ASM_VMX_INVEPT
-			/* CF==1 or ZF==1 --> rc = -1 */
-			"; ja 1f ; ud2 ; 1:\n"
-			: : "a" (&operand), "c" (ext) : "cc", "memory");
-}
-
-static inline void ept_sync_global(void)
-{
-	if (cpu_has_vmx_invept_global())
-		__invept(VMX_EPT_EXTENT_GLOBAL, 0, 0);
-}
-
-static inline void ept_sync_context(u64 eptp)
-{
-	if (cpu_has_vmx_invept_context())
-		__invept(VMX_EPT_EXTENT_CONTEXT, eptp, 0);
-	else
-		ept_sync_global();
-}
-
-static inline void ept_sync_individual_addr(u64 eptp, gpa_t gpa)
-{
-	if (cpu_has_vmx_invept_individual_addr())
-		__invept(VMX_EPT_EXTENT_INDIVIDUAL_ADDR,
-				eptp, gpa);
-	else
-		ept_sync_context(eptp);
-}
 
 
 
@@ -398,86 +519,186 @@ static void vmx_free_vmcs(struct vmcs *vmcs)
 	free_pages((unsigned long)vmcs, vmcs_config.order);
 }
 
-static inline void __vmxon(u64 addr)
-{
-	asm volatile (ASM_VMX_VMXON_RAX
-			: : "a"(&addr), "m"(addr)
-			: "memory", "cc");
-}
 
-static inline void __vmxoff(void)
-{
-	asm volatile (ASM_VMX_VMXOFF : : : "cc");
-}
 
-static inline void __invvpid(int ext, u16 vpid, gva_t gva)
-{
-    struct {
-	u64 vpid : 16;
-	u64 rsvd : 48;
-	u64 gva;
-    } operand = { vpid, 0, gva };
-
-    asm volatile (ASM_VMX_INVVPID
-		  /* CF==1 or ZF==1 --> rc = -1 */
-		  "; ja 1f ; ud2 ; 1:"
-		  : : "a"(&operand), "c"(ext) : "cc", "memory");
-}
-
-static inline void vpid_sync_vcpu_single(u16 vpid)
-{
-	if (vpid == 0)
-		return;
-
-	if (cpu_has_vmx_invvpid_single())
-		__invvpid(VMX_VPID_EXTENT_SINGLE_CONTEXT, vpid, 0);
-}
-
-static inline void vpid_sync_vcpu_global(void)
-{
-	if (cpu_has_vmx_invvpid_global())
-		__invvpid(VMX_VPID_EXTENT_ALL_CONTEXT, 0, 0);
-}
-
-static inline void vpid_sync_context(u16 vpid)
-{
-	if (cpu_has_vmx_invvpid_single())
-		vpid_sync_vcpu_single(vpid);
-	else
-		vpid_sync_vcpu_global();
-}
-
-#if 0
-static void vmcs_clear(struct vmcs *vmcs)
-{
-	u64 phys_addr = __pa(vmcs);
-	u8 error;
-
-	asm volatile (ASM_VMX_VMCLEAR_RAX "; setna %0"
-		      : "=qm"(error) : "a"(&phys_addr), "m"(phys_addr)
-		      : "cc", "memory");
-	if (error)
-		printk(KERN_ERR "kvm: vmclear fail: %p/%llx\n",
-		       vmcs, phys_addr);
-}
-
-static void vmcs_load(struct vmcs *vmcs)
-{
-	u64 phys_addr = __pa(vmcs);
-	u8 error;
-
-	asm volatile (ASM_VMX_VMPTRLD_RAX "; setna %0"
-			: "=qm"(error) : "a"(&phys_addr), "m"(phys_addr)
-			: "cc", "memory");
-	if (error)
-		printk(KERN_ERR "vmx: vmptrld %p/%llx failed\n",
-		       vmcs, phys_addr);
-}
-#endif
 
 /*-------------------------------------------------------------------------------------*/
 /*  start: vmx__launch releated code                                                   */
 /*-------------------------------------------------------------------------------------*/
+/*
+ * Set up the vmcs's constant host-state fields, i.e., host-state fields that
+ * will not change in the lifetime of the guest.
+ * Note that host-state that does change is set elsewhere. E.g., host-state
+ * that is set differently for each CPU is set in vmx_vcpu_load(), not here.
+ */
+#if 0
+static void vmx_setup_constant_host_state(void)
+{
+	u32 low32, high32;
+	unsigned long tmpl;
+	struct desc_ptr dt;
+
+	vmcs_writel(HOST_CR0, read_cr0() & ~X86_CR0_TS);  /* 22.2.3 */
+	vmcs_writel(HOST_CR4, read_cr4());  /* 22.2.3, 22.2.5 */
+	vmcs_writel(HOST_CR3, read_cr3());  /* 22.2.3 */
+
+	vmcs_write16(HOST_CS_SELECTOR, __KERNEL_CS);  /* 22.2.4 */
+	vmcs_write16(HOST_DS_SELECTOR, __KERNEL_DS);  /* 22.2.4 */
+	vmcs_write16(HOST_ES_SELECTOR, __KERNEL_DS);  /* 22.2.4 */
+	vmcs_write16(HOST_SS_SELECTOR, __KERNEL_DS);  /* 22.2.4 */
+	vmcs_write16(HOST_TR_SELECTOR, GDT_ENTRY_TSS*8);  /* 22.2.4 */
+
+	native_store_idt(&dt);
+	vmcs_writel(HOST_IDTR_BASE, dt.address);   /* 22.2.4 */
+
+	asm("mov $.Lkvm_vmx_return, %0" : "=r"(tmpl));
+	vmcs_writel(HOST_RIP, tmpl); /* 22.2.5 */
+
+	rdmsr(MSR_IA32_SYSENTER_CS, low32, high32);
+	vmcs_write32(HOST_IA32_SYSENTER_CS, low32);
+	rdmsrl(MSR_IA32_SYSENTER_EIP, tmpl);
+	vmcs_writel(HOST_IA32_SYSENTER_EIP, tmpl);   /* 22.2.3 */
+
+	rdmsr(MSR_EFER, low32, high32);
+	vmcs_write32(HOST_IA32_EFER, low32);
+
+	if (vmcs_config.vmexit_ctrl & VM_EXIT_LOAD_IA32_PAT) {
+		rdmsr(MSR_IA32_CR_PAT, low32, high32);
+		vmcs_write64(HOST_IA32_PAT, low32 | ((u64) high32 << 32));
+	}
+
+	vmcs_write16(HOST_FS_SELECTOR, 0);            /* 22.2.4 */
+	vmcs_write16(HOST_GS_SELECTOR, 0);            /* 22.2.4 */
+
+#ifdef CONFIG_X86_64
+	rdmsrl(MSR_FS_BASE, tmpl);
+	vmcs_writel(HOST_FS_BASE, tmpl); /* 22.2.4 */
+	rdmsrl(MSR_GS_BASE, tmpl);
+	vmcs_writel(HOST_GS_BASE, tmpl); /* 22.2.4 */
+#else
+	vmcs_writel(HOST_FS_BASE, 0); /* 22.2.4 */
+	vmcs_writel(HOST_GS_BASE, 0); /* 22.2.4 */
+#endif
+}
+#endif
+
+static inline u16 vmx_read_ldt(void)
+{
+	u16 ldt;
+	asm("sldt %0" : "=g"(ldt));
+	return ldt;
+}
+
+static unsigned long segment_base(u16 selector)
+{
+	struct desc_ptr *gdt = this_cpu_ptr(&host_gdt);
+	struct desc_struct *d;
+	unsigned long table_base;
+	unsigned long v;
+
+	if (!(selector & ~3))
+		return 0;
+
+	table_base = gdt->address;
+
+	if (selector & 4) {           /* from ldt */
+		u16 ldt_selector = vmx_read_ldt();
+
+		if (!(ldt_selector & ~3))
+			return 0;
+
+		table_base = segment_base(ldt_selector);
+	}
+	d = (struct desc_struct *)(table_base + (selector & ~7));
+	v = get_desc_base(d);
+#ifdef CONFIG_X86_64
+       if (d->s == 0 && (d->type == 2 || d->type == 9 || d->type == 11))
+               v |= ((unsigned long)((struct ldttss_desc64 *)d)->base3) << 32;
+#endif
+	return v;
+}
+
+static inline unsigned long vmx_read_tr_base(void)
+{
+	u16 tr;
+	asm("str %0" : "=g"(tr));
+	return segment_base(tr);
+}
+
+static void __vmx_setup_cpu(void)
+{
+	struct desc_ptr *gdt = this_cpu_ptr(&host_gdt);
+	unsigned long sysenter_esp;
+	unsigned long tmpl;
+
+	/*
+	 * Linux uses per-cpu TSS and GDT, so set these when switching
+	 * processors.
+	 */
+	vmcs_writel(HOST_TR_BASE, vmx_read_tr_base()); /* 22.2.4 */
+	vmcs_writel(HOST_GDTR_BASE, gdt->address);   /* 22.2.4 */
+
+	rdmsrl(MSR_IA32_SYSENTER_ESP, sysenter_esp);
+	vmcs_writel(HOST_IA32_SYSENTER_ESP, sysenter_esp); /* 22.2.3 */
+
+	rdmsrl(MSR_FS_BASE, tmpl);
+	vmcs_writel(HOST_FS_BASE, tmpl); /* 22.2.4 */
+	rdmsrl(MSR_GS_BASE, tmpl);
+	vmcs_writel(HOST_GS_BASE, tmpl); /* 22.2.4 */
+}
+
+static void __vmx_get_cpu_helper(void *ptr)
+{
+	struct vmx_vcpu *vcpu = ptr;
+
+	BUG_ON(raw_smp_processor_id() != vcpu->cpu);
+	vmcs_clear(vcpu->vmcs);
+	if (__this_cpu_read(local_vcpu) == vcpu)
+		__this_cpu_write(local_vcpu, NULL);
+}
+
+/**
+ * vmx_get_cpu - called before using a cpu
+ * @vcpu: VCPU that will be loaded.
+ *
+ * Disables preemption. Call vmx_put_cpu() when finished.
+ */
+static void vmx_get_cpu(struct vmx_vcpu *vcpu)
+{
+	int cur_cpu = get_cpu();
+
+	if (__this_cpu_read(local_vcpu) != vcpu) {
+		__this_cpu_write(local_vcpu, vcpu);
+
+		if (vcpu->cpu != cur_cpu) {
+			if (vcpu->cpu >= 0)
+				smp_call_function_single(vcpu->cpu,
+					__vmx_get_cpu_helper, (void *) vcpu, 1);
+			else
+				vmcs_clear(vcpu->vmcs);
+
+			vpid_sync_context(vcpu->vpid);
+			ept_sync_context(vcpu->eptp);
+
+			vcpu->launched = 0;
+			vmcs_load(vcpu->vmcs);
+			__vmx_setup_cpu();
+			vcpu->cpu = cur_cpu;
+		} else {
+			vmcs_load(vcpu->vmcs);
+		}
+	}
+}
+
+/**
+ * vmx_put_cpu - called after using a cpu
+ * @vcpu: VCPU that was loaded.
+ */
+static void vmx_put_cpu(struct vmx_vcpu *vcpu)
+{
+	put_cpu();
+}
+
 static void __vmx_sync_helper(void *ptr)
 {
 	struct vmx_vcpu *vcpu = ptr;
@@ -551,6 +772,132 @@ static struct vmcs *vmx_alloc_vmcs(void)
 	return __vmx_alloc_vmcs(raw_smp_processor_id());
 }
 
+static void __vmx_disable_intercept_for_msr(unsigned long *msr_bitmap, u32 msr)
+{
+	int f = sizeof(unsigned long);
+	/*
+	 * See Intel PRM Vol. 3, 20.6.9 (MSR-Bitmap Address). Early manuals
+	 * have the write-low and read-high bitmap offsets the wrong way round.
+	 * We can control MSRs 0x00000000-0x00001fff and 0xc0000000-0xc0001fff.
+	 */
+	if (msr <= 0x1fff) {
+		__clear_bit(msr, msr_bitmap + 0x000 / f); /* read-low */
+		__clear_bit(msr, msr_bitmap + 0x800 / f); /* write-low */
+	} else if ((msr >= 0xc0000000) && (msr <= 0xc0001fff)) {
+		msr &= 0x1fff;
+		__clear_bit(msr, msr_bitmap + 0x400 / f); /* read-high */
+		__clear_bit(msr, msr_bitmap + 0xc00 / f); /* write-high */
+	}
+}
+
+static void setup_msr(struct vmx_vcpu *vcpu)
+{
+	int set[] = { MSR_LSTAR };
+	struct vmx_msr_entry *e;
+	int sz = sizeof(set) / sizeof(*set);
+	int i;
+
+	sz = 0;
+
+	BUILD_BUG_ON(sz > NR_AUTOLOAD_MSRS);
+
+	vcpu->msr_autoload.nr = sz;
+
+	/* XXX enable only MSRs in set */
+	vmcs_write64(MSR_BITMAP, __pa(msr_bitmap));
+
+	vmcs_write32(VM_EXIT_MSR_STORE_COUNT, vcpu->msr_autoload.nr);
+	vmcs_write32(VM_EXIT_MSR_LOAD_COUNT, vcpu->msr_autoload.nr);
+	vmcs_write32(VM_ENTRY_MSR_LOAD_COUNT, vcpu->msr_autoload.nr);
+
+	vmcs_write64(VM_EXIT_MSR_LOAD_ADDR, __pa(vcpu->msr_autoload.host));
+	vmcs_write64(VM_EXIT_MSR_STORE_ADDR, __pa(vcpu->msr_autoload.guest));
+	vmcs_write64(VM_ENTRY_MSR_LOAD_ADDR, __pa(vcpu->msr_autoload.guest));
+
+	for (i = 0; i < sz; i++) {
+		uint64_t val;
+
+		e = &vcpu->msr_autoload.host[i];
+		e->index = set[i];
+		rdmsrl(e->index, val);
+		e->value = val;
+
+		e = &vcpu->msr_autoload.guest[i];
+		e->index = set[i];
+	}
+}
+
+
+/**
+ *  vmx_setup_vmcs - configures the vmcs with starting parameters
+ */
+static void vmx_setup_vmcs(struct vmx_vcpu *vcpu)
+{
+	vmcs_write16(VIRTUAL_PROCESSOR_ID, vcpu->vpid);
+	vmcs_write64(VMCS_LINK_POINTER, -1ull); /* 22.3.1.5 */
+
+	/* Control */
+	vmcs_write32(PIN_BASED_VM_EXEC_CONTROL,
+		vmcs_config.pin_based_exec_ctrl);
+
+	vmcs_write32(CPU_BASED_VM_EXEC_CONTROL,
+		vmcs_config.cpu_based_exec_ctrl);
+
+	if (cpu_has_secondary_exec_ctrls()) {
+		vmcs_write32(SECONDARY_VM_EXEC_CONTROL,
+			     vmcs_config.cpu_based_2nd_exec_ctrl);
+	}
+
+	vmcs_write64(EPT_POINTER, vcpu->eptp);
+
+	vmcs_write32(PAGE_FAULT_ERROR_CODE_MASK, 0);
+	vmcs_write32(PAGE_FAULT_ERROR_CODE_MATCH, 0);
+	vmcs_write32(CR3_TARGET_COUNT, 0);           /* 22.2.1 */
+
+	setup_msr(vcpu);
+#if 0
+	if (vmcs_config.vmentry_ctrl & VM_ENTRY_LOAD_IA32_PAT) {
+		u32 msr_low, msr_high;
+		u64 host_pat;
+		rdmsr(MSR_IA32_CR_PAT, msr_low, msr_high);
+		host_pat = msr_low | ((u64) msr_high << 32);
+		/* Write the default value follow host pat */
+		vmcs_write64(GUEST_IA32_PAT, host_pat);
+		/* Keep arch.pat sync with GUEST_IA32_PAT */
+		vmx->vcpu.arch.pat = host_pat;
+	}
+
+	for (i = 0; i < NR_VMX_MSR; ++i) {
+		u32 index = vmx_msr_index[i];
+		u32 data_low, data_high;
+		int j = vmx->nmsrs;
+
+		if (rdmsr_safe(index, &data_low, &data_high) < 0)
+			continue;
+		if (wrmsr_safe(index, data_low, data_high) < 0)
+			continue;
+		vmx->guest_msrs[j].index = i;
+		vmx->guest_msrs[j].data = 0;
+		vmx->guest_msrs[j].mask = -1ull;
+		++vmx->nmsrs;
+	}
+#endif
+
+	vmcs_config.vmentry_ctrl |= VM_ENTRY_IA32E_MODE;
+
+	vmcs_write32(VM_EXIT_CONTROLS, vmcs_config.vmexit_ctrl);
+	vmcs_write32(VM_ENTRY_CONTROLS, vmcs_config.vmentry_ctrl);
+
+	vmcs_writel(CR0_GUEST_HOST_MASK, ~0ul);
+	vmcs_writel(CR4_GUEST_HOST_MASK, ~0ul);
+
+	//kvm_write_tsc(&vmx->vcpu, 0);
+	vmcs_writel(TSC_OFFSET, 0);
+
+	//vmx_setup_constant_host_state();
+}
+
+
 
 /**
  * vmx_allocate_vpid - reserves a vpid and sets it in the VCPU
@@ -614,9 +961,13 @@ static struct vmx_vcpu * vmx_create_vcpu(void)
 		goto fail_ept;
 	vcpu->eptp = construct_eptp(vcpu->ept_root);
 
-#if 0
+
 	vmx_get_cpu(vcpu);
 	vmx_setup_vmcs(vcpu);
+#if 1
+	vmx_put_cpu(vcpu);
+#endif
+#if 0
 	vmx_setup_initial_guest_state(conf);
 	vmx_put_cpu(vcpu);
 
