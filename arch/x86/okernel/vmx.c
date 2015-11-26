@@ -79,6 +79,8 @@ static DEFINE_SPINLOCK(vmx_vpid_lock);
 
 static unsigned long *msr_bitmap;
 
+
+
 static DEFINE_PER_CPU(struct vmcs *, vmxarea);
 static DEFINE_PER_CPU(struct desc_ptr, host_gdt);
 static DEFINE_PER_CPU(int, vmx_enabled);
@@ -96,6 +98,7 @@ static struct vmcs_config {
 } vmcs_config;
 
 struct vmx_capability vmx_capability;
+
 
 
 static inline int dummy_in_vmx_nr_mode(void)
@@ -525,13 +528,13 @@ static void vmx_free_vmcs(struct vmcs *vmcs)
 /*-------------------------------------------------------------------------------------*/
 /*  start: vmx__launch releated code                                                   */
 /*-------------------------------------------------------------------------------------*/
+
 /*
  * Set up the vmcs's constant host-state fields, i.e., host-state fields that
  * will not change in the lifetime of the guest.
  * Note that host-state that does change is set elsewhere. E.g., host-state
  * that is set differently for each CPU is set in vmx_vcpu_load(), not here.
  */
-#if 0
 static void vmx_setup_constant_host_state(void)
 {
 	u32 low32, high32;
@@ -539,7 +542,7 @@ static void vmx_setup_constant_host_state(void)
 	struct desc_ptr dt;
 
 	vmcs_writel(HOST_CR0, read_cr0() & ~X86_CR0_TS);  /* 22.2.3 */
-	vmcs_writel(HOST_CR4, read_cr4());  /* 22.2.3, 22.2.5 */
+	vmcs_writel(HOST_CR4, native_read_cr4());  /* 22.2.3, 22.2.5 */
 	vmcs_writel(HOST_CR3, read_cr3());  /* 22.2.3 */
 
 	vmcs_write16(HOST_CS_SELECTOR, __KERNEL_CS);  /* 22.2.4 */
@@ -580,7 +583,7 @@ static void vmx_setup_constant_host_state(void)
 	vmcs_writel(HOST_GS_BASE, 0); /* 22.2.4 */
 #endif
 }
-#endif
+
 
 static inline u16 vmx_read_ldt(void)
 {
@@ -772,6 +775,180 @@ static struct vmcs *vmx_alloc_vmcs(void)
 	return __vmx_alloc_vmcs(raw_smp_processor_id());
 }
 
+
+/**
+ * vmx_setup_initial_guest_state - configures the initial state of guest registers
+ */
+
+#if 0
+static void vmx_setup_initial_guest_state(struct dune_config *conf)
+{
+
+	/* Need to mask out X64_CR4_VMXE in guest read shadow */
+	unsigned long cr4_mask = X86_CR4_VMXE;
+	unsigned long cr4_shadow; 
+	unsigned long cr4 = X86_CR4_PAE | X86_CR4_VMXE | X86_CR4_OSXMMEXCPT |
+			    X86_CR4_PGE | X86_CR4_OSFXSR;
+
+	unsigned long cr0;
+
+	
+	return;
+	
+#if 0
+	if (boot_cpu_has(X86_FEATURE_PCID))
+		cr4 |= X86_CR4_PCIDE;
+	if (boot_cpu_has(X86_FEATURE_OSXSAVE))
+		cr4 |= X86_CR4_OSXSAVE;
+	if (boot_cpu_has(X86_FEATURE_FSGSBASE))
+		cr4 |= X86_CR4_FSGSBASE;
+
+       
+	/* configure control and data registers */
+	vmcs_writel(GUEST_CR0, X86_CR0_PG | X86_CR0_PE | X86_CR0_WP |
+			       X86_CR0_MP | X86_CR0_ET | X86_CR0_NE);
+	vmcs_writel(CR0_READ_SHADOW, X86_CR0_PG | X86_CR0_PE | X86_CR0_WP |
+				     X86_CR0_MP | X86_CR0_ET | X86_CR0_NE);
+#endif
+	
+	/* Most likely will need to adjust */
+	cr4 = native_read_cr4();
+	cr4_shadow = (cr4 & ~X86_CR4_VMXE);
+	vmcs_writel(GUEST_CR0, read_cr0);	
+	vmcs_writel(CR0_READ_SHADOW, read_cr0);
+
+	vmcs_writel(GUEST_CR3, read_cr3);
+
+
+	/* Make sure VMXE is not visible under a vcpu: we use this currently */
+	/* as a way of detecting whether in root or NR mode. */
+	vmcs_writel(GUEST_CR4, cr4);
+	vmcs_writel(CR4_GUEST_HOST_MASK, cr4_mask);
+	vmcs_writel(CR4_READ_SHADOW, cr4_shadow);
+
+
+	/* Most of this we can set from the host state apart. Need to make
+	   sure we clone the kernel stack pages in the EPT mapping.
+	*/
+
+
+#if 0
+	/* Need to set jmp address as RIP */
+	vmcs_writel(GUEST_IA32_EFER, EFER_LME | EFER_LMA |
+				     EFER_SCE | EFER_FFXSR);
+	vmcs_writel(GUEST_GDTR_BASE, 0);
+	vmcs_writel(GUEST_GDTR_LIMIT, 0);
+	vmcs_writel(GUEST_IDTR_BASE, 0);
+	vmcs_writel(GUEST_IDTR_LIMIT, 0);
+	vmcs_writel(GUEST_RIP, conf->rip);
+	vmcs_writel(GUEST_RSP, conf->rsp);
+	vmcs_writel(GUEST_RFLAGS, 0x02);
+	vmcs_writel(GUEST_DR7, 0);
+#else
+
+	asm_rdsp(&rsp);
+	
+	/* Need to set jmp address as RIP */
+	vmcs_writel(GUEST_IA32_EFER, EFER_LME | EFER_LMA |
+				     EFER_SCE | EFER_FFXSR);
+	vmcs_writel(GUEST_GDTR_BASE, 0);
+	vmcs_writel(GUEST_GDTR_LIMIT, 0);
+	vmcs_writel(GUEST_IDTR_BASE, 0);
+	vmcs_writel(GUEST_IDTR_LIMIT, 0);
+	vmcs_writel(GUEST_RIP, rip);
+	vmcs_writel(GUEST_RSP, rsp);
+	vmcs_writel(GUEST_RFLAGS, 0x02);
+	vmcs_writel(GUEST_DR7, 0);
+
+#endif
+#if 0	
+	/* guest segment bases */
+	vmcs_writel(GUEST_CS_BASE, 0);
+	vmcs_writel(GUEST_DS_BASE, 0);
+	vmcs_writel(GUEST_ES_BASE, 0);
+	vmcs_writel(GUEST_GS_BASE, 0);
+	vmcs_writel(GUEST_SS_BASE, 0);
+	rdmsrl(MSR_FS_BASE, tmpl);
+	vmcs_writel(GUEST_FS_BASE, tmpl);
+#else
+	/* guest segment bases */
+#endif
+#if 1
+	/* guest segment access rights */
+	vmcs_writel(GUEST_CS_AR_BYTES, 0xA09B);
+	vmcs_writel(GUEST_DS_AR_BYTES, 0xA093);
+	vmcs_writel(GUEST_ES_AR_BYTES, 0xA093);
+	vmcs_writel(GUEST_FS_AR_BYTES, 0xA093);
+	vmcs_writel(GUEST_GS_AR_BYTES, 0xA093);
+	vmcs_writel(GUEST_SS_AR_BYTES, 0xA093);
+#else
+      	/* guest segment access rights */
+#endif	
+#if 1
+	/* guest segment limits */
+	vmcs_write32(GUEST_CS_LIMIT, 0xFFFFFFFF);
+	vmcs_write32(GUEST_DS_LIMIT, 0xFFFFFFFF);
+	vmcs_write32(GUEST_ES_LIMIT, 0xFFFFFFFF);
+	vmcs_write32(GUEST_FS_LIMIT, 0xFFFFFFFF);
+	vmcs_write32(GUEST_GS_LIMIT, 0xFFFFFFFF);
+	vmcs_write32(GUEST_SS_LIMIT, 0xFFFFFFFF);
+#else
+	/* guest segment limits */
+#endif
+#if 0
+	/* configure segment selectors */
+	vmcs_write16(GUEST_CS_SELECTOR, 0);
+	vmcs_write16(GUEST_DS_SELECTOR, 0);
+	vmcs_write16(GUEST_ES_SELECTOR, 0);
+	vmcs_write16(GUEST_FS_SELECTOR, 0);
+	vmcs_write16(GUEST_GS_SELECTOR, 0);
+	vmcs_write16(GUEST_SS_SELECTOR, 0);
+	vmcs_write16(GUEST_TR_SELECTOR, 0);
+#else
+	/* configure segment selectors */
+		/* configure segment selectors */
+	vmcs_write16(GUEST_CS_SELECTOR, __KERNEL_CS);
+	vmcs_write16(GUEST_DS_SELECTOR, __KERNEL_DS);
+	vmcs_write16(GUEST_ES_SELECTOR, __KERNEL_DS);
+	vmcs_write16(GUEST_FS_SELECTOR, 0);
+	vmcs_write16(GUEST_GS_SELECTOR, 0);
+	vmcs_write16(GUEST_SS_SELECTOR, __KERNEL_DS);
+	vmcs_write16(GUEST_TR_SELECTOR, GDT_ENTRY_TSS*8);
+#endif
+#if 0
+	/* guest LDTR */
+	vmcs_write16(GUEST_LDTR_SELECTOR, 0);
+	vmcs_writel(GUEST_LDTR_AR_BYTES, 0x0082);
+	vmcs_writel(GUEST_LDTR_BASE, 0);
+	vmcs_writel(GUEST_LDTR_LIMIT, 0);
+#else
+	/* guest LDTR */
+#endif
+#if 0
+	/* guest TSS */
+	vmcs_writel(GUEST_TR_BASE, 0);
+	vmcs_writel(GUEST_TR_AR_BYTES, 0x0080 | AR_TYPE_BUSY_64_TSS);
+	vmcs_writel(GUEST_TR_LIMIT, 0xff);
+#else
+	/* guest TSS */
+#endif
+#if 0
+	/* initialize sysenter */
+	vmcs_write32(GUEST_SYSENTER_CS, 0);
+	vmcs_writel(GUEST_SYSENTER_ESP, 0);
+	vmcs_writel(GUEST_SYSENTER_EIP, 0);
+#else
+	/* initialize sysenter */
+#endif
+	/* other random initialization */
+	vmcs_write32(GUEST_ACTIVITY_STATE, GUEST_ACTIVITY_ACTIVE);
+	vmcs_write32(GUEST_INTERRUPTIBILITY_INFO, 0);
+	vmcs_write32(GUEST_PENDING_DBG_EXCEPTIONS, 0);
+	vmcs_write64(GUEST_IA32_DEBUGCTL, 0);
+	vmcs_write32(VM_ENTRY_INTR_INFO_FIELD, 0);  /* 22.2.1 */
+}
+#endif
+
 static void __vmx_disable_intercept_for_msr(unsigned long *msr_bitmap, u32 msr)
 {
 	int f = sizeof(unsigned long);
@@ -893,8 +1070,7 @@ static void vmx_setup_vmcs(struct vmx_vcpu *vcpu)
 
 	//kvm_write_tsc(&vmx->vcpu, 0);
 	vmcs_writel(TSC_OFFSET, 0);
-
-	//vmx_setup_constant_host_state();
+	vmx_setup_constant_host_state();
 }
 
 
@@ -932,6 +1108,8 @@ static void vmx_free_vpid(struct vmx_vcpu *vmx)
 	spin_unlock(&vmx_vpid_lock);
 }
 
+
+
 /**
  * vmx_create_vcpu - allocates and initializes a new virtual cpu
  *
@@ -940,18 +1118,25 @@ static void vmx_free_vpid(struct vmx_vcpu *vmx)
 static struct vmx_vcpu * vmx_create_vcpu(void)
 {
 	struct vmx_vcpu *vcpu = kmalloc(sizeof(struct vmx_vcpu), GFP_KERNEL);
+
+	HDEBUG(("0\n"));
 	if (!vcpu)
 		return NULL;
 
+	HDEBUG(("1\n"));
 	memset(vcpu, 0, sizeof(*vcpu));
 
 	vcpu->vmcs = vmx_alloc_vmcs();
+
+	HDEBUG(("2\n"));
+	
 	if (!vcpu->vmcs)
 		goto fail_vmcs;
 
 	if (vmx_allocate_vpid(vcpu))
 		goto fail_vpid;
 
+	HDEBUG(("3\n"));
 	vcpu->cpu = -1;
 	//vcpu->syscall_tbl = (void *) &dune_syscall_tbl;
 
@@ -959,16 +1144,22 @@ static struct vmx_vcpu * vmx_create_vcpu(void)
 	spin_lock_init(&vcpu->ept_lock);
 	if (vmx_init_ept(vcpu))
 		goto fail_ept;
+
+	HDEBUG(("4\n"));
 	vcpu->eptp = construct_eptp(vcpu->ept_root);
 
+	HDEBUG(("5\n"));
 
 	vmx_get_cpu(vcpu);
+	HDEBUG(("6\n"));
 	vmx_setup_vmcs(vcpu);
 #if 1
+	HDEBUG(("7\n"));
 	vmx_put_cpu(vcpu);
-#endif
-#if 0
+	return vcpu;
+#else
 	vmx_setup_initial_guest_state(conf);
+	
 	vmx_put_cpu(vcpu);
 
 	if (cpu_has_vmx_ept_ad_bits()) {
@@ -992,20 +1183,174 @@ fail_vmcs:
 
 
 
+#ifdef CONFIG_X86_64
+#define R "r"
+#define Q "q"
+#else
+#define R "e"
+#define Q "l"
+#endif
+
 /**
- * vmx_launch - the main loop for a VMX Dune process
- * @conf: the launch configuration
+ * vmx_run_vcpu - launches the CPU into non-root mode
+ * @vcpu: the vmx instance to launch
+ */
+static int __noclone vmx_run_vcpu(struct vmx_vcpu *vcpu)
+{
+	asm(
+		/* Store host registers */
+		"push %%"R"dx; push %%"R"bp;"
+		"push %%"R"cx \n\t" /* placeholder for guest rcx */
+		"push %%"R"cx \n\t"
+		"cmp %%"R"sp, %c[host_rsp](%0) \n\t"
+		"je 1f \n\t"
+		"mov %%"R"sp, %c[host_rsp](%0) \n\t"
+		ASM_VMX_VMWRITE_RSP_RDX "\n\t"
+		"1: \n\t"
+		/* Reload cr2 if changed */
+		"mov %c[cr2](%0), %%"R"ax \n\t"
+		"mov %%cr2, %%"R"dx \n\t"
+		"cmp %%"R"ax, %%"R"dx \n\t"
+		"je 2f \n\t"
+		"mov %%"R"ax, %%cr2 \n\t"
+		"2: \n\t"
+		/* Check if vmlaunch of vmresume is needed */
+		"cmpl $0, %c[launched](%0) \n\t"
+		/* Load guest registers.  Don't clobber flags. */
+		"mov %c[rax](%0), %%"R"ax \n\t"
+		"mov %c[rbx](%0), %%"R"bx \n\t"
+		"mov %c[rdx](%0), %%"R"dx \n\t"
+		"mov %c[rsi](%0), %%"R"si \n\t"
+		"mov %c[rdi](%0), %%"R"di \n\t"
+		"mov %c[rbp](%0), %%"R"bp \n\t"
+#ifdef CONFIG_X86_64
+		"mov %c[r8](%0),  %%r8  \n\t"
+		"mov %c[r9](%0),  %%r9  \n\t"
+		"mov %c[r10](%0), %%r10 \n\t"
+		"mov %c[r11](%0), %%r11 \n\t"
+		"mov %c[r12](%0), %%r12 \n\t"
+		"mov %c[r13](%0), %%r13 \n\t"
+		"mov %c[r14](%0), %%r14 \n\t"
+		"mov %c[r15](%0), %%r15 \n\t"
+#endif
+		"mov %c[rcx](%0), %%"R"cx \n\t" /* kills %0 (ecx) */
+
+		/* Enter guest mode */
+		"jne .Llaunched \n\t"
+		ASM_VMX_VMLAUNCH "\n\t"
+		"jmp .Lkvm_vmx_return \n\t"
+		".Llaunched: " ASM_VMX_VMRESUME "\n\t"
+		".Lkvm_vmx_return: "
+		/* Save guest registers, load host registers, keep flags */
+		"mov %0, %c[wordsize](%%"R"sp) \n\t"
+		"pop %0 \n\t"
+		"mov %%"R"ax, %c[rax](%0) \n\t"
+		"mov %%"R"bx, %c[rbx](%0) \n\t"
+		"pop"Q" %c[rcx](%0) \n\t"
+		"mov %%"R"dx, %c[rdx](%0) \n\t"
+		"mov %%"R"si, %c[rsi](%0) \n\t"
+		"mov %%"R"di, %c[rdi](%0) \n\t"
+		"mov %%"R"bp, %c[rbp](%0) \n\t"
+#ifdef CONFIG_X86_64
+		"mov %%r8,  %c[r8](%0) \n\t"
+		"mov %%r9,  %c[r9](%0) \n\t"
+		"mov %%r10, %c[r10](%0) \n\t"
+		"mov %%r11, %c[r11](%0) \n\t"
+		"mov %%r12, %c[r12](%0) \n\t"
+		"mov %%r13, %c[r13](%0) \n\t"
+		"mov %%r14, %c[r14](%0) \n\t"
+		"mov %%r15, %c[r15](%0) \n\t"
+#endif
+		"mov %%rax, %%r10 \n\t"
+		"mov %%rdx, %%r11 \n\t"
+
+		"mov %%cr2, %%"R"ax   \n\t"
+		"mov %%"R"ax, %c[cr2](%0) \n\t"
+
+		"pop  %%"R"bp; pop  %%"R"dx \n\t"
+		"setbe %c[fail](%0) \n\t"
+
+		"mov $" __stringify(__USER_DS) ", %%rax \n\t"
+		"mov %%rax, %%ds \n\t"
+		"mov %%rax, %%es \n\t"
+	      : : "c"(vcpu), "d"((unsigned long)HOST_RSP),
+		[launched]"i"(offsetof(struct vmx_vcpu, launched)),
+		[fail]"i"(offsetof(struct vmx_vcpu, fail)),
+		[host_rsp]"i"(offsetof(struct vmx_vcpu, host_rsp)),
+		[rax]"i"(offsetof(struct vmx_vcpu, regs[VCPU_REGS_RAX])),
+		[rbx]"i"(offsetof(struct vmx_vcpu, regs[VCPU_REGS_RBX])),
+		[rcx]"i"(offsetof(struct vmx_vcpu, regs[VCPU_REGS_RCX])),
+		[rdx]"i"(offsetof(struct vmx_vcpu, regs[VCPU_REGS_RDX])),
+		[rsi]"i"(offsetof(struct vmx_vcpu, regs[VCPU_REGS_RSI])),
+		[rdi]"i"(offsetof(struct vmx_vcpu, regs[VCPU_REGS_RDI])),
+		[rbp]"i"(offsetof(struct vmx_vcpu, regs[VCPU_REGS_RBP])),
+#ifdef CONFIG_X86_64
+		[r8]"i"(offsetof(struct vmx_vcpu, regs[VCPU_REGS_R8])),
+		[r9]"i"(offsetof(struct vmx_vcpu, regs[VCPU_REGS_R9])),
+		[r10]"i"(offsetof(struct vmx_vcpu, regs[VCPU_REGS_R10])),
+		[r11]"i"(offsetof(struct vmx_vcpu, regs[VCPU_REGS_R11])),
+		[r12]"i"(offsetof(struct vmx_vcpu, regs[VCPU_REGS_R12])),
+		[r13]"i"(offsetof(struct vmx_vcpu, regs[VCPU_REGS_R13])),
+		[r14]"i"(offsetof(struct vmx_vcpu, regs[VCPU_REGS_R14])),
+		[r15]"i"(offsetof(struct vmx_vcpu, regs[VCPU_REGS_R15])),
+#endif
+		[cr2]"i"(offsetof(struct vmx_vcpu, cr2)),
+		[wordsize]"i"(sizeof(ulong))
+	      : "cc", "memory"
+		, R"ax", R"bx", R"di", R"si"
+#ifdef CONFIG_X86_64
+		, "r8", "r9", "r10", "r11", "r12", "r13", "r14", "r15"
+#endif
+	);
+
+	vcpu->launched = 1;
+
+	if (unlikely(vcpu->fail)) {
+		printk(KERN_ERR "vmx: failure detected (err %x)\n",
+		       vmcs_read32(VM_INSTRUCTION_ERROR));
+		return VMX_EXIT_REASONS_FAILED_VMENTRY;
+	}
+
+	return vmcs_read32(VM_EXIT_REASON);
+
+#if 0
+	vmx->idt_vectoring_info = vmcs_read32(IDT_VECTORING_INFO_FIELD);
+	vmx_complete_atomic_exit(vmx);
+	vmx_recover_nmi_blocking(vmx);
+	vmx_complete_interrupts(vmx);
+#endif
+}
+
+
+/**
+ * vmx_launch - the main loop for a cloned VMX okernel process (thread)
  */
 int vmx_launch(int64_t *ret_code)
 {
-	int ret, done = 0;
-	struct vmx_vcpu *vcpu = vmx_create_vcpu();
+	//int ret, done = 0;
+	unsigned long c_rip;
+	
+	struct vmx_vcpu *vcpu;
+
+	c_rip = cloned_thread_rip;
+
+	HDEBUG(("c_rip: (#%#lx)\n", c_rip));
+#if 1
+	vcpu = vmx_create_vcpu();
+	
 	if (!vcpu)
 		return -ENOMEM;
-
+	
+	if(ret_code){
+		(void)vmx_run_vcpu(vcpu);
+	}
+	
 	printk(KERN_ERR "vmx: created VCPU (VPID %d)\n",
 	       vcpu->vpid);
 
+	return 1;
+#endif
+}
 #if 0
 	while (1) {
 		vmx_get_cpu(vcpu);
@@ -1093,10 +1438,11 @@ int vmx_launch(int64_t *ret_code)
 
 	*ret_code = vcpu->ret_code;
 	vmx_destroy_vcpu(vcpu);
-#endif
 	return 0;
 }
+#endif
 
+	
 /*-------------------------------------------------------------------------------------*/
 /*  end: vmx__launch releated code                                                     */
 /*-------------------------------------------------------------------------------------*/
@@ -1230,7 +1576,7 @@ static void vmx_free_vmxon_areas(void)
 int __init vmx_init(void)
 {
 	int r, cpu;
-
+	
         if (!cpu_has_vmx()) {
 		printk(KERN_ERR "vmx: CPU does not support VT-x\n");
 		return -EIO;
@@ -1296,6 +1642,7 @@ int __init vmx_init(void)
 	}
 	
 	in_vmx_nr_mode = real_in_vmx_nr_mode;
+	
         return 0;
 
 	

@@ -9,6 +9,10 @@
 #include <asm/vmx.h>
 #include <linux/kvm_types.h>
 
+/* Where our cloned thread will initially start from initially in VMX non-root mode */
+extern unsigned long cloned_thread_rip;
+
+
 
 #define GPA_STACK_SIZE  ((unsigned long) 1 << 28) /* 256 megabytes */
 #define GPA_MAP_SIZE    (((unsigned long) 1 << 31) - GPA_STACK_SIZE) /* 1.75 gigabytes */
@@ -59,6 +63,16 @@ void write_cr4(unsigned long cr4_val)
 	__write_cr4(cr4_val);
 }
 #endif
+
+static inline void
+asm_rdrsp (ulong *rsp)
+{
+#ifdef __x86_64__
+        asm volatile ("mov %%rsp,%0" : "=rm" (*rsp));
+#else
+        asm volatile ("mov %%esp,%0" : "=rm" (*rsp));
+#endif
+}
 
 DECLARE_PER_CPU(struct vmx_vcpu *, local_vcpu);
 
@@ -134,9 +148,7 @@ struct vmx_vcpu {
 
 extern __init int vmx_init(void);
 extern void vmx_exit(void);
-
-//extern int vmx_launch(struct dune_config *conf, int64_t *ret_code);
-
+extern int vmx_launch(int64_t *ret_code);
 extern int vmx_init_ept(struct vmx_vcpu *vcpu);
 extern int vmx_create_ept(struct vmx_vcpu *vcpu);
 extern void vmx_destroy_ept(struct vmx_vcpu *vcpu);

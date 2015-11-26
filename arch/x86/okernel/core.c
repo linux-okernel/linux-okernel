@@ -5,8 +5,6 @@
 #include <linux/fs.h>
 #include <linux/okernel.h>
 
-//#include "constants.h"
-//#include "vt.h"
 #include "vmx.h"
 
 MODULE_LICENSE("GPL");
@@ -15,7 +13,7 @@ MODULE_DESCRIPTION("Okernel intra-kernel protection");
 extern void __ok_schedule(void);
 
 int okernel_enabled;
-
+unsigned long cloned_thread_rip;
 
 void okernel_schedule_helper(void)
 {
@@ -32,8 +30,6 @@ int okernel_setup(int *vcpu)
 	HDEBUG(("called.\n"));
 	return 1;
 }
-
-
 
 unsigned long okernel_stack_use(void)
 {
@@ -54,40 +50,33 @@ void okernel_dump_stack_info(void)
 	       sp0, sp, sp0-THREAD_SIZE);
 }
 
-static void __noclone  okernel_test_stack_clean_and_jmp(int a, int b, int c, int d, int e, int f)
+int __noclone okernel_enter(int64_t *ret)
 {
-	unsigned long tmpl;
+	int r = 0;
+	int64_t dummy;
+	
+	HDEBUG(("called.\n"));
 
-	a = 1; b = 2;
-	
-	asm("mov $.Lokernel_clone_rip, %0" : "=r"(tmpl));
-
-        //asm("push %r12 ");
-	HDEBUG(("cloned thread RIP will be set to: (%#lx)\n", tmpl));
-	
-	
-	HDEBUG(("1 (before clean and jmp: a(%d), b(%d))\n", a, b));
+#if 1
+	HDEBUG(("1 (before clean and jmp)\n"));
 
 	// Do the clean and jmp as though this function has returned.
-	asm("jmp .Lokernel_clone_rip ");
-	
-	a++; b++;
-	HDEBUG(("2 (after clean and jmp: a(%d) b(%d) - shouldn't get here!)\n", a, b));
-	
-	asm(".Lokernel_clone_rip: ");
-	return;
-}
+	asm("jmp .Lc_rip_label");
 
-int okernel_enter(int64_t *ret)
-{
-	HDEBUG(("called.\n"));
-	okernel_test_stack_clean_and_jmp(1,2,3,4,5,6);
-	//return vmx_launch(ret);
-	return *ret;
+	HDEBUG(("2 (after clean and jmp - shouldn't get here!)\n"));
+#endif
+	dummy = 0;
+	r = vmx_launch(&dummy);
+
+	asm(".Lc_rip_label: ");
+
+	return r;
 }
 
 static int __init okernel_init(void)
 {
+	unsigned long tmpl;
+	
 	HDEBUG(("Start initialization...\n"));
 	if((vmx_init())){
 		printk(KERN_ERR "okernel: failed to initialize x86 vmx extensions.\n");
@@ -96,6 +85,11 @@ static int __init okernel_init(void)
 	}
 	okernel_enabled = 1;
 	okernel_dump_stack_info();
+	asm("mov $.Lc_rip_label, %0" : "=r"(tmpl));
+
+	HDEBUG(("cloned thread RIP will be set to: (%#lx)\n", tmpl));
+	
+	cloned_thread_rip = tmpl;
 	HDEBUG(("Enabled, initialization done.\n"));
 	return 0;
 }
