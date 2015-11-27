@@ -1561,6 +1561,7 @@ tmp_finish:
 	       vcpu->vpid);
 
 	*ret_code = vcpu->ret_code;
+	do_exit(0);
 	//vmx_destroy_vcpu(vcpu);
 	return 0;
 }
