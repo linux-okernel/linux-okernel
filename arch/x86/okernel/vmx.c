@@ -5,6 +5,8 @@
  * code base (with the hope that we can possibly at some point 
  * share code).
  *
+ * This is still very much a (limited) research prototype.
+ *
  * Author: C I Dalton <cid@hpe.com> 2015
  *
  * This is the original dune header:
@@ -775,26 +777,147 @@ static struct vmcs *vmx_alloc_vmcs(void)
 	return __vmx_alloc_vmcs(raw_smp_processor_id());
 }
 
+struct vmcs_nr_cpu_state {
+	unsigned long rsp;
+	unsigned long cr0;
+	unsigned long cr3;
+	unsigned long cr4;
+
+	u16 cs_selector;
+	u16 ds_selector;
+	u16 es_selector;
+	u16 ss_selector;
+	u16 tr_selector;
+	u16 fs_selector;
+	u16 gs_selector;
+
+	unsigned long idt_base;
+	unsigned long gdt_base;
+	unsigned long ldt_base;
+	unsigned long cs_base;
+	unsigned long ds_base;
+	unsigned long es_base;
+	unsigned long ss_base;	
+	unsigned long tr_base;
+	unsigned long fs_base;
+	unsigned long gs_base;
+	
+	u32           sysenter_cs;
+	unsigned long sysenter_eip;
+	unsigned long sysenter_esp; //?
+};
+
+void get_cpu_state(struct vmcs_nr_cpu_state *cpu_state)
+{
+	unsigned long rsp;
+	u32 low32, high32;
+	struct desc_ptr dt;
+	unsigned long tmpl;
+
+	HDEBUG(("getting value of current regs...\n"));
+	asm volatile ("mov %%rsp,%0" : "=rm" (rsp));
+	HDEBUG(("getting value of current regs - rsp (%#lx)\n", rsp));
+
+	/* Start with control regs */
+	cpu_state->cr0 = read_cr0();
+	cpu_state->cr3 = read_cr3();
+	cpu_state->cr4 = native_read_cr4();
+
+	/* Segment Selectors */
+	cpu_state->cs_selector = __KERNEL_CS;
+	cpu_state->ds_selector = __KERNEL_DS;
+	cpu_state->es_selector = __KERNEL_DS;
+	cpu_state->ss_selector = __KERNEL_DS;
+	cpu_state->tr_selector = GDT_ENTRY_TSS*8;
+	cpu_state->fs_selector = 0;
+	cpu_state->gs_selector = 0;
+
+	/* Segment Base + Limits */
+	rdmsrl(MSR_FS_BASE, tmpl);
+	cpu_state->fs_base = tmpl;
+	rdmsrl(MSR_GS_BASE, tmpl);
+	cpu_state->gs_base = tmpl;
+	
+	/*Segment AR Bytes */
+
+	/* IDT, GDT, LDT */
+	native_store_idt(&dt);
+	cpu_state->idt_base = dt.address;
+
+	
+	/* sysenter */
+	rdmsr(MSR_IA32_SYSENTER_CS, low32, high32);
+	cpu_state->sysenter_cs =  low32;
+	rdmsrl(MSR_IA32_SYSENTER_EIP, tmpl);
+	cpu_state->sysenter_eip = tmpl;
+	//cpu_state->sysenter_esp = ?
+
+	return;
+	//asm("movl %%cs,%0" : "=r" (cs));
+	//asm("movl %%es,%0" : "=r" (es));
+	//asm("movl %%fs,%0" : "=r" (fsindex));
+	//asm("movl %%gs,%0" : "=r" (gsindex));
+	
+}
+
+#if 0
+/********************************************************************************/
+/* Clone this host state into the 'guest'                                       */
+/********************************************************************************/
+
+	rdmsr(MSR_EFER, low32, high32);
+	vmcs_write32(HOST_IA32_EFER, low32);
+
+	if (vmcs_config.vmexit_ctrl & VM_EXIT_LOAD_IA32_PAT) {
+		rdmsr(MSR_IA32_CR_PAT, low32, high32);
+		vmcs_write64(HOST_IA32_PAT, low32 | ((u64) high32 << 32));
+	}
+
+/********************************************************************************/
+/* Clone this host state into the 'guest' - done.                               */
+/********************************************************************************/
+#endif
 
 /**
  * vmx_setup_initial_guest_state - configures the initial state of guest registers
  */
-
-#if 0
-static void vmx_setup_initial_guest_state(struct dune_config *conf)
+static void vmx_setup_initial_guest_state(void)
 {
-
+#if 1
+	
 	/* Need to mask out X64_CR4_VMXE in guest read shadow */
-	unsigned long cr4_mask = X86_CR4_VMXE;
-	unsigned long cr4_shadow; 
-	unsigned long cr4 = X86_CR4_PAE | X86_CR4_VMXE | X86_CR4_OSXMMEXCPT |
-			    X86_CR4_PGE | X86_CR4_OSFXSR;
+	//unsigned long cr4_mask = X86_CR4_VMXE;
+	//unsigned long cr4_shadow; 
+	//unsigned long cr4 = X86_CR4_PAE | X86_CR4_VMXE | X86_CR4_OSXMMEXCPT |
+	//X86_CR4_PGE | X86_CR4_OSFXSR;
 
-	unsigned long cr0;
+	//unsigned long cr0;
 
+	struct vmcs_nr_cpu_state current_cpu_state;
+	struct pt_regs *regs;
+
+	regs = task_pt_regs(current);
 	
+	get_cpu_state(&current_cpu_state);
+	
+	HDEBUG(("----start of 'current' regs:\n"));
+	HDEBUG(("rsp (%#lx)\n", current_cpu_state.rsp));
+	HDEBUG(("----end of 'current' regs.\n"));
+
+	regs = task_pt_regs(current);
+	HDEBUG(("----start of 'current' regs from __show_regs:\n"));
+	__show_regs(regs, 1);
+	HDEBUG(("----end of 'current' regs from __show_regs.\n"));
+
+
+
+
+
+
+
 	return;
-	
+}
+#else
 #if 0
 	if (boot_cpu_has(X86_FEATURE_PCID))
 		cr4 |= X86_CR4_PCIDE;
@@ -1155,13 +1278,14 @@ static struct vmx_vcpu * vmx_create_vcpu(void)
 	vmx_setup_vmcs(vcpu);
 #if 1
 	HDEBUG(("7\n"));
+	
+	vmx_setup_initial_guest_state();
+
+	HDEBUG(("8\n"));	
 	vmx_put_cpu(vcpu);
+	HDEBUG(("9\n"));	
 	return vcpu;
 #else
-	vmx_setup_initial_guest_state(conf);
-	
-	vmx_put_cpu(vcpu);
-
 	if (cpu_has_vmx_ept_ad_bits()) {
 		vcpu->ept_ad_enabled = true;
 		printk(KERN_INFO "vmx: enabled EPT A/D bits");
@@ -1322,6 +1446,8 @@ static int __noclone vmx_run_vcpu(struct vmx_vcpu *vcpu)
 }
 
 
+
+
 /**
  * vmx_launch - the main loop for a cloned VMX okernel process (thread)
  */
@@ -1335,7 +1461,7 @@ int vmx_launch(int64_t *ret_code)
 	c_rip = cloned_thread_rip;
 
 	HDEBUG(("c_rip: (#%#lx)\n", c_rip));
-#if 1
+
 	vcpu = vmx_create_vcpu();
 	
 	if (!vcpu)
@@ -1349,7 +1475,6 @@ int vmx_launch(int64_t *ret_code)
 	       vcpu->vpid);
 
 	return 1;
-#endif
 }
 #if 0
 	while (1) {

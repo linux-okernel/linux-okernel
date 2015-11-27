@@ -36,6 +36,8 @@ unsigned long okernel_stack_use(void)
 	return  (current_top_of_stack() - current_stack_pointer());
 }
 
+
+
 void okernel_dump_stack_info(void)
 {
 	unsigned long sp, sp0, end_stack;
@@ -57,7 +59,7 @@ int __noclone okernel_enter(int64_t *ret)
 	
 	HDEBUG(("called.\n"));
 
-#if 1
+#if 0
 	HDEBUG(("1 (before clean and jmp)\n"));
 
 	// Do the clean and jmp as though this function has returned.
