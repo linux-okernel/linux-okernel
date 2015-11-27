@@ -730,10 +730,10 @@ int vmx_create_ept(struct vmx_vcpu *vcpu)
 {
 	int ret;
 
-	vcpu->mmu_notifier.ops = &ept_mmu_notifier_ops;
-	ret = mmu_notifier_register(&vcpu->mmu_notifier, current->mm);
-	if (ret)
-		goto fail;
+	//vcpu->mmu_notifier.ops = &ept_mmu_notifier_ops;
+	//ret = mmu_notifier_register(&vcpu->mmu_notifier, current->mm);
+	//if (ret)
+	//	goto fail;
 
 	return 0;
 

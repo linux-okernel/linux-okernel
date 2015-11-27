@@ -973,7 +973,8 @@ static void vmx_setup_initial_guest_state(void)
 
 	vmcs_writel(GUEST_RIP, cloned_thread_rip);
 	vmcs_writel(GUEST_RSP, current_cpu_state.rsp);
-	vmcs_writel(GUEST_RFLAGS, current_cpu_state.rflags);
+	//vmcs_writel(GUEST_RFLAGS, current_cpu_state.rflags);
+	vmcs_writel(GUEST_RFLAGS, 0x02);
 	vmcs_writel(GUEST_IA32_EFER, current_cpu_state.efer);
 
 	/* configure segment selectors */
@@ -1560,7 +1561,7 @@ tmp_finish:
 	       vcpu->vpid);
 
 	*ret_code = vcpu->ret_code;
-	vmx_destroy_vcpu(vcpu);
+	//vmx_destroy_vcpu(vcpu);
 	return 0;
 }
 
