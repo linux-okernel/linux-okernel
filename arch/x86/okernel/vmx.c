@@ -777,12 +777,14 @@ static struct vmcs *vmx_alloc_vmcs(void)
 	return __vmx_alloc_vmcs(raw_smp_processor_id());
 }
 
-struct vmcs_nr_cpu_state {
+struct vmcs_cpu_state {
 	unsigned long rsp;
 	unsigned long cr0;
 	unsigned long cr3;
 	unsigned long cr4;
-
+	unsigned long rflags;
+	unsigned long efer;
+	
 	u16 cs_selector;
 	u16 ds_selector;
 	u16 es_selector;
@@ -791,38 +793,84 @@ struct vmcs_nr_cpu_state {
 	u16 fs_selector;
 	u16 gs_selector;
 
-	unsigned long idt_base;
-	unsigned long gdt_base;
-	unsigned long ldt_base;
+	unsigned long  idt_base;
+	unsigned long  gdt_base;
+	unsigned long  ldt_base;
+	unsigned short idt_limit;
+	unsigned short gdt_limit;
+	unsigned short ldt_limit;
+
+	unsigned long  tr_base;
+	unsigned short tr_limit;
+	
 	unsigned long cs_base;
 	unsigned long ds_base;
 	unsigned long es_base;
 	unsigned long ss_base;	
-	unsigned long tr_base;
 	unsigned long fs_base;
 	unsigned long gs_base;
 	
-	u32           sysenter_cs;
+	unsigned long sysenter_cs;
 	unsigned long sysenter_eip;
-	unsigned long sysenter_esp; //?
+	unsigned long sysenter_esp;
 };
 
-void get_cpu_state(struct vmcs_nr_cpu_state *cpu_state)
+void show_cpu_state(struct vmcs_cpu_state state)
+{
+	HDEBUG(("Control regs / flags: \n"));
+	HDEBUG(("rsp     (%#lx)\n", state.rsp));
+	HDEBUG(("cr0     (%#lx)\n", state.cr0));
+	HDEBUG(("cr3     (%#lx)\n", state.cr3));
+	HDEBUG(("cr4     (%#lx)\n", state.cr4));	
+	HDEBUG(("rflags  (%#lx)\n", state.rflags));
+	HDEBUG(("efer    (%#lx)\n", state.efer));
+
+	HDEBUG(("idt base (%#lx) limit (%#x)\n", state.idt_base, state.idt_limit));
+	HDEBUG(("gdt base (%#lx) limit (%#x)\n", state.gdt_base, state.gdt_limit));
+	HDEBUG(("ldt base (%#lx) limit (%#x)\n", state.ldt_base, state.ldt_limit));	
+	
+	HDEBUG(("Selectors: \n"));
+	HDEBUG(("cs_s (%#x) ds_s (%#x) es_s (%#x) ss_s (%#x) tr_s (%#x)\n",
+		state.cs_selector, state.ds_selector, state.es_selector,
+		state.ss_selector, state.tr_selector));
+	HDEBUG(("fs_s (%#x) gs_s (%#x)\n",
+		state.fs_selector, state.gs_selector));
+
+	HDEBUG(("fs_base (%#lx) gs_base (%#lx)\n",
+		state.fs_base,state.gs_base));
+
+	HDEBUG(("sysenter_cs (%lx), systenter_esp (%lx) systenter_eip (%lx)\n",
+		state.sysenter_cs, state.sysenter_esp, state.sysenter_eip));
+	return;
+}
+
+void get_cpu_state(struct vmcs_cpu_state* cpu_state)
 {
 	unsigned long rsp;
+	unsigned long rflags;
 	u32 low32, high32;
-	struct desc_ptr dt;
+	struct desc_ptr idt;
+	struct desc_ptr gdt;
+	//struct desc_ptr ldt;
+	unsigned long tr;
 	unsigned long tmpl;
 
 	HDEBUG(("getting value of current regs...\n"));
 	asm volatile ("mov %%rsp,%0" : "=rm" (rsp));
 	HDEBUG(("getting value of current regs - rsp (%#lx)\n", rsp));
 
-	/* Start with control regs */
+	/* Start with control regs / flags */
+	cpu_state->rsp = rsp;
 	cpu_state->cr0 = read_cr0();
 	cpu_state->cr3 = read_cr3();
 	cpu_state->cr4 = native_read_cr4();
+        asm volatile ("mov %%ss,%0"
+                      : "=rm" (rflags));
+	cpu_state->rflags = rflags;
+	rdmsr(MSR_EFER, low32, high32);
+	cpu_state->efer = low32;
 
+	
 	/* Segment Selectors */
 	cpu_state->cs_selector = __KERNEL_CS;
 	cpu_state->ds_selector = __KERNEL_DS;
@@ -841,17 +889,31 @@ void get_cpu_state(struct vmcs_nr_cpu_state *cpu_state)
 	/*Segment AR Bytes */
 
 	/* IDT, GDT, LDT */
-	native_store_idt(&dt);
-	cpu_state->idt_base = dt.address;
+	native_store_idt(&idt);
+	cpu_state->idt_base = idt.address;
+	cpu_state->idt_limit = idt.size;
 
+	native_store_gdt(&gdt);
+	cpu_state->gdt_base = gdt.address;
+	cpu_state->gdt_limit = gdt.size;
+	
+	//native_store_ldt(&ldt);
+	cpu_state->ldt_base = 0;
+	cpu_state->ldt_limit = 0;
+
+	tr = native_store_tr();
+	cpu_state->tr_base = tr;
+	cpu_state->tr_limit = 0xff;
+	
 	
 	/* sysenter */
-	rdmsr(MSR_IA32_SYSENTER_CS, low32, high32);
-	cpu_state->sysenter_cs =  low32;
+	rdmsrl(MSR_IA32_SYSENTER_CS, tmpl);
+	cpu_state->sysenter_cs =  tmpl;
 	rdmsrl(MSR_IA32_SYSENTER_EIP, tmpl);
 	cpu_state->sysenter_eip = tmpl;
-	//cpu_state->sysenter_esp = ?
-
+	rdmsrl(MSR_IA32_SYSENTER_ESP, tmpl);
+	cpu_state->sysenter_esp =  tmpl;
+	
 	return;
 	//asm("movl %%cs,%0" : "=r" (cs));
 	//asm("movl %%es,%0" : "=r" (es));
@@ -864,9 +926,6 @@ void get_cpu_state(struct vmcs_nr_cpu_state *cpu_state)
 /********************************************************************************/
 /* Clone this host state into the 'guest'                                       */
 /********************************************************************************/
-
-	rdmsr(MSR_EFER, low32, high32);
-	vmcs_write32(HOST_IA32_EFER, low32);
 
 	if (vmcs_config.vmexit_ctrl & VM_EXIT_LOAD_IA32_PAT) {
 		rdmsr(MSR_IA32_CR_PAT, low32, high32);
@@ -883,65 +942,30 @@ void get_cpu_state(struct vmcs_nr_cpu_state *cpu_state)
  */
 static void vmx_setup_initial_guest_state(void)
 {
-#if 1
 	
 	/* Need to mask out X64_CR4_VMXE in guest read shadow */
-	//unsigned long cr4_mask = X86_CR4_VMXE;
-	//unsigned long cr4_shadow; 
-	//unsigned long cr4 = X86_CR4_PAE | X86_CR4_VMXE | X86_CR4_OSXMMEXCPT |
-	//X86_CR4_PGE | X86_CR4_OSFXSR;
+	unsigned long cr4_mask = X86_CR4_VMXE;
+	unsigned long cr4_shadow; 
+	unsigned long cr4;
 
-	//unsigned long cr0;
-
-	struct vmcs_nr_cpu_state current_cpu_state;
+	struct vmcs_cpu_state current_cpu_state;
 	struct pt_regs *regs;
 
 	regs = task_pt_regs(current);
 	
 	get_cpu_state(&current_cpu_state);
-	
-	HDEBUG(("----start of 'current' regs:\n"));
-	HDEBUG(("rsp (%#lx)\n", current_cpu_state.rsp));
-	HDEBUG(("----end of 'current' regs.\n"));
+	show_cpu_state(current_cpu_state);
 
-	regs = task_pt_regs(current);
 	HDEBUG(("----start of 'current' regs from __show_regs:\n"));
 	__show_regs(regs, 1);
 	HDEBUG(("----end of 'current' regs from __show_regs.\n"));
-
-
-
-
-
-
-
-	return;
-}
-#else
-#if 0
-	if (boot_cpu_has(X86_FEATURE_PCID))
-		cr4 |= X86_CR4_PCIDE;
-	if (boot_cpu_has(X86_FEATURE_OSXSAVE))
-		cr4 |= X86_CR4_OSXSAVE;
-	if (boot_cpu_has(X86_FEATURE_FSGSBASE))
-		cr4 |= X86_CR4_FSGSBASE;
-
        
-	/* configure control and data registers */
-	vmcs_writel(GUEST_CR0, X86_CR0_PG | X86_CR0_PE | X86_CR0_WP |
-			       X86_CR0_MP | X86_CR0_ET | X86_CR0_NE);
-	vmcs_writel(CR0_READ_SHADOW, X86_CR0_PG | X86_CR0_PE | X86_CR0_WP |
-				     X86_CR0_MP | X86_CR0_ET | X86_CR0_NE);
-#endif
-	
 	/* Most likely will need to adjust */
-	cr4 = native_read_cr4();
+	cr4 = current_cpu_state.cr4;
 	cr4_shadow = (cr4 & ~X86_CR4_VMXE);
-	vmcs_writel(GUEST_CR0, read_cr0);	
-	vmcs_writel(CR0_READ_SHADOW, read_cr0);
-
-	vmcs_writel(GUEST_CR3, read_cr3);
-
+	vmcs_writel(GUEST_CR0, current_cpu_state.cr0);	
+	vmcs_writel(CR0_READ_SHADOW, current_cpu_state.cr0);	
+	vmcs_writel(GUEST_CR3, current_cpu_state.cr3);
 
 	/* Make sure VMXE is not visible under a vcpu: we use this currently */
 	/* as a way of detecting whether in root or NR mode. */
@@ -949,65 +973,65 @@ static void vmx_setup_initial_guest_state(void)
 	vmcs_writel(CR4_GUEST_HOST_MASK, cr4_mask);
 	vmcs_writel(CR4_READ_SHADOW, cr4_shadow);
 
-
 	/* Most of this we can set from the host state apart. Need to make
 	   sure we clone the kernel stack pages in the EPT mapping.
 	*/
 
+	vmcs_writel(GUEST_RIP, cloned_thread_rip);
+	vmcs_writel(GUEST_RSP, current_cpu_state.rsp);
+	vmcs_writel(GUEST_RFLAGS, current_cpu_state.rflags);
+	vmcs_writel(GUEST_IA32_EFER, current_cpu_state.efer);
 
-#if 0
-	/* Need to set jmp address as RIP */
-	vmcs_writel(GUEST_IA32_EFER, EFER_LME | EFER_LMA |
-				     EFER_SCE | EFER_FFXSR);
-	vmcs_writel(GUEST_GDTR_BASE, 0);
-	vmcs_writel(GUEST_GDTR_LIMIT, 0);
-	vmcs_writel(GUEST_IDTR_BASE, 0);
-	vmcs_writel(GUEST_IDTR_LIMIT, 0);
-	vmcs_writel(GUEST_RIP, conf->rip);
-	vmcs_writel(GUEST_RSP, conf->rsp);
-	vmcs_writel(GUEST_RFLAGS, 0x02);
-	vmcs_writel(GUEST_DR7, 0);
-#else
+	/* configure segment selectors */
+	vmcs_write16(GUEST_CS_SELECTOR, current_cpu_state.cs_selector);
+	vmcs_write16(GUEST_DS_SELECTOR, current_cpu_state.ds_selector);
+	vmcs_write16(GUEST_ES_SELECTOR, current_cpu_state.es_selector);
+	vmcs_write16(GUEST_FS_SELECTOR, current_cpu_state.fs_selector);
+	vmcs_write16(GUEST_GS_SELECTOR, current_cpu_state.gs_selector);
+	vmcs_write16(GUEST_SS_SELECTOR, current_cpu_state.ss_selector);
+	vmcs_write16(GUEST_TR_SELECTOR, current_cpu_state.tr_selector);;
 
-	asm_rdsp(&rsp);
+        /* initialize sysenter */
+	vmcs_write32(GUEST_SYSENTER_CS, current_cpu_state.sysenter_cs);
+	vmcs_writel(GUEST_SYSENTER_ESP, current_cpu_state.sysenter_esp);
+	vmcs_writel(GUEST_SYSENTER_EIP, current_cpu_state.sysenter_eip);
 	
-	/* Need to set jmp address as RIP */
-	vmcs_writel(GUEST_IA32_EFER, EFER_LME | EFER_LMA |
-				     EFER_SCE | EFER_FFXSR);
-	vmcs_writel(GUEST_GDTR_BASE, 0);
-	vmcs_writel(GUEST_GDTR_LIMIT, 0);
-	vmcs_writel(GUEST_IDTR_BASE, 0);
-	vmcs_writel(GUEST_IDTR_LIMIT, 0);
-	vmcs_writel(GUEST_RIP, rip);
-	vmcs_writel(GUEST_RSP, rsp);
-	vmcs_writel(GUEST_RFLAGS, 0x02);
+	vmcs_writel(GUEST_GDTR_BASE, current_cpu_state.gdt_base);
+	vmcs_writel(GUEST_GDTR_LIMIT, current_cpu_state.gdt_limit);
+	vmcs_writel(GUEST_IDTR_BASE, current_cpu_state.idt_base);
+	vmcs_writel(GUEST_IDTR_LIMIT, current_cpu_state.idt_limit);
+
+
+        /* guest LDTR */
+	vmcs_write16(GUEST_LDTR_SELECTOR, 0);
+	vmcs_writel(GUEST_LDTR_AR_BYTES, 0x0082);
+	vmcs_writel(GUEST_LDTR_BASE, 0);
+	vmcs_writel(GUEST_LDTR_LIMIT, 0);
+
+	vmcs_writel(GUEST_TR_BASE, current_cpu_state.tr_base);
+	vmcs_writel(GUEST_TR_LIMIT, current_cpu_state.tr_limit);
+	vmcs_writel(GUEST_TR_AR_BYTES, 0x0080 | AR_TYPE_BUSY_64_TSS);
+
+	
+	// DO WE NEED CHANGE ANY OF THESE???
 	vmcs_writel(GUEST_DR7, 0);
 
-#endif
-#if 0	
 	/* guest segment bases */
 	vmcs_writel(GUEST_CS_BASE, 0);
 	vmcs_writel(GUEST_DS_BASE, 0);
 	vmcs_writel(GUEST_ES_BASE, 0);
-	vmcs_writel(GUEST_GS_BASE, 0);
+	vmcs_writel(GUEST_GS_BASE, current_cpu_state.gs_base);
 	vmcs_writel(GUEST_SS_BASE, 0);
-	rdmsrl(MSR_FS_BASE, tmpl);
-	vmcs_writel(GUEST_FS_BASE, tmpl);
-#else
-	/* guest segment bases */
-#endif
-#if 1
-	/* guest segment access rights */
+	vmcs_writel(GUEST_FS_BASE, current_cpu_state.fs_base);
+
+        /* guest segment access rights */
 	vmcs_writel(GUEST_CS_AR_BYTES, 0xA09B);
 	vmcs_writel(GUEST_DS_AR_BYTES, 0xA093);
 	vmcs_writel(GUEST_ES_AR_BYTES, 0xA093);
 	vmcs_writel(GUEST_FS_AR_BYTES, 0xA093);
 	vmcs_writel(GUEST_GS_AR_BYTES, 0xA093);
 	vmcs_writel(GUEST_SS_AR_BYTES, 0xA093);
-#else
-      	/* guest segment access rights */
-#endif	
-#if 1
+
 	/* guest segment limits */
 	vmcs_write32(GUEST_CS_LIMIT, 0xFFFFFFFF);
 	vmcs_write32(GUEST_DS_LIMIT, 0xFFFFFFFF);
@@ -1015,62 +1039,16 @@ static void vmx_setup_initial_guest_state(void)
 	vmcs_write32(GUEST_FS_LIMIT, 0xFFFFFFFF);
 	vmcs_write32(GUEST_GS_LIMIT, 0xFFFFFFFF);
 	vmcs_write32(GUEST_SS_LIMIT, 0xFFFFFFFF);
-#else
-	/* guest segment limits */
-#endif
-#if 0
-	/* configure segment selectors */
-	vmcs_write16(GUEST_CS_SELECTOR, 0);
-	vmcs_write16(GUEST_DS_SELECTOR, 0);
-	vmcs_write16(GUEST_ES_SELECTOR, 0);
-	vmcs_write16(GUEST_FS_SELECTOR, 0);
-	vmcs_write16(GUEST_GS_SELECTOR, 0);
-	vmcs_write16(GUEST_SS_SELECTOR, 0);
-	vmcs_write16(GUEST_TR_SELECTOR, 0);
-#else
-	/* configure segment selectors */
-		/* configure segment selectors */
-	vmcs_write16(GUEST_CS_SELECTOR, __KERNEL_CS);
-	vmcs_write16(GUEST_DS_SELECTOR, __KERNEL_DS);
-	vmcs_write16(GUEST_ES_SELECTOR, __KERNEL_DS);
-	vmcs_write16(GUEST_FS_SELECTOR, 0);
-	vmcs_write16(GUEST_GS_SELECTOR, 0);
-	vmcs_write16(GUEST_SS_SELECTOR, __KERNEL_DS);
-	vmcs_write16(GUEST_TR_SELECTOR, GDT_ENTRY_TSS*8);
-#endif
-#if 0
-	/* guest LDTR */
-	vmcs_write16(GUEST_LDTR_SELECTOR, 0);
-	vmcs_writel(GUEST_LDTR_AR_BYTES, 0x0082);
-	vmcs_writel(GUEST_LDTR_BASE, 0);
-	vmcs_writel(GUEST_LDTR_LIMIT, 0);
-#else
-	/* guest LDTR */
-#endif
-#if 0
-	/* guest TSS */
-	vmcs_writel(GUEST_TR_BASE, 0);
-	vmcs_writel(GUEST_TR_AR_BYTES, 0x0080 | AR_TYPE_BUSY_64_TSS);
-	vmcs_writel(GUEST_TR_LIMIT, 0xff);
-#else
-	/* guest TSS */
-#endif
-#if 0
-	/* initialize sysenter */
-	vmcs_write32(GUEST_SYSENTER_CS, 0);
-	vmcs_writel(GUEST_SYSENTER_ESP, 0);
-	vmcs_writel(GUEST_SYSENTER_EIP, 0);
-#else
-	/* initialize sysenter */
-#endif
+
 	/* other random initialization */
 	vmcs_write32(GUEST_ACTIVITY_STATE, GUEST_ACTIVITY_ACTIVE);
 	vmcs_write32(GUEST_INTERRUPTIBILITY_INFO, 0);
 	vmcs_write32(GUEST_PENDING_DBG_EXCEPTIONS, 0);
 	vmcs_write64(GUEST_IA32_DEBUGCTL, 0);
 	vmcs_write32(VM_ENTRY_INTR_INFO_FIELD, 0);  /* 22.2.1 */
+	return;
 }
-#endif
+
 
 static void __vmx_disable_intercept_for_msr(unsigned long *msr_bitmap, u32 msr)
 {
