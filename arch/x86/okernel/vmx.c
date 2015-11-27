@@ -913,13 +913,7 @@ void get_cpu_state(struct vmcs_cpu_state* cpu_state)
 	cpu_state->sysenter_eip = tmpl;
 	rdmsrl(MSR_IA32_SYSENTER_ESP, tmpl);
 	cpu_state->sysenter_esp =  tmpl;
-	
 	return;
-	//asm("movl %%cs,%0" : "=r" (cs));
-	//asm("movl %%es,%0" : "=r" (es));
-	//asm("movl %%fs,%0" : "=r" (fsindex));
-	//asm("movl %%gs,%0" : "=r" (gsindex));
-	
 }
 
 #if 0
@@ -1254,35 +1248,54 @@ static struct vmx_vcpu * vmx_create_vcpu(void)
 	vmx_get_cpu(vcpu);
 	HDEBUG(("6\n"));
 	vmx_setup_vmcs(vcpu);
-#if 1
+	
 	HDEBUG(("7\n"));
 	
 	vmx_setup_initial_guest_state();
 
 	HDEBUG(("8\n"));	
 	vmx_put_cpu(vcpu);
-	HDEBUG(("9\n"));	
-	return vcpu;
-#else
+	HDEBUG(("9\n"));
+	
 	if (cpu_has_vmx_ept_ad_bits()) {
 		vcpu->ept_ad_enabled = true;
 		printk(KERN_INFO "vmx: enabled EPT A/D bits");
 	}
+	HDEBUG(("10\n"));
 	if (vmx_create_ept(vcpu))
 		goto fail_ept;
 
+	HDEBUG(("11\n"));
 	return vcpu;
-#endif
+
 fail_ept:
+	HDEBUG(("12\n"));
 	vmx_free_vpid(vcpu);
 fail_vpid:
+	HDEBUG(("13\n"));
 	vmx_free_vmcs(vcpu->vmcs);
 fail_vmcs:
+	HDEBUG(("14\n"));
 	kfree(vcpu);
 	return NULL;
 }
 
-
+/**
+ * vmx_destroy_vcpu - destroys and frees an existing virtual cpu
+ * @vcpu: the VCPU to destroy
+ */
+static void vmx_destroy_vcpu(struct vmx_vcpu *vcpu)
+{
+	vmx_destroy_ept(vcpu);
+	vmx_get_cpu(vcpu);
+	ept_sync_context(vcpu->eptp);
+	vmcs_clear(vcpu->vmcs);
+	__this_cpu_write(local_vcpu, NULL);
+	vmx_put_cpu(vcpu);
+	vmx_free_vpid(vcpu);
+	vmx_free_vmcs(vcpu->vmcs);
+	kfree(vcpu);
+}
 
 
 #ifdef CONFIG_X86_64
@@ -1431,7 +1444,8 @@ static int __noclone vmx_run_vcpu(struct vmx_vcpu *vcpu)
  */
 int vmx_launch(int64_t *ret_code)
 {
-	//int ret, done = 0;
+	int ret = 0;
+	//int done = 0;
 	unsigned long c_rip;
 	
 	struct vmx_vcpu *vcpu;
@@ -1445,16 +1459,13 @@ int vmx_launch(int64_t *ret_code)
 	if (!vcpu)
 		return -ENOMEM;
 	
-	if(ret_code){
-		(void)vmx_run_vcpu(vcpu);
-	}
+	//if(ret_code){
+	//	(void)vmx_run_vcpu(vcpu);
+	//}
 	
 	printk(KERN_ERR "vmx: created VCPU (VPID %d)\n",
 	       vcpu->vpid);
 
-	return 1;
-}
-#if 0
 	while (1) {
 		vmx_get_cpu(vcpu);
 
@@ -1465,9 +1476,10 @@ int vmx_launch(int64_t *ret_code)
 		 * that we don't monitor or trap FPU usage inside
 		 * a Dune process.
 		 */
+#if 0
 		if (!__thread_has_fpu(current))
 			math_state_restore();
-
+#endif
 		local_irq_disable();
 
 		if (need_resched()) {
@@ -1480,8 +1492,10 @@ int vmx_launch(int64_t *ret_code)
 		if (signal_pending(current)) {
 			int signr;
 			siginfo_t info;
-			uint32_t x;
+			//uint32_t x;
 
+			HDEBUG(("signal pending...\n"));
+			
 			local_irq_enable();
 			vmx_put_cpu(vcpu);
 
@@ -1497,18 +1511,22 @@ int vmx_launch(int64_t *ret_code)
 				vcpu->ret_code = ((ENOSYS) << 8);
 				break;
 			}
-
+#if 0
 			x  = DUNE_SIGNAL_INTR_BASE + signr;
 			x |= INTR_INFO_VALID_MASK;
 
 			vmcs_write32(VM_ENTRY_INTR_INFO_FIELD, x);
+#endif
 			continue;
 		}
 
 		ret = vmx_run_vcpu(vcpu);
 
+		HDEBUG(("Got VMEXIT! (%#x)\n", ret));
+		goto tmp_finish;
+		
 		local_irq_enable();
-
+#if 0
 		if (ret == EXIT_REASON_VMCALL ||
 		    ret == EXIT_REASON_CPUID) {
 			vmx_step_instruction();
@@ -1534,8 +1552,10 @@ int vmx_launch(int64_t *ret_code)
 
 		if (done || vcpu->shutdown)
 			break;
+#endif
 	}
 
+tmp_finish:
 	printk(KERN_ERR "vmx: destroying VCPU (VPID %d)\n",
 	       vcpu->vpid);
 
@@ -1543,7 +1563,6 @@ int vmx_launch(int64_t *ret_code)
 	vmx_destroy_vcpu(vcpu);
 	return 0;
 }
-#endif
 
 	
 /*-------------------------------------------------------------------------------------*/
