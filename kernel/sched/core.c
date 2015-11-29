@@ -3133,6 +3133,7 @@ void  __sched okernel_schedule(void)
 	if(is_in_vmx_nr_mode()){
 		/* Return control to the original process running in root-mode VMX */
 		//okernel_schedule_helper();
+		printk(KERN_ERR "vmcall called from NR mode.\n");
 		vmcall(VMCALL_NOP);
 	} else {
 		__schedule();

@@ -1505,9 +1505,14 @@ static struct vmx_vcpu * vmx_create_vcpu(void)
 
 
 	spin_lock_init(&vcpu->ept_lock);
-	if (vmx_init_ept(vcpu))
-		goto fail_ept;
+	//if (vmx_init_ept(vcpu))
+	//	goto fail_ept;
 
+	vcpu->ept_root = vt_ept_2M_init();
+
+	if(vcpu->ept_root == 0)
+		goto fail_ept;
+	
 	HDEBUG(("4\n"));
 	vcpu->eptp = construct_eptp(vcpu->ept_root);
 
@@ -1736,7 +1741,6 @@ int vmx_launch(int64_t *ret_code)
 
 	while (1) {
 		vmx_get_cpu(vcpu);
-
 		/*
 		 * We assume that a Dune process will always use
 		 * the FPU whenever it is entered, and thus we go
@@ -1753,10 +1757,11 @@ int vmx_launch(int64_t *ret_code)
 		if (need_resched()) {
 			local_irq_enable();
 			vmx_put_cpu(vcpu);
+			HDEBUG(("cond_resched called.\n"));
 			cond_resched();
 			continue;
 		}
-
+#if 0
 		if (signal_pending(current)) {
 			int signr;
 			siginfo_t info;
@@ -1779,14 +1784,17 @@ int vmx_launch(int64_t *ret_code)
 				vcpu->ret_code = ((ENOSYS) << 8);
 				break;
 			}
-#if 0
+
 			x  = DUNE_SIGNAL_INTR_BASE + signr;
 			x |= INTR_INFO_VALID_MASK;
 
 			vmcs_write32(VM_ENTRY_INTR_INFO_FIELD, x);
-#endif
+
 			continue;
 		}
+#endif
+		
+		HDEBUG(("About to call vmx_run_vcpu...\n"));
 
 		ret = vmx_run_vcpu(vcpu);
 
