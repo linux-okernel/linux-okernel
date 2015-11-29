@@ -1761,7 +1761,7 @@ int vmx_launch(int64_t *ret_code)
 			cond_resched();
 			continue;
 		}
-#if 0
+#if 1
 		if (signal_pending(current)) {
 			int signr;
 			siginfo_t info;
@@ -1784,20 +1784,23 @@ int vmx_launch(int64_t *ret_code)
 				vcpu->ret_code = ((ENOSYS) << 8);
 				break;
 			}
-
+#if 0
 			x  = DUNE_SIGNAL_INTR_BASE + signr;
 			x |= INTR_INFO_VALID_MASK;
 
 			vmcs_write32(VM_ENTRY_INTR_INFO_FIELD, x);
-
+#endif
 			continue;
 		}
 #endif
 		
 		HDEBUG(("About to call vmx_run_vcpu...\n"));
+#if 0
+		if(*ret_code)
+			vmx_run_vcpu(vcpu);
 
+#endif
 		ret = vmx_run_vcpu(vcpu);
-
 		HDEBUG(("Got VMEXIT! (%#x)\n", ret));
 		goto tmp_finish;
 		
