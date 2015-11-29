@@ -3131,8 +3131,9 @@ void __sched __ok_schedule(void)
 void  __sched okernel_schedule(void)
 {
 	if(is_in_vmx_nr_mode()){
-		//__ok_schedule();
-		okernel_schedule_helper();
+		/* Return control to the original process running in root-mode VMX */
+		//okernel_schedule_helper();
+		vmcall(VMCALL_NOP);
 	} else {
 		__schedule();
 	}

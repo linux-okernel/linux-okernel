@@ -71,6 +71,7 @@
 
 #include <asm/tlbflush.h>
 
+#include "constants2.h"
 #include "vmx.h"
 
 
@@ -102,7 +103,6 @@ static struct vmcs_config {
 struct vmx_capability vmx_capability;
 
 
-
 static inline int dummy_in_vmx_nr_mode(void)
 {
 	return 0;
@@ -127,6 +127,273 @@ inline int is_in_vmx_nr_mode(void)
 {
 	return in_vmx_nr_mode();
 }
+
+
+
+/* Adapted from https://github.com/rustyrussell/virtbench/blob/master/micro/vmcall.c */
+int vmcall(unsigned int cmd)
+{
+	/* cid: need to guard the use of this call */
+	asm volatile(".byte 0x0F,0x01,0xC1\n" ::"a"(cmd));
+	return 0;
+}
+
+
+/* Start: imported code from original BV prototype */
+
+/* Need to fix this...adjust dynamically based on real physical regions */
+#define END_PHYSICAL 0x3FFEFFFFF /* with 1GB physical memory */
+
+static int
+no_cache_region(u64 addr, u64 size)
+{
+	if (((addr >= 0) && (addr < 0x9F00))||((addr >= BIOS_END) && (addr < END_PHYSICAL))){
+		return 0;
+	}                                                                                                                                        return 1;
+}
+/* Adapted from e820_end_pfn */
+static unsigned long e820_end_paddr(unsigned long limit_pfn)
+{
+	int i;
+	unsigned long last_pfn = 0;
+	unsigned long max_arch_pfn = (MAXMEM >> PAGE_SHIFT);
+
+	for (i = 0; i < e820.nr_map; i++) {
+		struct e820entry *ei = &e820.map[i];
+		unsigned long start_pfn;
+		unsigned long end_pfn;
+
+		start_pfn = ei->addr >> PAGE_SHIFT;
+		end_pfn = (ei->addr + ei->size) >> PAGE_SHIFT;
+
+		if (start_pfn >= limit_pfn)
+			continue;
+		if (end_pfn > limit_pfn) {
+			last_pfn = limit_pfn;
+			break;
+		}
+		if (end_pfn > last_pfn)
+			last_pfn = end_pfn;
+	}
+
+	if (last_pfn > max_arch_pfn)
+		last_pfn = max_arch_pfn;
+
+	HDEBUG(("last_pfn = %#lx max_arch_pfn = %#lx\n", last_pfn, max_arch_pfn));
+	return last_pfn << PAGE_SHIFT;
+}
+
+int vt_alloc_page(void **virt, u64 *phys)
+{
+        struct page *pg;
+        void* v;
+
+        pg = alloc_page(GFP_KERNEL);
+
+        v = page_address(pg);
+
+        if(!v){
+                printk(KERN_ERR "okernel: failed to alloc page.\n");
+                return 0;
+        }
+
+        if(virt)
+                *virt = v;
+        if(phys)
+                *phys = page_to_phys(pg);
+        return 1;
+}
+
+
+int vt_ept_unmap_pages(u64 vaddr, unsigned long num_pages)
+{
+	return 0;
+}
+
+int vt_ept_replace_pages(u64 vaddr, unsigned long num_pages)
+{
+	return 0;
+}
+
+
+
+/* Essentially create 1:1 map of 'host' physical mem to 'guest' physical */
+u64 vt_ept_4K_init(void)
+{
+	return 0;
+}
+
+u64 vt_ept_2M_init(void)
+{
+	/*
+	 * For now share a direct 1:1 EPT mapping of host physical to
+	 * guest physical across all vmx 'containers'. 
+	 *
+	 * Setup the per-vcpu pagetables here. For now we just map up to
+	 * 512G of physical RAM, and we use a 2MB page size. So we need
+	 * one PML4 physical page, one PDPT physical page and 1 PD
+	 * physical page per GB.  We need correspondingly, 1 PML4 entry
+	 * (PML4E), 1 PDPT entrie per GB (PDPTE), and 512 PD entries
+	 * (PDE) per PD.
+	 *
+	 * The first 2Mb region we break down into 4K page table entries
+	 * so we can be more selectively over caching controls, etc. for
+	 * that region.
+	 */
+	unsigned long mappingsize = 0;      
+	unsigned long rounded_mappingsize = 0;
+	unsigned int n_entries = PAGESIZE / 8; 
+	unsigned int n_pt   = 0;
+	unsigned int n_pd   = 0;
+	unsigned int n_pdpt = 0;
+	pt_page* pt = NULL;
+	pt_page* pd = NULL;
+	pt_page* pdpt = NULL;
+	int i = 0, k = 0;
+	u64* q = NULL;
+	u64 addr = 0;
+	u64* pml4_virt = NULL;
+	u64  pml4_phys = 0;
+	
+	/* What range do the EPT tables need to cover (including areas like the APIC mapping)? */
+	mappingsize = e820_end_paddr(MAXMEM);
+
+	HDEBUG(("max physical address to map under EPT: %#lx\n", (unsigned long)mappingsize));
+	
+	/* Round upp to closest Gigabyte of memory */
+	rounded_mappingsize = ((mappingsize + (GIGABYTE-1)) & (~(GIGABYTE-1)));      
+
+	HDEBUG(("Need EPT tables covering (%lu) Mb (%lu) bytes for Phys Mapping sz: %lu MB\n", 
+		rounded_mappingsize >> 20, rounded_mappingsize, mappingsize >> 20));
+
+	if((rounded_mappingsize >> GIGABYTE_SHIFT) >  PML4E_MAP_LIMIT){
+		/* Only setup one PDPTE entry for now so can map up to 512Gb */
+		printk(KERN_ERR "Physical memory greater than (%d) Gb not supported.\n",
+		       PML4E_MAP_LIMIT);
+		return 0;
+	}
+
+	/* Only need 1 pdpt to map upto 512G */
+	n_pdpt = 1;
+	/* Need 1 PD per gigabyte of physical mem */
+	n_pd = rounded_mappingsize >> GIGABYTE_SHIFT;
+	/* We just split the 1st 2Mb region into 4K pages so need only 1 PT table. */
+	n_pt = 1;
+	
+	/* pt - PML1, pd - PML2, pdpt - PML3 */
+	pdpt = (pt_page*)kmalloc(sizeof(pt_page)* n_pdpt, GFP_KERNEL);
+	pd   = (pt_page*)kmalloc(sizeof(pt_page)* n_pd, GFP_KERNEL);
+	pt   = (pt_page*)kmalloc(sizeof(pt_page)* n_pt, GFP_KERNEL);
+	
+	HDEBUG(("Allocated (%u) pdpt (%u) pd (%u) pt tables.\n", n_pdpt, n_pd, n_pt));
+
+        /* Allocate the paging structures from bottom to top so we start
+	 * at the PT level (PML1) and finish with the PML4 table.
+	 */
+	
+	/* 1st 2Meg mapping (PML1 / PT):
+	 * At the moment we only use a PT for the 1st 2MB region, for
+	 * the rest of memory we map in via 2MB PD entries. We break
+	 * first 2M region into 4k pages so that we can use the CPU
+	 * cache in real-mode otherwise we end up with UC memory for the
+	 * whole 2M.
+	 */
+
+	BUG_ON(n_pt != 1);
+	
+	/* XXXX todo cid: recheck on the caching bits / ipat bit and when they should be set. */
+	/* This is the 0-2MB first set of mappings which we break into 4K PTEs*/
+	for(i = 0; i < n_pt; i++){
+		if(!(vt_alloc_page((void**)&pt[i].virt, &pt[i].phys))){
+			printk(KERN_ERR "okernel: failed to allocate PML1 table.\n");
+			return 0;
+		}
+		memset(pt[i].virt, 0, PAGESIZE);
+		HDEBUG(("n=(%d) PML1 pt virt (%llX) pt phys (%llX)\n", i, (unsigned long long)pt[i].virt, pt[i].phys));
+	}
+
+	q = pt[0].virt;
+
+	for(i = 0; i < n_entries; i++){
+		addr = i << 12;
+		if(no_cache_region(addr, PAGESIZE)){
+			q[i] = (i << 12) | EPT_R | EPT_W | EPT_X;
+		} else {
+			q[i] = (i << 12) | EPT_R | EPT_W | EPT_X | EPT_CACHE_2 | EPT_CACHE_3;
+		}
+	}
+	
+        /* Now the PD (PML2) tables (plug the pt[0] entry back in later) */
+	for(i = 0; i < n_pd; i++){
+		if(!(vt_alloc_page((void**)&pd[i].virt, &pd[i].phys))){
+			printk(KERN_ERR "okernel: failed to allocate PML2 tables.\n");
+			return 0;
+		}
+		memset(pd[i].virt, 0, PAGESIZE);
+		HDEBUG(("n=(%d) PML2 pd virt (%llX) pd phys (%llX)\n", i, (unsigned long long)pd[i].virt, pd[i].phys));
+	}
+	/* XXXX todo cid: recheck correct CACHE / IPAT attribute setting. */
+	for(k = 0; k < n_pd; k++){
+		q = pd[k].virt;
+		for(i = 0; i < n_entries; i++){
+			addr = ((i + k*n_entries) << 21);
+			if(no_cache_region(addr,  PAGESIZE2M)){
+				q[i] = ((i + k*n_entries) << 21) | EPT_R | EPT_W | EPT_X | EPT_2M_PAGE;
+			} else {
+				q[i] = ((i + k*n_entries) << 21) | EPT_R | EPT_W | EPT_X | EPT_2M_PAGE | EPT_CACHE_2 | EPT_CACHE_3;
+			}
+		}
+	}
+
+	/* Point just the PD entry covering the 1st 2Mb region to the PT we set
+	 * up earlier. The rest of the PD entries directly map a 2Mb
+	 * page entry, not a PT table. 
+	 */
+	q = pd[0].virt;
+	q[0] = pt[0].phys + EPT_R + EPT_W + EPT_X;
+
+
+	/* Now the PDPT (PML3) tables */
+	for(i = 0; i < n_pdpt; i++){
+		if(!(vt_alloc_page((void**)&pdpt[i].virt, &pdpt[i].phys))){
+			printk(KERN_ERR "okernel: failed to allocate PML3 tables.\n");
+			return 0;
+		}
+		memset(pdpt[i].virt, 0, PAGESIZE);
+		HDEBUG(("n=(%d) PML3 pdpt virt (%llX) pdpt phys (%llX)\n",
+			i, (u64)pdpt[i].virt, pdpt[i].phys));
+	}
+	/* And link to the PD (PML2) tables created earlier...*/
+       for(k = 0; k < n_pdpt; k++){
+	    q = pdpt[k].virt;
+	    for(i = 0; i < n_pd; i++){
+		// These are the PDPTE entries - just 4 at present to map 4GB
+		q[i] = pd[i].phys + EPT_R + EPT_W + EPT_X;
+	    }
+       }
+
+       /* Finally create the PML4 table that is the root of the EPT tables (VMCS EPTRTR field) */
+       if(!(vt_alloc_page((void**)&pml4_virt, &pml4_phys))){
+	       printk(KERN_ERR "okernel: failed to allocate PML4 table.\n");
+	       return 0;
+       }
+       
+       memset(pml4_virt, 0, PAGESIZE);
+       q = pml4_virt;
+       
+       /* Link to the PDPT table above.These are the PML4E entries - just one at present */
+       for(i = 0; i < n_pdpt; i++){
+	    q[i] = pdpt[i].phys + EPT_R + EPT_W + EPT_X;
+       }
+       
+       HDEBUG(("PML4 plm4_virt (%#lx) *plm4_virt (%#lx) pml4_phys (%#lx)\n", 
+	       (unsigned long)pml4_virt, (unsigned long)*pml4_virt,
+	       (unsigned long)pml4_phys));
+	
+       return pml4_phys;
+}
+/* End: imported code from original BV prototype */
+
 
 
 static inline bool cpu_has_secondary_exec_ctrls(void)
@@ -1776,3 +2043,5 @@ failed1:
 	vmx_free_vmxon_areas();
 	return r;
 }
+
+EXPORT_SYMBOL(vmcall);

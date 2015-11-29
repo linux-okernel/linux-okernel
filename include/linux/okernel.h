@@ -26,18 +26,20 @@
  * the executable within a VMX container. Processes runnning within a 
  * VMX container have task->okernel set to OKERNEL_ACTIVE.
  *
+ *
+ * Set during okernel_init() at boot and used to gate access to /proc/<pid>/okernel
+ * state setting,i.e. don't allow a process to be put in OKERNEL_ON_EXEC state if
+ * the okernel functionality is not enabled.
  */
 #define OKERNEL_OFF     0
 #define OKERNEL_ON_EXEC 1
 #define OKERNEL_ON      2
 
-/* Set during okernel_init() at boot and used to gate access to /proc/<pid>/okernel
- * state setting,i.e. don't allow a process to be put in OKERNEL_ON_EXEC state if
- * the okernel functionality is not enabled.
- */
-
 
 #ifdef CONFIG_OKERNEL
+#define VMCALL_NOP 0
+int vmcall(unsigned int cmd);
+
 int is_in_vmx_nr_mode(void);
 extern int okernel_enabled;
 int okernel_setup(int* vcpu);
