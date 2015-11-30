@@ -314,8 +314,111 @@ int create_4k_mapping(struct vmx_vcpu *vcpu, u64 paddr)
 }
 
 
+int create_clone_mapping(struct vmx_vcpu *vcpu, u64 paddr, unsigned long* vaddr)
+{
+	/* Splinter the 2MB EPT mapping  into a 4K PT table at the given paddr. 
+	 * Check paddr is 2MB aligned first.
+	 */
+	return 0;
+#if 0
+	struct page *pages;
+	unsigned int n_entries = PAGESIZE / 8; 
+
+	pt_page* pt = NULL;
+
+	int i = 0;
+	u64* q = NULL;
+	u64 addr = 0;
+	unsigned long *new_kstack = NULL;
+	unsigned long stack_page_address = vaddr+3*PAGESIZE;
+
+		
+	pages = alloc_pages(GFP_KERNEL, THREAD_SIZE_ORDER);
+
+	if (!pages){
+		printk(KERN_ERR, "okernel: alloc kstack clone failed.\n");
+		return NULL;
+	}
+
+	new_stack = page_address(pages);
 	
 
+	if((paddr & (PAGESIZE2M -1)) != 0){
+		printk(KERN_ERR "okernel: 2MB unaligned addr passed to EPT split.\n");
+		return 0;
+	}
+#if 1
+	pt   = (pt_page*)kmalloc(sizeof(pt_page), GFP_KERNEL);
+
+	if(!pt){
+		printk(KERN_ERR "okernel: failed to allocate PT table.\n");
+		return 0;
+	}
+	
+	if(!(vt_alloc_page((void**)&pt[i].virt, &pt[i].phys))){
+		printk(KERN_ERR "okernel: failed to allocate PML1 table.\n");
+		return 0;
+	}
+
+	memset(pt[i].virt, 0, PAGESIZE);
+	HDEBUG(("n=(%d) PML1 pt virt (%llX) pt phys (%llX)\n", i, (unsigned long long)pt[i].virt, pt[i].phys));
+
+
+	q = pt[0].virt;
+
+	for(i = 0; i < n_entries; i++){
+		addr = i << 12;
+		if(addr 
+		if(no_cache_region(addr, PAGESIZE)){
+			q[i] = (i << 12) | EPT_R | EPT_W | EPT_X;
+		} else {
+			q[i] = (i << 12) | EPT_R | EPT_W | EPT_X | EPT_CACHE_2 | EPT_CACHE_3;
+		}
+	}
+
+
+	q = (u64*)find_pd_entry(vcpu, paddr);
+
+	if(!q){
+		printk(KERN_ERR "okernel: failed to find pd entry.\n");
+		return 0;
+	}
+	//q = pd[0].virt;
+	*q = pt[0].phys + EPT_R + EPT_W + EPT_X;
+	return 1;
+#endif
+#endif
+}
+
+int clone_kstack(struct vmx_vcpu *vcpu)
+{
+	unsigned long k_stack;
+	unsigned long k_stack_paddr;
+
+	k_stack = current_top_of_stack();
+
+	k_stack_paddr = __pa(k_stack);
+	
+	HDEBUG(("kernel top stack vaddr (%#lx) paddr (%#lx)\n", k_stack, k_stack_paddr));
+
+	k_stack  = (unsigned long)current->stack;
+	k_stack_paddr = __pa(k_stack);
+	
+	HDEBUG(("kernel thread_info (tsk->stack) vaddr (%#lx) paddr (%#lx)\n",
+		k_stack, k_stack_paddr));
+	
+	(void)find_pd_entry(vcpu, k_stack_paddr);
+
+	k_stack_paddr = k_stack_paddr & (~(PAGESIZE2M-1));
+	
+	HDEBUG(("will break into 4k pages at (%#lx)\n", k_stack_paddr));
+
+	if(!create_clone_mapping(vcpu, k_stack_paddr, current->stack)){
+		printk(KERN_ERR "okernel: create stack 4k EPT mapping failed.\n");
+		return 0;
+	}
+	return 1;
+}
 
 u64 vt_ept_2M_init(void)
 {
@@ -1814,8 +1917,6 @@ int vmx_launch(int64_t *ret_code)
 	int ret = 0;
 	//int done = 0;
 	unsigned long c_rip;
-	unsigned long k_stack;
-	unsigned long k_stack_paddr;
 	
 	struct vmx_vcpu *vcpu;
 
@@ -1831,31 +1932,11 @@ int vmx_launch(int64_t *ret_code)
 	printk(KERN_ERR "vmx: created VCPU (VPID %d)\n",
 	       vcpu->vpid);
 
-	k_stack = current_top_of_stack();
-
-	k_stack_paddr = __pa(k_stack);
-	
-	HDEBUG(("kernel top stack vaddr (%#lx) paddr (%#lx)\n", k_stack, k_stack_paddr));
-
-
-	k_stack  = (unsigned long)current->stack;
-	k_stack_paddr = __pa(k_stack);
-	
-	HDEBUG(("kernel thread_info (tsk->stack) vaddr (%#lx) paddr (%#lx)\n",
-		k_stack, k_stack_paddr));
-
-	(void)find_pd_entry(vcpu, k_stack_paddr);
-
-	k_stack_paddr = k_stack_paddr & (~(PAGESIZE2M-1));
-	
-	HDEBUG(("will break into 4k pages at (%#lx)\n", k_stack_paddr));
-
-	if(!create_4k_mapping(vcpu, k_stack_paddr)){
-		printk(KERN_ERR "okernel: create stack 4k EPT mapping failed.\n");
+	if(!clone_kstack(vcpu)){
+		printk(KERN_ERR "okernel: clone kstack failed.\n");
 		goto tmp_finish;
 	}
 	
-
 	while (1) {
 		vmx_get_cpu(vcpu);
 #if 0
