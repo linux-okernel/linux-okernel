@@ -21,7 +21,6 @@
 #include <linux/sched.h>
 #include <asm/pgtable.h>
 
-//#include "dune.h"
 #include "vmx.h"
 
 #define EPT_LEVELS	4	/* 0 through 3 */
@@ -57,6 +56,7 @@ static inline bool cpu_has_vmx_ept_4levels(void)
 	return vmx_capability.ept & VMX_EPT_PAGE_WALK_4_BIT;
 }
 
+#if 0
 #define VMX_EPT_FAULT_READ	0x01
 #define VMX_EPT_FAULT_WRITE	0x02
 #define VMX_EPT_FAULT_INS	0x04
@@ -113,6 +113,8 @@ static inline int epte_big(epte_t epte)
 }
 
 #define ADDR_INVAL ((unsigned long) -1)
+
+#endif
 
 static unsigned long hva_to_gpa(struct vmx_vcpu *vcpu,
 				struct mm_struct *mm,
@@ -745,6 +747,6 @@ fail:
 
 void vmx_destroy_ept(struct vmx_vcpu *vcpu)
 {
-	mmu_notifier_unregister(&vcpu->mmu_notifier, current->mm);
+	//mmu_notifier_unregister(&vcpu->mmu_notifier, current->mm);
 	vmx_free_ept(vcpu->ept_root);
 }

@@ -146,6 +146,9 @@
 #define GIGABYTE       0x40000000
 #define GIGABYTE_SHIFT 30
 
+#define TWO_MBYTE       0x200000
+#define TWO_MBYTE_SHIFT 21
+
 
 typedef struct pt_page {
      u64  phys;

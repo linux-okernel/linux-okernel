@@ -223,6 +223,100 @@ u64 vt_ept_4K_init(void)
 	return 0;
 }
 
+epte_t* find_pd_entry(struct vmx_vcpu *vcpu, u64 paddr)
+{
+	/* Find index in a PD that maps a particular 2MB range containing a given address. */
+
+	/* First need the PDP enty from a given PML4 root */
+	epte_t *pml3 = NULL;
+	epte_t *pml2 = NULL;
+	epte_t *pde  = NULL;
+	
+	int pml3_index, pml2_index;
+
+	epte_t *pml4 =  (epte_t*) __va(vcpu->ept_root);
+
+	pml3 = (epte_t *)epte_page_vaddr(*pml4);
+
+	pml3_index = (paddr & (~(GIGABYTE -1))) >> GIGABYTE_SHIFT;
+
+	HDEBUG(("addr (%#lx) pml3 index (%i)\n", (unsigned long)paddr, pml3_index));
+	
+	pml2 = (epte_t *)epte_page_vaddr(pml3[pml3_index]);
+
+	pml2_index = ((paddr & (GIGABYTE -1)) >> PAGESIZE2M_SHIFT);
+
+	HDEBUG(("addr (%#lx) pml2 index (%i)\n", (unsigned long)paddr, pml2_index));
+
+	pde = (epte_t *)epte_page_vaddr(pml2[pml2_index]);
+
+	HDEBUG(("addr (%#lx) pde (%#lx)\n", (unsigned long)paddr, (unsigned long)pde));
+	return pde;
+}
+
+
+int create_4k_mapping(struct vmx_vcpu *vcpu, u64 paddr)
+{
+	/* Splinter the 2MB EPT mapping  into a 4K PT table at the given paddr. 
+	 * Check paddr is 2MB aligned first.
+	 */
+	unsigned int n_entries = PAGESIZE / 8; 
+
+	pt_page* pt = NULL;
+
+	int i = 0;
+	u64* q = NULL;
+	u64 addr = 0;
+
+	if((paddr & (PAGESIZE2M -1)) != 0){
+		printk(KERN_ERR "okernel: 2MB unaligned addr passed to EPT split.\n");
+		return 0;
+	}
+#if 1
+	pt   = (pt_page*)kmalloc(sizeof(pt_page), GFP_KERNEL);
+
+	if(!pt){
+		printk(KERN_ERR "okernel: failed to allocate PT table.\n");
+		return 0;
+	}
+	
+	if(!(vt_alloc_page((void**)&pt[i].virt, &pt[i].phys))){
+		printk(KERN_ERR "okernel: failed to allocate PML1 table.\n");
+		return 0;
+	}
+
+	memset(pt[i].virt, 0, PAGESIZE);
+	HDEBUG(("n=(%d) PML1 pt virt (%llX) pt phys (%llX)\n", i, (unsigned long long)pt[i].virt, pt[i].phys));
+
+
+	q = pt[0].virt;
+
+	for(i = 0; i < n_entries; i++){
+		addr = i << 12;
+		if(no_cache_region(addr, PAGESIZE)){
+			q[i] = (i << 12) | EPT_R | EPT_W | EPT_X;
+		} else {
+			q[i] = (i << 12) | EPT_R | EPT_W | EPT_X | EPT_CACHE_2 | EPT_CACHE_3;
+		}
+	}
+
+
+	q = (u64*)find_pd_entry(vcpu, paddr);
+
+	if(!q){
+		printk(KERN_ERR "okernel: failed to find pd entry.\n");
+		return 0;
+	}
+	//q = pd[0].virt;
+	*q = pt[0].phys + EPT_R + EPT_W + EPT_X;
+	return 1;
+#endif
+}
+
+
+	
+
+
 u64 vt_ept_2M_init(void)
 {
 	/*
@@ -1720,6 +1814,8 @@ int vmx_launch(int64_t *ret_code)
 	int ret = 0;
 	//int done = 0;
 	unsigned long c_rip;
+	unsigned long k_stack;
+	unsigned long k_stack_paddr;
 	
 	struct vmx_vcpu *vcpu;
 
@@ -1732,22 +1828,36 @@ int vmx_launch(int64_t *ret_code)
 	if (!vcpu)
 		return -ENOMEM;
 	
-	//if(ret_code){
-	//	(void)vmx_run_vcpu(vcpu);
-	//}
-	
 	printk(KERN_ERR "vmx: created VCPU (VPID %d)\n",
 	       vcpu->vpid);
 
+	k_stack = current_top_of_stack();
+
+	k_stack_paddr = __pa(k_stack);
+	
+	HDEBUG(("kernel top stack vaddr (%#lx) paddr (%#lx)\n", k_stack, k_stack_paddr));
+
+
+	k_stack  = (unsigned long)current->stack;
+	k_stack_paddr = __pa(k_stack);
+	
+	HDEBUG(("kernel thread_info (tsk->stack) vaddr (%#lx) paddr (%#lx)\n",
+		k_stack, k_stack_paddr));
+
+	(void)find_pd_entry(vcpu, k_stack_paddr);
+
+	k_stack_paddr = k_stack_paddr & (~(PAGESIZE2M-1));
+	
+	HDEBUG(("will break into 4k pages at (%#lx)\n", k_stack_paddr));
+
+	if(!create_4k_mapping(vcpu, k_stack_paddr)){
+		printk(KERN_ERR "okernel: create stack 4k EPT mapping failed.\n");
+		goto tmp_finish;
+	}
+	
+
 	while (1) {
 		vmx_get_cpu(vcpu);
-		/*
-		 * We assume that a Dune process will always use
-		 * the FPU whenever it is entered, and thus we go
-		 * ahead and load FPU state here. The reason is
-		 * that we don't monitor or trap FPU usage inside
-		 * a Dune process.
-		 */
 #if 0
 		if (!__thread_has_fpu(current))
 			math_state_restore();
@@ -1799,8 +1909,9 @@ int vmx_launch(int64_t *ret_code)
 		if(*ret_code)
 			vmx_run_vcpu(vcpu);
 
-#endif
+#else
 		ret = vmx_run_vcpu(vcpu);
+#endif
 		HDEBUG(("Got VMEXIT! (%#x)\n", ret));
 		goto tmp_finish;
 		
@@ -1839,8 +1950,8 @@ tmp_finish:
 	       vcpu->vpid);
 
 	*ret_code = vcpu->ret_code;
-	do_exit(0);
 	//vmx_destroy_vcpu(vcpu);
+	do_exit(0);
 	return 0;
 }
 

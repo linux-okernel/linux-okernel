@@ -169,3 +169,61 @@ static __always_inline unsigned long vmcs_readl(unsigned long field)
                       : "=a"(value) : "d"(field) : "cc");
         return value;
 }
+
+
+#define VMX_EPT_FAULT_READ	0x01
+#define VMX_EPT_FAULT_WRITE	0x02
+#define VMX_EPT_FAULT_INS	0x04
+
+typedef unsigned long epte_t;
+
+#define __EPTE_READ	0x01
+#define __EPTE_WRITE	0x02
+#define __EPTE_EXEC	0x04
+#define __EPTE_IPAT	0x40
+#define __EPTE_SZ	0x80
+#define __EPTE_A	0x100
+#define __EPTE_D	0x200
+#define __EPTE_PFNMAP	0x400 /* ignored by HW */
+#define __EPTE_TYPE(n)	(((n) & 0x7) << 3)
+
+enum {
+	EPTE_TYPE_UC = 0, /* uncachable */
+	EPTE_TYPE_WC = 1, /* write combining */
+	EPTE_TYPE_WT = 4, /* write through */
+	EPTE_TYPE_WP = 5, /* write protected */
+	EPTE_TYPE_WB = 6, /* write back */
+};
+
+#define __EPTE_NONE	0
+#define __EPTE_FULL	(__EPTE_READ | __EPTE_WRITE | __EPTE_EXEC)
+
+#define EPTE_ADDR	(~(PAGE_SIZE - 1))
+#define EPTE_FLAGS	(PAGE_SIZE - 1)
+
+static inline uintptr_t epte_addr(epte_t epte)
+{
+	return (epte & EPTE_ADDR);
+}
+
+static inline uintptr_t epte_page_vaddr(epte_t epte)
+{
+	return (uintptr_t) __va(epte_addr(epte));
+}
+
+static inline epte_t epte_flags(epte_t epte)
+{
+	return (epte & EPTE_FLAGS);
+}
+
+static inline int epte_present(epte_t epte)
+{
+	return (epte & __EPTE_FULL) > 0;
+}
+
+static inline int epte_big(epte_t epte)
+{
+	return (epte & __EPTE_SZ) > 0;
+}
+
+#define ADDR_INVAL ((unsigned long) -1)
