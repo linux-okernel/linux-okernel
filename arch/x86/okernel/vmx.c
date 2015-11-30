@@ -223,7 +223,7 @@ u64 vt_ept_4K_init(void)
 	return 0;
 }
 
-epte_t* find_pd_entry(struct vmx_vcpu *vcpu, u64 paddr)
+unsigned long* find_pd_entry(struct vmx_vcpu *vcpu, u64 paddr)
 {
 	/* Find index in a PD that maps a particular 2MB range containing a given address. */
 
@@ -231,6 +231,7 @@ epte_t* find_pd_entry(struct vmx_vcpu *vcpu, u64 paddr)
 	epte_t *pml3 = NULL;
 	epte_t *pml2 = NULL;
 	epte_t *pde  = NULL;
+	unsigned long* pml2_p;
 	
 	int pml3_index, pml2_index;
 
@@ -250,8 +251,9 @@ epte_t* find_pd_entry(struct vmx_vcpu *vcpu, u64 paddr)
 
 	pde = (epte_t *)epte_page_vaddr(pml2[pml2_index]);
 
+	pml2_p = &pml2[pml2_index];
 	HDEBUG(("addr (%#lx) pde (%#lx)\n", (unsigned long)paddr, (unsigned long)pde));
-	return pde;
+	return pml2_p;
 }
 
 
@@ -319,35 +321,48 @@ int create_clone_mapping(struct vmx_vcpu *vcpu, u64 paddr, unsigned long* vaddr)
 	/* Splinter the 2MB EPT mapping  into a 4K PT table at the given paddr. 
 	 * Check paddr is 2MB aligned first.
 	 */
-	return 0;
-#if 0
-	struct page *pages;
+	struct page *page;
 	unsigned int n_entries = PAGESIZE / 8; 
 
 	pt_page* pt = NULL;
+	pt_page* pte = NULL;
 
 	int i = 0;
 	u64* q = NULL;
 	u64 addr = 0;
 	unsigned long *new_kstack = NULL;
-	unsigned long stack_page_address = vaddr+3*PAGESIZE;
-
-		
-	pages = alloc_pages(GFP_KERNEL, THREAD_SIZE_ORDER);
-
-	if (!pages){
-		printk(KERN_ERR, "okernel: alloc kstack clone failed.\n");
-		return NULL;
-	}
-
-	new_stack = page_address(pages);
+	u64 new_kstack_pa;
+	unsigned long stack_page_address = (unsigned long)vaddr + 3*PAGESIZE;
+	u64 stack_pa = __pa(stack_page_address);
+	unsigned int index;
 	
 
 	if((paddr & (PAGESIZE2M -1)) != 0){
 		printk(KERN_ERR "okernel: 2MB unaligned addr passed to EPT split.\n");
 		return 0;
 	}
-#if 1
+	
+	HDEBUG(("page to replace at (%#lx)\n", stack_page_address));
+	
+	pte   = (pt_page*)kmalloc(sizeof(pt_page), GFP_KERNEL);
+
+	if(!pte){
+		printk(KERN_ERR "okernel: failed to allocate PT table.\n");
+		return 0;
+	}
+	
+	if(!(vt_alloc_page((void**)&pte[0].virt, &pte[0].phys))){
+		printk(KERN_ERR "okernel: failed to allocate PML1 table.\n");
+		return 0;
+	}
+
+
+	HDEBUG(("Replacing kstack with v (%#lx) p (%#lx)\n",
+		(unsigned long)pte[0].virt, (unsigned long)pte[0].phys));
+     
+	HDEBUG(("cloning kernel stack using memcpy...\n"));
+	memcpy((void*)pte[0].virt, (void*)stack_page_address, PAGESIZE);
+
 	pt   = (pt_page*)kmalloc(sizeof(pt_page), GFP_KERNEL);
 
 	if(!pt){
@@ -363,16 +378,31 @@ int create_clone_mapping(struct vmx_vcpu *vcpu, u64 paddr, unsigned long* vaddr)
 	memset(pt[i].virt, 0, PAGESIZE);
 	HDEBUG(("n=(%d) PML1 pt virt (%llX) pt phys (%llX)\n", i, (unsigned long long)pt[i].virt, pt[i].phys));
 
+	index = stack_pa & (PAGESIZE2M -1);
 
+	HDEBUG(("index1: %u\n", index));
+	index = index >> 12;
+
+	HDEBUG(("pt index (%u)\n", index));
+	
 	q = pt[0].virt;
 
 	for(i = 0; i < n_entries; i++){
 		addr = i << 12;
-		if(addr 
-		if(no_cache_region(addr, PAGESIZE)){
-			q[i] = (i << 12) | EPT_R | EPT_W | EPT_X;
+		if(i == index){
+			/* Plug-in clone */
+			HDEBUG(("replacing kstack physical address (%#lx) vaddr (%#lx) with pa(%#lx)\n",
+				(unsigned long)addr,
+				(unsigned long)stack_page_address,
+				(unsigned long)pte[0].phys));
+			//q[i] = pte[0].phys + EPT_R + EPT_W + EPT_X + EPT_CACHE_2 + EPT_CACHE_3;
+			q[i] = 0;
 		} else {
-			q[i] = (i << 12) | EPT_R | EPT_W | EPT_X | EPT_CACHE_2 | EPT_CACHE_3;
+			if(no_cache_region(addr, PAGESIZE)){
+				q[i] = (i << 12) | EPT_R | EPT_W | EPT_X;
+			} else {
+				q[i] = (i << 12) | EPT_R | EPT_W | EPT_X | EPT_CACHE_2 | EPT_CACHE_3;
+			}
 		}
 	}
 
@@ -386,8 +416,6 @@ int create_clone_mapping(struct vmx_vcpu *vcpu, u64 paddr, unsigned long* vaddr)
 	//q = pd[0].virt;
 	*q = pt[0].phys + EPT_R + EPT_W + EPT_X;
 	return 1;
-#endif
-#endif
 }
 
 int clone_kstack(struct vmx_vcpu *vcpu)
@@ -407,7 +435,7 @@ int clone_kstack(struct vmx_vcpu *vcpu)
 	HDEBUG(("kernel thread_info (tsk->stack) vaddr (%#lx) paddr (%#lx)\n",
 		k_stack, k_stack_paddr));
 	
-	(void)find_pd_entry(vcpu, k_stack_paddr);
+	//(void)find_pd_entry(vcpu, k_stack_paddr);
 
 	k_stack_paddr = k_stack_paddr & (~(PAGESIZE2M-1));
 	
