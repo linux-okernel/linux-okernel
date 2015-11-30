@@ -256,16 +256,20 @@ unsigned long* find_pd_entry(struct vmx_vcpu *vcpu, u64 paddr)
 	return pml2_p;
 }
 
-
+#if 0
 int create_4k_mapping(struct vmx_vcpu *vcpu, u64 paddr)
 {
 	/* Splinter the 2MB EPT mapping  into a 4K PT table at the given paddr. 
 	 * Check paddr is 2MB aligned first.
 	 */
+	epte_t *pml3 = NULL;
+	epte_t *pml2 = NULL;
+	epte_t *pde  = NULL;
+	epte_t *pml4 =  (epte_t*) __va(vcpu->ept_root);
+	unsigned long* pml2_p;
+	int pml3_index, pml2_index;
 	unsigned int n_entries = PAGESIZE / 8; 
-
 	pt_page* pt = NULL;
-
 	int i = 0;
 	u64* q = NULL;
 	u64 addr = 0;
@@ -274,7 +278,6 @@ int create_4k_mapping(struct vmx_vcpu *vcpu, u64 paddr)
 		printk(KERN_ERR "okernel: 2MB unaligned addr passed to EPT split.\n");
 		return 0;
 	}
-#if 1
 	pt   = (pt_page*)kmalloc(sizeof(pt_page), GFP_KERNEL);
 
 	if(!pt){
@@ -302,18 +305,36 @@ int create_4k_mapping(struct vmx_vcpu *vcpu, u64 paddr)
 		}
 	}
 
+	pml3 = (epte_t *)epte_page_vaddr(*pml4);
 
-	q = (u64*)find_pd_entry(vcpu, paddr);
+	pml3_index = (paddr & (~(GIGABYTE -1))) >> GIGABYTE_SHIFT;
 
-	if(!q){
-		printk(KERN_ERR "okernel: failed to find pd entry.\n");
-		return 0;
-	}
+	HDEBUG(("addr (%#lx) pml3 index (%i)\n", (unsigned long)paddr, pml3_index));
+	
+	pml2 = (epte_t *)epte_page_vaddr(pml3[pml3_index]);
+
+	pml2_index = ((paddr & (GIGABYTE -1)) >> PAGESIZE2M_SHIFT);
+
+	HDEBUG(("addr (%#lx) pml2 index (%i)\n", (unsigned long)paddr, pml2_index));
+
+	pde = (epte_t *)epte_page_vaddr(pml2[pml2_index]);
+
+	pml2_p = &pml2[pml2_index];
+	
+	HDEBUG(("addr (%#lx) pde (%#lx)\n", (unsigned long)paddr, (unsigned long)pde));
+
+	
+	//q = (u64*)find_pd_entry(vcpu, paddr);
+
+	//if(!q){
+	//	printk(KERN_ERR "okernel: failed to find pd entry.\n");
+	//	return 0;
+	//}
 	//q = pd[0].virt;
-	*q = pt[0].phys + EPT_R + EPT_W + EPT_X;
+	pml2[pml2_index] = pt[0].phys + EPT_R + EPT_W + EPT_X;
 	return 1;
-#endif
 }
+#endif
 
 
 int create_clone_mapping(struct vmx_vcpu *vcpu, u64 paddr, unsigned long* vaddr)
@@ -321,7 +342,12 @@ int create_clone_mapping(struct vmx_vcpu *vcpu, u64 paddr, unsigned long* vaddr)
 	/* Splinter the 2MB EPT mapping  into a 4K PT table at the given paddr. 
 	 * Check paddr is 2MB aligned first.
 	 */
-	struct page *page;
+	epte_t *pml3 = NULL;
+	epte_t *pml2 = NULL;
+	epte_t *pde  = NULL;
+	epte_t *pml4 =  (epte_t*) __va(vcpu->ept_root);
+	unsigned long* pml2_p;
+	int pml3_index, pml2_index;
 	unsigned int n_entries = PAGESIZE / 8; 
 
 	pt_page* pt = NULL;
@@ -395,8 +421,8 @@ int create_clone_mapping(struct vmx_vcpu *vcpu, u64 paddr, unsigned long* vaddr)
 				(unsigned long)addr,
 				(unsigned long)stack_page_address,
 				(unsigned long)pte[0].phys));
-			//q[i] = pte[0].phys + EPT_R + EPT_W + EPT_X + EPT_CACHE_2 + EPT_CACHE_3;
-			q[i] = 0;
+			q[i] = pte[0].phys + EPT_R + EPT_W + EPT_X + EPT_CACHE_2 + EPT_CACHE_3;
+			//q[i] = 0;
 		} else {
 			if(no_cache_region(addr, PAGESIZE)){
 				q[i] = (i << 12) | EPT_R | EPT_W | EPT_X;
@@ -405,16 +431,35 @@ int create_clone_mapping(struct vmx_vcpu *vcpu, u64 paddr, unsigned long* vaddr)
 			}
 		}
 	}
+	
+	pml3 = (epte_t *)epte_page_vaddr(*pml4);
 
+	pml3_index = (paddr & (~(GIGABYTE -1))) >> GIGABYTE_SHIFT;
 
-	q = (u64*)find_pd_entry(vcpu, paddr);
+	HDEBUG(("addr (%#lx) pml3 index (%i)\n", (unsigned long)paddr, pml3_index));
+	
+	pml2 = (epte_t *)epte_page_vaddr(pml3[pml3_index]);
 
-	if(!q){
-		printk(KERN_ERR "okernel: failed to find pd entry.\n");
-		return 0;
-	}
-	//q = pd[0].virt;
-	*q = pt[0].phys + EPT_R + EPT_W + EPT_X;
+	pml2_index = ((paddr & (GIGABYTE -1)) >> PAGESIZE2M_SHIFT);
+
+	HDEBUG(("addr (%#lx) pml2 index (%i)\n", (unsigned long)paddr, pml2_index));
+
+	pde = (epte_t *)epte_page_vaddr(pml2[pml2_index]);
+
+	pml2_p = &pml2[pml2_index];
+	
+	HDEBUG(("addr (%#lx) pde (%#lx)\n", (unsigned long)paddr, (unsigned long)pde));
+	
+
+	//q = (u64*)find_pd_entry(vcpu, paddr);
+//
+//	if(!q){
+//		printk(KERN_ERR "okernel: failed to find pd entry.\n");
+//		return 0;
+//	}
+//	//q = pd[0].virt;
+	pml2[pml2_index] = pt[0].phys + EPT_R + EPT_W + EPT_X;
+	//*q = pt[0].phys + EPT_R + EPT_W + EPT_X;
 	return 1;
 }
 
