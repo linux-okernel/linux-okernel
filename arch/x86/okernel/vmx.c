@@ -356,8 +356,6 @@ int create_clone_mapping(struct vmx_vcpu *vcpu, u64 paddr, unsigned long* vaddr)
 	int i = 0;
 	u64* q = NULL;
 	u64 addr = 0;
-	unsigned long *new_kstack = NULL;
-	u64 new_kstack_pa;
 	unsigned long stack_page_address = (unsigned long)vaddr + 3*PAGESIZE;
 	u64 stack_pa = __pa(stack_page_address);
 	unsigned int index;
@@ -1487,10 +1485,11 @@ static void vmx_setup_initial_guest_state(void)
 	get_cpu_state(&current_cpu_state);
 	show_cpu_state(current_cpu_state);
 
+#if 0
 	HDEBUG(("----start of 'current' regs from __show_regs:\n"));
 	__show_regs(regs, 1);
 	HDEBUG(("----end of 'current' regs from __show_regs.\n"));
-       
+#endif  
 	/* Most likely will need to adjust */
 	cr4 = current_cpu_state.cr4;
 	cr4_shadow = (cr4 & ~X86_CR4_VMXE);
@@ -2018,6 +2017,7 @@ int vmx_launch(int64_t *ret_code)
 #endif
 		local_irq_disable();
 
+
 		if (need_resched()) {
 			local_irq_enable();
 			vmx_put_cpu(vcpu);
@@ -2048,13 +2048,13 @@ int vmx_launch(int64_t *ret_code)
 				vcpu->ret_code = ((ENOSYS) << 8);
 				break;
 			}
+
 #if 0
 			x  = DUNE_SIGNAL_INTR_BASE + signr;
 			x |= INTR_INFO_VALID_MASK;
-
 			vmcs_write32(VM_ENTRY_INTR_INFO_FIELD, x);
-#endif
 			continue;
+#endif
 		}
 #endif
 		
@@ -2062,14 +2062,17 @@ int vmx_launch(int64_t *ret_code)
 #if 0
 		if(*ret_code)
 			vmx_run_vcpu(vcpu);
-
-#else
-		ret = vmx_run_vcpu(vcpu);
 #endif
+		ret = vmx_run_vcpu(vcpu);
+
 		HDEBUG(("Got VMEXIT! (%#x)\n", ret));
-		goto tmp_finish;
-		
 		local_irq_enable();
+		vmx_put_cpu(vcpu);
+		if(ret == 1)
+			break;
+		
+		//goto tmp_finish;
+
 #if 0
 		if (ret == EXIT_REASON_VMCALL ||
 		    ret == EXIT_REASON_CPUID) {
@@ -2106,6 +2109,10 @@ tmp_finish:
 	*ret_code = vcpu->ret_code;
 	//vmx_destroy_vcpu(vcpu);
 	do_exit(0);
+	current->state = TASK_DEAD;
+	current->flags |= PF_NOFREEZE;	/* tell freezer to ignore us */
+	schedule();
+	BUG();
 	return 0;
 }
 
