@@ -8,6 +8,29 @@
 #include <linux/okernel.h>
 #include <linux/kdev_t.h>
 
+
+#include <linux/mm.h>
+#include <linux/highmem.h>
+#include <linux/sched.h>
+#include <linux/ftrace.h>
+#include <linux/slab.h>
+#include <linux/tboot.h>
+#include <linux/init.h>
+#include <linux/smp.h>
+#include <linux/percpu.h>
+#include <linux/syscalls.h>
+#include <linux/version.h>
+
+#include <asm/desc.h>
+#include <asm/vmx.h>
+#include <asm/unistd_64.h>
+#include <asm/virtext.h>
+#include <asm/percpu.h>
+//#include <asm/paravirt.h>
+
+#include <asm/tlbflush.h>
+
+
 #include "vmx.h"
 
 MODULE_LICENSE("GPL");
@@ -73,7 +96,7 @@ int __noclone okernel_enter(int64_t *ret)
 {
 	int r = 0;
 	int64_t dummy;
-	
+	struct pt_regs *regs;	
 	HDEBUG(("called.\n"));
 
 #if 0
@@ -85,10 +108,21 @@ int __noclone okernel_enter(int64_t *ret)
 	HDEBUG(("2 (after clean and jmp - shouldn't get here!)\n"));
 #endif
 	dummy = 0;
-	r = vmx_launch(&dummy);
 
+	if((r = vmx_launch(&dummy))){
+		HDEBUG(("exit from vmx_launch.\n"));
+		goto out;
+	}
+	
 	asm(".Lc_rip_label: ");
-
+#if 1
+	if(is_in_vmx_nr_mode()){
+		regs = task_pt_regs(current);
+		//__show_regs(regs, 1);
+		vmcall(VMCALL_NOP);
+	}
+#endif
+out:
 	return r;
 }
 
@@ -103,6 +137,7 @@ static int ok_device_open(struct inode *inode, struct file *file)
 long ok_device_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 {
 	unsigned long val;
+	int64_t ret;
 
 	HDEBUG(("called.\n"));
 	switch(cmd)
@@ -116,15 +151,30 @@ long ok_device_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 			return -EINVAL;
 		}
 		/* do okernel_enter() here... */
-		HDEBUG(("would do okernel_enter()\n"));
+		HDEBUG(("About to go into okernel on mode via okernel_enter() for pid (%d)\n",
+			current->pid));
+
 		current->okernel_status = OKERNEL_ON;
+		okernel_enter(&ret);
+#if 0
+		if(is_in_vmx_nr_mode()){
+			vmcall(VMCALL_NOP);
+		}
+#endif
+		current->okernel_status = OKERNEL_OFF;
+
+		if(!ret){
+			printk(KERN_ERR "okernel_enter failed for pid <%d> ret (%lu)\n",
+			       current->pid, (unsigned long)ret);
+		}
+		HDEBUG(("NR kernel off for <%d>\n", current->pid));
 		break;
 	default:
 		printk(KERN_ERR "okernel invalid IOCTL cmd.\n");
 		return -ENODEV;
 		
 	}
-    return 0;
+	return 0;
 }
 
 

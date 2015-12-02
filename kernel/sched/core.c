@@ -3120,6 +3120,13 @@ void __sched __schedule(void)
 	}
 
 	balance_callback(rq);
+#ifdef CONFIG_OKERNEL
+#if 0
+	if(is_in_vmx_nr_mode()){
+		vmcall(VMCALL_NOP);
+	}
+#endif
+#endif
 }
 
 #ifdef CONFIG_OKERNEL_SCHED

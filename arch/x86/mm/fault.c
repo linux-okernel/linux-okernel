@@ -14,7 +14,7 @@
 #include <linux/prefetch.h>		/* prefetchw			*/
 #include <linux/context_tracking.h>	/* exception_enter(), ...	*/
 #include <linux/uaccess.h>		/* faulthandler_disabled()	*/
-
+#include <linux/okernel.h>
 #include <asm/traps.h>			/* dotraplinkage, ...		*/
 #include <asm/pgalloc.h>		/* pgd_*(), ...			*/
 #include <asm/kmemcheck.h>		/* kmemcheck_*(), ...		*/
@@ -575,8 +575,14 @@ static int is_f00f_bug(struct pt_regs *regs, unsigned long address)
 	return 0;
 }
 
+#ifdef CONFIG_OKERNEL
+static const char nx_warning[] = KERN_CRIT
+"kernel tried to execute NX-protected page - exploit attempt? (uid: %d) (NR: %d)\n";
+#else
 static const char nx_warning[] = KERN_CRIT
 "kernel tried to execute NX-protected page - exploit attempt? (uid: %d)\n";
+#endif
+
 static const char smep_warning[] = KERN_CRIT
 "unable to execute userspace code (SMEP?) (uid: %d)\n";
 
@@ -597,8 +603,13 @@ show_fault_oops(struct pt_regs *regs, unsigned long error_code,
 
 		pte = lookup_address_in_pgd(pgd, address, &level);
 
+#ifdef CONFIG_OKERNEL
 		if (pte && pte_present(*pte) && !pte_exec(*pte))
-			printk(nx_warning, from_kuid(&init_user_ns, current_uid()));
+			printk(nx_warning, from_kuid(&init_user_ns, current_uid()), is_in_vmx_nr_mode());
+#else
+		if (pte && pte_present(*pte) && !pte_exec(*pte))
+			printk(nx_warning, from_kuid(&init_user_ns, current_uid()), is_in_vmx_nr_mode());
+#endif
 		if (pte && pte_present(*pte) && pte_exec(*pte) &&
 				(pgd_flags(*pgd) & _PAGE_USER) &&
 				(__read_cr4() & X86_CR4_SMEP))

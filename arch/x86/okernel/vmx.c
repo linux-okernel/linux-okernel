@@ -1979,7 +1979,11 @@ static int __noclone vmx_run_vcpu(struct vmx_vcpu *vcpu)
 }
 
 
-
+static void vmx_step_instruction(void)
+{
+        vmcs_writel(GUEST_RIP, vmcs_readl(GUEST_RIP) +
+                               vmcs_read32(VM_EXIT_INSTRUCTION_LEN));
+}
 
 /**
  * vmx_launch - the main loop for a cloned VMX okernel process (thread)
@@ -2065,15 +2069,9 @@ int vmx_launch(int64_t *ret_code)
 #endif
 		ret = vmx_run_vcpu(vcpu);
 
-		HDEBUG(("Got VMEXIT! (%#x)\n", ret));
+		HDEBUG(("Got VMEXIT! (%#x) pid (%d)\n", ret, current->pid));
 		local_irq_enable();
-		vmx_put_cpu(vcpu);
-		if(ret == 1)
-			break;
 		
-		//goto tmp_finish;
-
-#if 0
 		if (ret == EXIT_REASON_VMCALL ||
 		    ret == EXIT_REASON_CPUID) {
 			vmx_step_instruction();
@@ -2081,6 +2079,12 @@ int vmx_launch(int64_t *ret_code)
 
 		vmx_put_cpu(vcpu);
 
+		if(ret == 1 || ret == 0x12){
+			continue;
+		} else {
+			goto tmp_finish;
+		}
+#if 0
 		if (ret == EXIT_REASON_VMCALL)
 			vmx_handle_syscall(vcpu);
 		else if (ret == EXIT_REASON_CPUID)
@@ -2109,11 +2113,7 @@ tmp_finish:
 	*ret_code = vcpu->ret_code;
 	//vmx_destroy_vcpu(vcpu);
 	do_exit(0);
-	current->state = TASK_DEAD;
-	current->flags |= PF_NOFREEZE;	/* tell freezer to ignore us */
-	schedule();
-	BUG();
-	return 0;
+	return 1;
 }
 
 	
