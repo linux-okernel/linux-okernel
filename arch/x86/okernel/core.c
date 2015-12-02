@@ -116,10 +116,9 @@ int __noclone okernel_enter(int64_t *ret)
 	
 	asm(".Lc_rip_label: ");
 #if 1
-	if(is_in_vmx_nr_mode()){
-		regs = task_pt_regs(current);
-		//__show_regs(regs, 1);
-		vmcall(VMCALL_NOP);
+	if(vmx_nr_mode()){
+		printk(KERN_CRIT "Resuming cloned process In NR mode kernel.\n");
+		//vmcall(VMCALL_NOP);
 	}
 #endif
 out:
@@ -155,10 +154,17 @@ long ok_device_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 			current->pid));
 
 		current->okernel_status = OKERNEL_ON;
+
+		if(vmx_nr_mode()){
+			printk(KERN_CRIT "Calling okernel_enter in  NR mode kernel...shouldn't get here!!\n");
+		}
+		
 		okernel_enter(&ret);
-#if 0
-		if(is_in_vmx_nr_mode()){
-			vmcall(VMCALL_NOP);
+		
+#if 1
+		if(vmx_nr_mode()){
+			printk(KERN_CRIT "Returning in ok_device_ioctl in cloned process NR mode kernel.\n");
+			return 0;
 		}
 #endif
 		current->okernel_status = OKERNEL_OFF;
