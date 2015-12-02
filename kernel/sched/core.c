@@ -2986,17 +2986,17 @@ again:
  *
  * WARNING: must be called with preemption disabled!
  */
-#ifdef CONFIG_OKERNEL
+#ifdef CONFIG_OKERNEL_SCHED
 static void __sched __schedule(void)
 #else
-void __sched __schedule(void);
+void __sched __schedule(void)
 #endif
 {
 	struct task_struct *prev, *next;
 	unsigned long *switch_count;
 	struct rq *rq;
 	int cpu;
-#ifdef CONFIG_OKERNEL
+#ifdef CONFIG_OKERNEL_SCHED
 	unsigned long *prev_okernel_state;
 	unsigned long *next_okernel_state;
 	int *next_okernel_vcpu;
@@ -3062,7 +3062,7 @@ void __sched __schedule(void);
 		rq->curr = next;
 		++*switch_count;
 
-#ifdef CONFIG_OKERNEL
+#ifdef CONFIG_OKERNEL_SCHED
 		prev_okernel_state = &prev->okernel_status;
 		next_okernel_state = &next->okernel_status;
 		next_okernel_vcpu = &next->okernel_vcpu;
@@ -3097,7 +3097,7 @@ void __sched __schedule(void);
 #endif
 		cpu = cpu_of(rq);
 
-#ifdef CONFIG_OKERNEL
+#ifdef CONFIG_OKERNEL_SCHED
 		/* Lift (a clone of this) process onto a vcpu.  This original process remains
 		   here in the okernel_enter() loop, whilst the cloned process continues execution
 		   in VMX non-root mode. In
@@ -3122,13 +3122,15 @@ void __sched __schedule(void);
 	balance_callback(rq);
 }
 
-#ifdef CONFIG_OKERNEL
+#ifdef CONFIG_OKERNEL_SCHED
 void __sched __ok_schedule(void)
 {
 	__schedule();
 }
+#endif
 
-void  __sched okernel_schedule(void)
+#ifdef CONFIG_OKERNEL
+static void  __sched okernel_schedule(void)
 {
 	if(is_in_vmx_nr_mode()){
 		/* Return control to the original process running in root-mode VMX */
@@ -8556,6 +8558,6 @@ void dump_cpu_task(int cpu)
 	sched_show_task(cpu_curr(cpu));
 }
 
-#ifdef CONFIG_OKERNEL
+#ifdef CONFIG_OKERNEL_SCHED
 EXPORT_SYMBOL(__ok_schedule);
 #endif

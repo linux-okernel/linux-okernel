@@ -1605,7 +1605,7 @@ static int do_execveat_common(int fd, struct filename *filename,
 	if (displaced)
 		put_files_struct(displaced);
 
-#ifdef CONFIG_OKERNEL
+#ifdef CONFIG_OKERNEL_SCHED
 	/* Start to lift process onto a vcpu - may vary where we do
 	   this, e.g. not until after re-sched.  Also need to work 
 	   through possible cpu migration issues. Current plan is to
