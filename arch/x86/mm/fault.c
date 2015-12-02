@@ -577,7 +577,7 @@ static int is_f00f_bug(struct pt_regs *regs, unsigned long address)
 
 #ifdef CONFIG_OKERNEL
 static const char nx_warning[] = KERN_CRIT
-"kernel tried to execute NX-protected page - exploit attempt? (uid: %d) (NR: %d)\n";
+"kernel tried to execute NX-protected page - exploit attempt? (uid: %d) (NR: %u)\n";
 #else
 static const char nx_warning[] = KERN_CRIT
 "kernel tried to execute NX-protected page - exploit attempt? (uid: %d)\n";
@@ -605,7 +605,7 @@ show_fault_oops(struct pt_regs *regs, unsigned long error_code,
 
 #ifdef CONFIG_OKERNEL
 		if (pte && pte_present(*pte) && !pte_exec(*pte))
-			printk(nx_warning, from_kuid(&init_user_ns, current_uid()), is_in_vmx_nr_mode());
+			printk(nx_warning, from_kuid(&init_user_ns, current_uid()), (unsigned int)vmx_nr_mode());
 #else
 		if (pte && pte_present(*pte) && !pte_exec(*pte))
 			printk(nx_warning, from_kuid(&init_user_ns, current_uid()), is_in_vmx_nr_mode());

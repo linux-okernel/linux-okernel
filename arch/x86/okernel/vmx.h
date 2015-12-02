@@ -8,6 +8,7 @@
 //#include <asm/tlbflush.h>
 #include <asm/vmx.h>
 #include <linux/kvm_types.h>
+#include <linux/okernel.h>
 
 /* Where our cloned thread will initially start from initially in VMX non-root mode */
 extern unsigned long cloned_thread_rip;
@@ -42,7 +43,7 @@ extern unsigned long cloned_thread_rip;
 
 #define HPL_DEBUG
 #ifdef HPL_DEBUG
-#define HDEBUG(args) (printk(KERN_ERR "ok: cpu(%d) %s: ", raw_smp_processor_id(), __func__), printk args)
+#define HDEBUG(args) (printk(KERN_ERR "ok: cpu(%d) nr (%u) %s: ", raw_smp_processor_id(),vmx_nr_mode(), __func__), printk args)
 #else
 #define HDEBUG(args)
 #endif

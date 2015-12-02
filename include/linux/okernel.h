@@ -14,7 +14,7 @@
 
 #ifndef _LINUX_OKERNEL_H
 #define _LINUX_OKERNEL_H
-
+#include <asm/special_insns.h>
 
 /* 
  * Flags to control initial vmx non-root mode setup from user-space 
@@ -39,6 +39,17 @@
 #ifdef CONFIG_OKERNEL
 #define VMCALL_NOP 0
 int vmcall(unsigned int cmd);
+
+static inline bool vmx_nr_mode(void)
+{
+	unsigned long cr4;
+
+	cr4 = native_read_cr4();
+	
+	if(cr4 & X86_CR4_VMXE)
+		return false;
+	return true;
+}
 
 int is_in_vmx_nr_mode(void);
 extern int okernel_enabled;

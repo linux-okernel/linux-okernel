@@ -2063,13 +2063,9 @@ int vmx_launch(int64_t *ret_code)
 #endif
 		
 		HDEBUG(("About to call vmx_run_vcpu...\n"));
-#if 0
-		if(*ret_code)
-			vmx_run_vcpu(vcpu);
-#endif
+
 		ret = vmx_run_vcpu(vcpu);
 
-		HDEBUG(("Got VMEXIT! (%#x) pid (%d)\n", ret, current->pid));
 		local_irq_enable();
 		
 		if (ret == EXIT_REASON_VMCALL ||
@@ -2077,8 +2073,11 @@ int vmx_launch(int64_t *ret_code)
 			vmx_step_instruction();
 		}
 
+						
 		vmx_put_cpu(vcpu);
 
+		HDEBUG(("Got VMEXIT! (%#x) pid (%d)\n", ret, current->pid));
+		
 		if(ret == 1 || ret == 0x12){
 			continue;
 		} else {

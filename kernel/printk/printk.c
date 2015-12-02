@@ -46,6 +46,7 @@
 #include <linux/utsname.h>
 #include <linux/ctype.h>
 #include <linux/uio.h>
+#include <linux/okernel.h>
 
 #include <asm/uaccess.h>
 
@@ -1049,6 +1050,18 @@ static size_t print_time(u64 ts, char *buf)
 		       (unsigned long)ts, rem_nsec / 1000);
 }
 
+#ifdef CONFIG_OKERNEL
+static size_t print_vmx_mode(char *buf)
+{
+      	if (!buf)
+		return snprintf(NULL, 0, "[NR: %u] ", (unsigned int)vmx_nr_mode());
+
+	return sprintf(buf, "[NR: %u] ", (unsigned int)vmx_nr_mode());
+	
+}
+#endif
+
+
 static size_t print_prefix(const struct printk_log *msg, bool syslog, char *buf)
 {
 	size_t len = 0;
@@ -1069,6 +1082,9 @@ static size_t print_prefix(const struct printk_log *msg, bool syslog, char *buf)
 	}
 
 	len += print_time(msg->ts_nsec, buf ? buf + len : NULL);
+#ifdef CONFIG_OKERNEL
+	len += print_vmx_mode( buf ? buf + len : NULL);
+#endif
 	return len;
 }
 
