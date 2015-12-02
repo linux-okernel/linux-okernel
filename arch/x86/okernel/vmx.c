@@ -223,7 +223,7 @@ u64 vt_ept_4K_init(void)
 	return 0;
 }
 
-epte_t* find_pd_entry(struct vmx_vcpu *vcpu, u64 paddr)
+unsigned long* find_pd_entry(struct vmx_vcpu *vcpu, u64 paddr)
 {
 	/* Find index in a PD that maps a particular 2MB range containing a given address. */
 
@@ -231,6 +231,7 @@ epte_t* find_pd_entry(struct vmx_vcpu *vcpu, u64 paddr)
 	epte_t *pml3 = NULL;
 	epte_t *pml2 = NULL;
 	epte_t *pde  = NULL;
+	unsigned long* pml2_p;
 	
 	int pml3_index, pml2_index;
 
@@ -250,20 +251,25 @@ epte_t* find_pd_entry(struct vmx_vcpu *vcpu, u64 paddr)
 
 	pde = (epte_t *)epte_page_vaddr(pml2[pml2_index]);
 
+	pml2_p = &pml2[pml2_index];
 	HDEBUG(("addr (%#lx) pde (%#lx)\n", (unsigned long)paddr, (unsigned long)pde));
-	return pde;
+	return pml2_p;
 }
 
-
+#if 0
 int create_4k_mapping(struct vmx_vcpu *vcpu, u64 paddr)
 {
 	/* Splinter the 2MB EPT mapping  into a 4K PT table at the given paddr. 
 	 * Check paddr is 2MB aligned first.
 	 */
+	epte_t *pml3 = NULL;
+	epte_t *pml2 = NULL;
+	epte_t *pde  = NULL;
+	epte_t *pml4 =  (epte_t*) __va(vcpu->ept_root);
+	unsigned long* pml2_p;
+	int pml3_index, pml2_index;
 	unsigned int n_entries = PAGESIZE / 8; 
-
 	pt_page* pt = NULL;
-
 	int i = 0;
 	u64* q = NULL;
 	u64 addr = 0;
@@ -272,7 +278,6 @@ int create_4k_mapping(struct vmx_vcpu *vcpu, u64 paddr)
 		printk(KERN_ERR "okernel: 2MB unaligned addr passed to EPT split.\n");
 		return 0;
 	}
-#if 1
 	pt   = (pt_page*)kmalloc(sizeof(pt_page), GFP_KERNEL);
 
 	if(!pt){
@@ -300,18 +305,36 @@ int create_4k_mapping(struct vmx_vcpu *vcpu, u64 paddr)
 		}
 	}
 
+	pml3 = (epte_t *)epte_page_vaddr(*pml4);
 
-	q = (u64*)find_pd_entry(vcpu, paddr);
+	pml3_index = (paddr & (~(GIGABYTE -1))) >> GIGABYTE_SHIFT;
 
-	if(!q){
-		printk(KERN_ERR "okernel: failed to find pd entry.\n");
-		return 0;
-	}
+	HDEBUG(("addr (%#lx) pml3 index (%i)\n", (unsigned long)paddr, pml3_index));
+	
+	pml2 = (epte_t *)epte_page_vaddr(pml3[pml3_index]);
+
+	pml2_index = ((paddr & (GIGABYTE -1)) >> PAGESIZE2M_SHIFT);
+
+	HDEBUG(("addr (%#lx) pml2 index (%i)\n", (unsigned long)paddr, pml2_index));
+
+	pde = (epte_t *)epte_page_vaddr(pml2[pml2_index]);
+
+	pml2_p = &pml2[pml2_index];
+	
+	HDEBUG(("addr (%#lx) pde (%#lx)\n", (unsigned long)paddr, (unsigned long)pde));
+
+	
+	//q = (u64*)find_pd_entry(vcpu, paddr);
+
+	//if(!q){
+	//	printk(KERN_ERR "okernel: failed to find pd entry.\n");
+	//	return 0;
+	//}
 	//q = pd[0].virt;
-	*q = pt[0].phys + EPT_R + EPT_W + EPT_X;
+	pml2[pml2_index] = pt[0].phys + EPT_R + EPT_W + EPT_X;
 	return 1;
-#endif
 }
+#endif
 
 
 int create_clone_mapping(struct vmx_vcpu *vcpu, u64 paddr, unsigned long* vaddr)
@@ -319,35 +342,51 @@ int create_clone_mapping(struct vmx_vcpu *vcpu, u64 paddr, unsigned long* vaddr)
 	/* Splinter the 2MB EPT mapping  into a 4K PT table at the given paddr. 
 	 * Check paddr is 2MB aligned first.
 	 */
-	return 0;
-#if 0
-	struct page *pages;
+	epte_t *pml3 = NULL;
+	epte_t *pml2 = NULL;
+	epte_t *pde  = NULL;
+	epte_t *pml4 =  (epte_t*) __va(vcpu->ept_root);
+	unsigned long* pml2_p;
+	int pml3_index, pml2_index;
 	unsigned int n_entries = PAGESIZE / 8; 
 
 	pt_page* pt = NULL;
+	pt_page* pte = NULL;
 
 	int i = 0;
 	u64* q = NULL;
 	u64 addr = 0;
-	unsigned long *new_kstack = NULL;
-	unsigned long stack_page_address = vaddr+3*PAGESIZE;
-
-		
-	pages = alloc_pages(GFP_KERNEL, THREAD_SIZE_ORDER);
-
-	if (!pages){
-		printk(KERN_ERR, "okernel: alloc kstack clone failed.\n");
-		return NULL;
-	}
-
-	new_stack = page_address(pages);
+	unsigned long stack_page_address = (unsigned long)vaddr + 3*PAGESIZE;
+	u64 stack_pa = __pa(stack_page_address);
+	unsigned int index;
 	
 
 	if((paddr & (PAGESIZE2M -1)) != 0){
 		printk(KERN_ERR "okernel: 2MB unaligned addr passed to EPT split.\n");
 		return 0;
 	}
-#if 1
+	
+	HDEBUG(("page to replace at (%#lx)\n", stack_page_address));
+	
+	pte   = (pt_page*)kmalloc(sizeof(pt_page), GFP_KERNEL);
+
+	if(!pte){
+		printk(KERN_ERR "okernel: failed to allocate PT table.\n");
+		return 0;
+	}
+	
+	if(!(vt_alloc_page((void**)&pte[0].virt, &pte[0].phys))){
+		printk(KERN_ERR "okernel: failed to allocate PML1 table.\n");
+		return 0;
+	}
+
+
+	HDEBUG(("Replacing kstack with v (%#lx) p (%#lx)\n",
+		(unsigned long)pte[0].virt, (unsigned long)pte[0].phys));
+     
+	HDEBUG(("cloning kernel stack using memcpy...\n"));
+	memcpy((void*)pte[0].virt, (void*)stack_page_address, PAGESIZE);
+
 	pt   = (pt_page*)kmalloc(sizeof(pt_page), GFP_KERNEL);
 
 	if(!pt){
@@ -363,31 +402,63 @@ int create_clone_mapping(struct vmx_vcpu *vcpu, u64 paddr, unsigned long* vaddr)
 	memset(pt[i].virt, 0, PAGESIZE);
 	HDEBUG(("n=(%d) PML1 pt virt (%llX) pt phys (%llX)\n", i, (unsigned long long)pt[i].virt, pt[i].phys));
 
+	index = stack_pa & (PAGESIZE2M -1);
 
+	HDEBUG(("index1: %u\n", index));
+	index = index >> 12;
+
+	HDEBUG(("pt index (%u)\n", index));
+	
 	q = pt[0].virt;
 
 	for(i = 0; i < n_entries; i++){
 		addr = i << 12;
-		if(addr 
-		if(no_cache_region(addr, PAGESIZE)){
-			q[i] = (i << 12) | EPT_R | EPT_W | EPT_X;
+		if(i == index){
+			/* Plug-in clone */
+			HDEBUG(("replacing kstack physical address (%#lx) vaddr (%#lx) with pa(%#lx)\n",
+				(unsigned long)addr,
+				(unsigned long)stack_page_address,
+				(unsigned long)pte[0].phys));
+			q[i] = pte[0].phys + EPT_R + EPT_W + EPT_X + EPT_CACHE_2 + EPT_CACHE_3;
+			//q[i] = 0;
 		} else {
-			q[i] = (i << 12) | EPT_R | EPT_W | EPT_X | EPT_CACHE_2 | EPT_CACHE_3;
+			if(no_cache_region(addr, PAGESIZE)){
+				q[i] = (i << 12) | EPT_R | EPT_W | EPT_X;
+			} else {
+				q[i] = (i << 12) | EPT_R | EPT_W | EPT_X | EPT_CACHE_2 | EPT_CACHE_3;
+			}
 		}
 	}
+	
+	pml3 = (epte_t *)epte_page_vaddr(*pml4);
 
+	pml3_index = (paddr & (~(GIGABYTE -1))) >> GIGABYTE_SHIFT;
 
-	q = (u64*)find_pd_entry(vcpu, paddr);
+	HDEBUG(("addr (%#lx) pml3 index (%i)\n", (unsigned long)paddr, pml3_index));
+	
+	pml2 = (epte_t *)epte_page_vaddr(pml3[pml3_index]);
 
-	if(!q){
-		printk(KERN_ERR "okernel: failed to find pd entry.\n");
-		return 0;
-	}
-	//q = pd[0].virt;
-	*q = pt[0].phys + EPT_R + EPT_W + EPT_X;
+	pml2_index = ((paddr & (GIGABYTE -1)) >> PAGESIZE2M_SHIFT);
+
+	HDEBUG(("addr (%#lx) pml2 index (%i)\n", (unsigned long)paddr, pml2_index));
+
+	pde = (epte_t *)epte_page_vaddr(pml2[pml2_index]);
+
+	pml2_p = &pml2[pml2_index];
+	
+	HDEBUG(("addr (%#lx) pde (%#lx)\n", (unsigned long)paddr, (unsigned long)pde));
+	
+
+	//q = (u64*)find_pd_entry(vcpu, paddr);
+//
+//	if(!q){
+//		printk(KERN_ERR "okernel: failed to find pd entry.\n");
+//		return 0;
+//	}
+//	//q = pd[0].virt;
+	pml2[pml2_index] = pt[0].phys + EPT_R + EPT_W + EPT_X;
+	//*q = pt[0].phys + EPT_R + EPT_W + EPT_X;
 	return 1;
-#endif
-#endif
 }
 
 int clone_kstack(struct vmx_vcpu *vcpu)
@@ -407,7 +478,7 @@ int clone_kstack(struct vmx_vcpu *vcpu)
 	HDEBUG(("kernel thread_info (tsk->stack) vaddr (%#lx) paddr (%#lx)\n",
 		k_stack, k_stack_paddr));
 	
-	(void)find_pd_entry(vcpu, k_stack_paddr);
+	//(void)find_pd_entry(vcpu, k_stack_paddr);
 
 	k_stack_paddr = k_stack_paddr & (~(PAGESIZE2M-1));
 	
@@ -1414,10 +1485,11 @@ static void vmx_setup_initial_guest_state(void)
 	get_cpu_state(&current_cpu_state);
 	show_cpu_state(current_cpu_state);
 
+#if 0
 	HDEBUG(("----start of 'current' regs from __show_regs:\n"));
 	__show_regs(regs, 1);
 	HDEBUG(("----end of 'current' regs from __show_regs.\n"));
-       
+#endif  
 	/* Most likely will need to adjust */
 	cr4 = current_cpu_state.cr4;
 	cr4_shadow = (cr4 & ~X86_CR4_VMXE);
@@ -1945,6 +2017,7 @@ int vmx_launch(int64_t *ret_code)
 #endif
 		local_irq_disable();
 
+
 		if (need_resched()) {
 			local_irq_enable();
 			vmx_put_cpu(vcpu);
@@ -1975,13 +2048,13 @@ int vmx_launch(int64_t *ret_code)
 				vcpu->ret_code = ((ENOSYS) << 8);
 				break;
 			}
+
 #if 0
 			x  = DUNE_SIGNAL_INTR_BASE + signr;
 			x |= INTR_INFO_VALID_MASK;
-
 			vmcs_write32(VM_ENTRY_INTR_INFO_FIELD, x);
-#endif
 			continue;
+#endif
 		}
 #endif
 		
@@ -1989,14 +2062,17 @@ int vmx_launch(int64_t *ret_code)
 #if 0
 		if(*ret_code)
 			vmx_run_vcpu(vcpu);
-
-#else
-		ret = vmx_run_vcpu(vcpu);
 #endif
+		ret = vmx_run_vcpu(vcpu);
+
 		HDEBUG(("Got VMEXIT! (%#x)\n", ret));
-		goto tmp_finish;
-		
 		local_irq_enable();
+		vmx_put_cpu(vcpu);
+		if(ret == 1)
+			break;
+		
+		//goto tmp_finish;
+
 #if 0
 		if (ret == EXIT_REASON_VMCALL ||
 		    ret == EXIT_REASON_CPUID) {
@@ -2033,6 +2109,10 @@ tmp_finish:
 	*ret_code = vcpu->ret_code;
 	//vmx_destroy_vcpu(vcpu);
 	do_exit(0);
+	current->state = TASK_DEAD;
+	current->flags |= PF_NOFREEZE;	/* tell freezer to ignore us */
+	schedule();
+	BUG();
 	return 0;
 }
 
