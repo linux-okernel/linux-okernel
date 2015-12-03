@@ -1515,7 +1515,8 @@ static void vmx_setup_initial_guest_state(struct vmx_vcpu *vcpu)
 	*/
 
 	vmcs_writel(GUEST_RIP, cloned_thread_rip);
-	vmcs_writel(GUEST_RSP, current_cpu_state.rsp);
+	//vmcs_writel(GUEST_RSP, current_cpu_state.rsp);
+	vmcs_writel(GUEST_RSP, cloned_thread_rsp);
 	//vmcs_writel(GUEST_RFLAGS, current_cpu_state.rflags);
 	vmcs_writel(GUEST_RFLAGS, 0x02);
 	vmcs_writel(GUEST_IA32_EFER, current_cpu_state.efer);

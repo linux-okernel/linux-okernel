@@ -13,6 +13,7 @@
 /* Where our cloned thread will initially start from initially in VMX non-root mode */
 extern unsigned long cloned_thread_rip;
 extern unsigned long cloned_thread_rbp;
+extern unsigned long cloned_thread_rsp;
 
 
 
