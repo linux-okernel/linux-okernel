@@ -10,10 +10,31 @@
 #include <linux/kvm_types.h>
 #include <linux/okernel.h>
 
+
+struct nr_cloned_state {
+	unsigned long rax;
+	unsigned long rcx;
+	unsigned long rdx;
+	unsigned long rbx;
+	unsigned long rsp;
+	unsigned long rbp;
+	unsigned long rsi;
+	unsigned long rdi;
+	unsigned long r8;
+	unsigned long r9;
+	unsigned long r10;
+	unsigned long r11;
+	unsigned long r12;
+	unsigned long r13;
+	unsigned long r15;
+	unsigned long rip;
+};
+
 /* Where our cloned thread will initially start from initially in VMX non-root mode */
 extern unsigned long cloned_thread_rip;
 extern unsigned long cloned_thread_rbp;
 extern unsigned long cloned_thread_rsp;
+extern struct nr_cloned_state cloned_thread;
 
 
 

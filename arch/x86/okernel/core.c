@@ -52,6 +52,7 @@ int okernel_enabled;
 unsigned long cloned_thread_rip;
 unsigned long cloned_thread_rbp;
 unsigned long cloned_thread_rsp;
+struct nr_cloned_state cloned_thread;
 
 #ifdef CONFIG_OKERNEL_SCHED
 void okernel_schedule_helper(void)
@@ -96,57 +97,96 @@ void okernel_dump_stack_info(void)
 
 void __noclone okernel_enter(int64_t *ret)
 {
-	int r;
 	int64_t dummy;
-	//struct pt_regs *regs;	
-	unsigned long rbp;
-	unsigned long rsp;
+	struct pt_regs *regs;	
+	unsigned long rbp,rsp,rax,rcx,rdx,rbx,rsi,rdi,r8,r9,r10,r11,r12,r13,r15;
 
 	HDEBUG(("called.\n"));
 
-	asm volatile ("mov %%rbp,%0" : "=rm" (rbp));
-	HDEBUG(("cloned thread rbp will be set to  (%#lx)\n", rbp));
-	cloned_thread_rbp = rbp;
-
-	asm volatile ("mov %%rsp,%0" : "=rm" (rsp));
-	HDEBUG(("cloned thread rsp will be set to  (%#lx)\n", rsp));
-	cloned_thread_rsp = rsp;
-
-#if 0
-	HDEBUG(("1 (before clean and jmp)\n"));
-
-	// Do the clean and jmp as though this function has returned.
-	asm("jmp .Lc_rip_label");
-
-	HDEBUG(("2 (after clean and jmp - shouldn't get here!)\n"));
-#endif
 	dummy = 0;
 
 	asm volatile ("mov %%rbp,%0" : "=rm" (rbp));
 	HDEBUG(("cloned thread rbp will be set to  (%#lx)\n", rbp));
-	cloned_thread_rbp = rbp;
+	cloned_thread.rbp = rbp;
 
 	asm volatile ("mov %%rsp,%0" : "=rm" (rsp));
 	HDEBUG(("cloned thread rsp will be set to  (%#lx)\n", rsp));
-	cloned_thread_rsp = rsp;
+	cloned_thread.rsp = rsp;
+
+	asm volatile ("mov %%rax,%0" : "=rm" (rax));
+	HDEBUG(("cloned thread rax will be set to  (%#lx)\n", rax));
+	cloned_thread.rax = rax;
+
+	asm volatile ("mov %%rcx,%0" : "=rm" (rcx));
+	HDEBUG(("cloned thread rcx will be set to  (%#lx)\n", rcx));
+	cloned_thread.rcx = rcx;
 	
-	if((r = vmx_launch(&dummy))){
-		HDEBUG(("exit from vmx_launch.\n"));
-		goto out;
-	}
+	asm volatile ("mov %%rdx,%0" : "=rm" (rdx));
+	HDEBUG(("cloned thread rdx will be set to  (%#lx)\n", rdx));
+	cloned_thread.rdx = rdx;
+
+	asm volatile ("mov %%rdx,%0" : "=rm" (rbx));
+	HDEBUG(("cloned thread rbx will be set to  (%#lx)\n", rbx));
+	cloned_thread.rbx = rbx;
+
+	asm volatile ("mov %%rsi,%0" : "=rm" (rsi));
+	HDEBUG(("cloned thread rsi will be set to  (%#lx)\n", rsi));
+	cloned_thread.rsi = rsi;
+
+	asm volatile ("mov %%rdi,%0" : "=rm" (rdi));
+	HDEBUG(("cloned thread rdi will be set to  (%#lx)\n", rdi));
+	cloned_thread.rdi = rdi;
+
+	asm volatile ("mov %%r8,%0" : "=rm" (r8));
+	HDEBUG(("cloned thread r8 will be set to  (%#lx)\n", r8));
+	cloned_thread.r8 = r8;
+
+	asm volatile ("mov %%r9,%0" : "=rm" (r9));
+	HDEBUG(("cloned thread r9 will be set to  (%#lx)\n", r9));
+	cloned_thread.r9 = r9;
+
+	asm volatile ("mov %%r10,%0" : "=rm" (r10));
+	HDEBUG(("cloned thread r10 will be set to  (%#lx)\n", r10));
+	cloned_thread.r10 = r10;
+
+	asm volatile ("mov %%r11,%0" : "=rm" (r11));
+	HDEBUG(("cloned thread r11 will be set to  (%#lx)\n", r11));
+	cloned_thread.r11 = r11;
+	
+	asm volatile ("mov %%r12,%0" : "=rm" (r12));
+	HDEBUG(("cloned thread r12 will be set to  (%#lx)\n", r12));
+	cloned_thread.r12 = r12;
+
+	asm volatile ("mov %%r13,%0" : "=rm" (r13));
+	HDEBUG(("cloned thread r13 will be set to  (%#lx)\n", r13));
+	cloned_thread.r13 = r13;
+
+	asm volatile ("mov %%r15,%0" : "=rm" (r15));
+	HDEBUG(("cloned thread r15 will be set to  (%#lx)\n", r15));
+	cloned_thread.r15 = r15;
+	
+#if 0
+	regs = task_pt_regs(current);
+	HDEBUG(("----start of 'current' regs from __show_regs:\n"));
+	__show_regs(regs, 1);
+	HDEBUG(("----end of 'current' regs from __show_regs:\n"));
+#endif	
+
+	asm volatile("xchg %bx, %bx");
+
+	(void)vmx_launch(&dummy);
 	
 	asm(".Lc_rip_label: ");
-#if 0
+#if 1
 	if(vmx_nr_mode()){
 		asm volatile("xchg %bx, %bx");
-		printk(KERN_CRIT "Resuming cloned process In NR mode kernel.\n");
-		asm volatile("xchg %bx, %bx");
-		printk(KERN_CRIT "About to leave okernel_enter() function...\n");
-		asm volatile("xchg %bx, %bx");
+		printk(KERN_ERR "Resuming cloned process In NR mode kernel.\n");
+		//asm volatile("xchg %bx, %bx");
+		//printk(KERN_CRIT "About to leave okernel_enter() function...\n");
+		//asm volatile("xchg %bx, %bx");
 		//vmcall(VMCALL_NOP);
 	}
 #endif
-out:
 	return;
 }
 
@@ -189,7 +229,7 @@ long ok_device_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 #if 1
 		if(vmx_nr_mode()){
 			asm volatile("xchg %bx, %bx");
-			printk(KERN_ERR "Returning in ok_device_ioctl in cloned process NR mode kernel.\n");
+			printk(KERN_CRIT "Returning in ok_device_ioctl in cloned process NR mode kernel.\n");
 			asm volatile("xchg %bx, %bx");
 			do_exit(1);
 			vmcall(VMCALL_NOP);

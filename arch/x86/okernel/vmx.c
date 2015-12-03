@@ -84,6 +84,7 @@ static unsigned long *msr_bitmap;
 
 
 
+
 static DEFINE_PER_CPU(struct vmcs *, vmxarea);
 static DEFINE_PER_CPU(struct desc_ptr, host_gdt);
 static DEFINE_PER_CPU(int, vmx_enabled);
@@ -1312,6 +1313,9 @@ static struct vmcs *vmx_alloc_vmcs(void)
 	return __vmx_alloc_vmcs(raw_smp_processor_id());
 }
 
+
+
+	
 struct vmcs_cpu_state {
 	unsigned long rsp;
 	unsigned long rbp;
@@ -1491,7 +1495,13 @@ static void vmx_setup_initial_guest_state(struct vmx_vcpu *vcpu)
 	get_cpu_state(&current_cpu_state);
 	show_cpu_state(current_cpu_state);
 
-	vcpu->regs[VCPU_REGS_RBP] = cloned_thread_rbp;
+	vcpu->regs[VCPU_REGS_RSP] = cloned_thread.rsp;
+	vcpu->regs[VCPU_REGS_RBP] = cloned_thread.rbp;
+
+	vcpu->regs[VCPU_REGS_RAX] = cloned_thread.rax;
+	vcpu->regs[VCPU_REGS_RCX] = cloned_thread.rcx;
+	vcpu->regs[VCPU_REGS_RDX] = cloned_thread.rdx;
+	vcpu->regs[VCPU_REGS_RBX] = cloned_thread.rbx;
 #if 0
 	HDEBUG(("----start of 'current' regs from __show_regs:\n"));
 	__show_regs(regs, 1);
