@@ -54,7 +54,7 @@ static inline bool vmx_nr_mode(void)
 int is_in_vmx_nr_mode(void);
 extern int okernel_enabled;
 int okernel_setup(int* vcpu);
-int okernel_enter(int64_t *ret);
+void okernel_enter(int64_t *ret);
 
 void okernel_schedule_helper(void);
 void okernel_dump_stack_info(void);

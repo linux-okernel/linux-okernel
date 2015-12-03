@@ -1314,6 +1314,7 @@ static struct vmcs *vmx_alloc_vmcs(void)
 
 struct vmcs_cpu_state {
 	unsigned long rsp;
+	unsigned long rbp;
 	unsigned long cr0;
 	unsigned long cr3;
 	unsigned long cr4;
@@ -1354,6 +1355,7 @@ void show_cpu_state(struct vmcs_cpu_state state)
 {
 	HDEBUG(("Control regs / flags: \n"));
 	HDEBUG(("rsp     (%#lx)\n", state.rsp));
+	HDEBUG(("rbp     (%#lx)\n", state.rbp));
 	HDEBUG(("cr0     (%#lx)\n", state.cr0));
 	HDEBUG(("cr3     (%#lx)\n", state.cr3));
 	HDEBUG(("cr4     (%#lx)\n", state.cr4));	
@@ -1382,6 +1384,7 @@ void show_cpu_state(struct vmcs_cpu_state state)
 void get_cpu_state(struct vmcs_cpu_state* cpu_state)
 {
 	unsigned long rsp;
+	
 	unsigned long rflags;
 	u32 low32, high32;
 	struct desc_ptr idt;
@@ -1393,9 +1396,12 @@ void get_cpu_state(struct vmcs_cpu_state* cpu_state)
 	HDEBUG(("getting value of current regs...\n"));
 	asm volatile ("mov %%rsp,%0" : "=rm" (rsp));
 	HDEBUG(("getting value of current regs - rsp (%#lx)\n", rsp));
+	
 
 	/* Start with control regs / flags */
 	cpu_state->rsp = rsp;
+	//cpu_state->rbp = rbp;
+
 	cpu_state->cr0 = read_cr0();
 	cpu_state->cr3 = read_cr3();
 	cpu_state->cr4 = native_read_cr4();
@@ -1469,7 +1475,7 @@ void get_cpu_state(struct vmcs_cpu_state* cpu_state)
 /**
  * vmx_setup_initial_guest_state - configures the initial state of guest registers
  */
-static void vmx_setup_initial_guest_state(void)
+static void vmx_setup_initial_guest_state(struct vmx_vcpu *vcpu)
 {
 	
 	/* Need to mask out X64_CR4_VMXE in guest read shadow */
@@ -1485,6 +1491,7 @@ static void vmx_setup_initial_guest_state(void)
 	get_cpu_state(&current_cpu_state);
 	show_cpu_state(current_cpu_state);
 
+	vcpu->regs[VCPU_REGS_RBP] = cloned_thread_rbp;
 #if 0
 	HDEBUG(("----start of 'current' regs from __show_regs:\n"));
 	__show_regs(regs, 1);
@@ -1793,7 +1800,7 @@ static struct vmx_vcpu * vmx_create_vcpu(void)
 	
 	HDEBUG(("7\n"));
 	
-	vmx_setup_initial_guest_state();
+	vmx_setup_initial_guest_state(vcpu);
 
 	HDEBUG(("8\n"));	
 	vmx_put_cpu(vcpu);
