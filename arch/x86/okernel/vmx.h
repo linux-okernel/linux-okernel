@@ -27,8 +27,10 @@ struct nr_cloned_state {
 	unsigned long r11;
 	unsigned long r12;
 	unsigned long r13;
+	unsigned long r14;
 	unsigned long r15;
 	unsigned long rip;
+	unsigned long cr2;
 };
 
 /* Initial cloned thread state */

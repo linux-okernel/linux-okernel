@@ -1208,25 +1208,29 @@ static void vmx_get_cpu(struct vmx_vcpu *vcpu)
 {
 	int cur_cpu = get_cpu();
 
-	if (__this_cpu_read(local_vcpu) != vcpu) {
-		__this_cpu_write(local_vcpu, vcpu);
+	if(vcpu->launched != 0){
+		vmcs_load(vcpu->vmcs);
+	} else {
+		if (__this_cpu_read(local_vcpu) != vcpu) {
+			__this_cpu_write(local_vcpu, vcpu);
+			
+			if (vcpu->cpu != cur_cpu) {
+				if (vcpu->cpu >= 0)
+					smp_call_function_single(vcpu->cpu,
+								 __vmx_get_cpu_helper, (void *) vcpu, 1);
+				else
+					vmcs_clear(vcpu->vmcs);
 
-		if (vcpu->cpu != cur_cpu) {
-			if (vcpu->cpu >= 0)
-				smp_call_function_single(vcpu->cpu,
-					__vmx_get_cpu_helper, (void *) vcpu, 1);
-			else
-				vmcs_clear(vcpu->vmcs);
-
-			vpid_sync_context(vcpu->vpid);
-			ept_sync_context(vcpu->eptp);
-
-			vcpu->launched = 0;
-			vmcs_load(vcpu->vmcs);
-			__vmx_setup_cpu();
-			vcpu->cpu = cur_cpu;
-		} else {
-			vmcs_load(vcpu->vmcs);
+				vpid_sync_context(vcpu->vpid);
+				ept_sync_context(vcpu->eptp);
+				
+				vcpu->launched = 0;
+				vmcs_load(vcpu->vmcs);
+				__vmx_setup_cpu();
+				vcpu->cpu = cur_cpu;
+			} else {
+				vmcs_load(vcpu->vmcs);
+			}
 		}
 	}
 }
@@ -1501,8 +1505,9 @@ static void vmx_setup_initial_guest_state(struct vmx_vcpu *vcpu)
 	vcpu->regs[VCPU_REGS_R11] = cloned_thread.r11;
 	vcpu->regs[VCPU_REGS_R12] = cloned_thread.r12;
 	vcpu->regs[VCPU_REGS_R13] = cloned_thread.r13;
-	vcpu->regs[VCPU_REGS_R14] = cloned_thread.r15;
-	
+	vcpu->regs[VCPU_REGS_R14] = cloned_thread.r14;
+	vcpu->regs[VCPU_REGS_R15] = cloned_thread.r15;
+	vcpu->cr2 = cloned_thread.cr2;
 	
 
 #if 0
@@ -1531,7 +1536,7 @@ static void vmx_setup_initial_guest_state(struct vmx_vcpu *vcpu)
 	//vmcs_writel(GUEST_RSP, current_cpu_state.rsp);
 	vmcs_writel(GUEST_RSP, cloned_thread.rsp);
 	//vmcs_writel(GUEST_RFLAGS, cloned_thread.rflags);
-	vmcs_writel(GUEST_RFLAGS, 0x02);
+	vmcs_writel(GUEST_RFLAGS, 0x402);
 	vmcs_writel(GUEST_IA32_EFER, current_cpu_state.efer);
 
 	/* configure segment selectors */
@@ -2035,17 +2040,27 @@ int vmx_launch(void)
 	}
 	
 	while (1) {
+
+		HDEBUG(("At start of vmexit() handler loop...\n"));
+
 		vmx_get_cpu(vcpu);
+
+		//HDEBUG(("1.\n"));
+		
 #if 0
 		if (!__thread_has_fpu(current))
 			math_state_restore();
 #endif
 		local_irq_disable();
 
-
+		//HDEBUG(("2.\n"));
+		
 		if (need_resched()) {
+			//HDEBUG(("3.\n"));
 			local_irq_enable();
+			//HDEBUG(("4.\n"));
 			vmx_put_cpu(vcpu);
+			//HDEBUG(("5.\n"));
 			HDEBUG(("cond_resched called.\n"));
 			cond_resched();
 			continue;
@@ -2087,17 +2102,20 @@ int vmx_launch(void)
 
 		ret = vmx_run_vcpu(vcpu);
 
+		HDEBUG(("Returned from  call vmx_run_vcpu.\n"));
+		
 		local_irq_enable();
 		
 		if (ret == EXIT_REASON_VMCALL ||
 		    ret == EXIT_REASON_CPUID) {
 			vmx_step_instruction();
 		}
-
-						
+		
 		vmx_put_cpu(vcpu);
 
 		HDEBUG(("Got VMEXIT! (%#x) pid (%d)\n", ret, current->pid));
+
+		//asm volatile("xchg %bx, %bx");
 		
 		if(ret == 1 || ret == 0x12){
 			continue;

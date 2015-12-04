@@ -95,7 +95,7 @@ void okernel_dump_stack_info(void)
 int __noclone okernel_enter(void)
 {
 	//struct pt_regs *regs;	
-	unsigned long rbp,rsp,rflags,rax,rcx,rdx,rbx,rsi,rdi,r8,r9,r10,r11,r12,r13,r15;
+	unsigned long rbp,rsp,rflags,cr2,rax,rcx,rdx,rbx,rsi,rdi,r8,r9,r10,r11,r12,r13,r14,r15;
 	int ret;
 	
 	HDEBUG(("called.\n"));
@@ -114,6 +114,10 @@ int __noclone okernel_enter(void)
 	
 	HDEBUG(("cloned thread rflags will be set to  (%#lx)\n", rflags));
 	cloned_thread.rflags = rflags;
+
+	asm volatile ("mov %%cr2,%0" : "=rm" (cr2));
+	HDEBUG(("cloned thread cr2 will be set to  (%#lx)\n", cr2));
+	cloned_thread.cr2 = cr2;
 
 	asm volatile ("mov %%rax,%0" : "=rm" (rax));
 	HDEBUG(("cloned thread rax will be set to  (%#lx)\n", rax));
@@ -163,6 +167,10 @@ int __noclone okernel_enter(void)
 	HDEBUG(("cloned thread r13 will be set to  (%#lx)\n", r13));
 	cloned_thread.r13 = r13;
 
+	asm volatile ("mov %%r14,%0" : "=rm" (r14));
+	HDEBUG(("cloned thread r14 will be set to  (%#lx)\n", r14));
+	cloned_thread.r13 = r14;
+
 	asm volatile ("mov %%r15,%0" : "=rm" (r15));
 	HDEBUG(("cloned thread r15 will be set to  (%#lx)\n", r15));
 	cloned_thread.r15 = r15;
@@ -180,7 +188,7 @@ int __noclone okernel_enter(void)
 	ret = vmx_launch();
 	
 	asm volatile(".Lc_rip_label: ");
-	asm volatile("xchg %bx, %bx");
+	//asm volatile("xchg %bx, %bx");
 #if 1
 	if(vmx_nr_mode()){
 		asm volatile("xchg %bx, %bx");
@@ -233,11 +241,11 @@ long ok_device_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 #if 1
 		if(vmx_nr_mode()){
 			asm volatile("xchg %bx, %bx");
-			printk(KERN_CRIT "Returning in ok_device_ioctl in cloned process NR mode kernel.\n");
-			asm volatile("xchg %bx, %bx");
-			do_exit(1);
-			vmcall(VMCALL_NOP);
-			return 0;
+			printk(KERN_ERR "Returning in ok_device_ioctl in cloned process NR mode kernel.\n");
+			//asm volatile("xchg %bx, %bx");
+			//do_exit(1);
+			//vmcall(VMCALL_NOP);
+			goto nr_exit;
 		}
 #endif
 		current->okernel_status = OKERNEL_OFF;
@@ -249,9 +257,15 @@ long ok_device_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 		HDEBUG(("NR kernel off for <%d>\n", current->pid));
 		break;
 	default:
+	
 		printk(KERN_ERR "okernel invalid IOCTL cmd.\n");
 		return -ENODEV;
 		
+	}
+nr_exit:
+	if(vmx_nr_mode()){
+		printk(KERN_ERR "NR returning okernel invalid IOCTL cmd.\n");
+		return -ENODEV;
 	}
 	return 0;
 }
