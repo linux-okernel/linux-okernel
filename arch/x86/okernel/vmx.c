@@ -1387,9 +1387,6 @@ void show_cpu_state(struct vmcs_cpu_state state)
 
 void get_cpu_state(struct vmcs_cpu_state* cpu_state)
 {
-	unsigned long rsp;
-	
-	unsigned long rflags;
 	u32 low32, high32;
 	struct desc_ptr idt;
 	struct desc_ptr gdt;
@@ -1397,21 +1394,16 @@ void get_cpu_state(struct vmcs_cpu_state* cpu_state)
 	unsigned long tr;
 	unsigned long tmpl;
 
-	HDEBUG(("getting value of current regs...\n"));
-	asm volatile ("mov %%rsp,%0" : "=rm" (rsp));
-	HDEBUG(("getting value of current regs - rsp (%#lx)\n", rsp));
 	
-
 	/* Start with control regs / flags */
-	cpu_state->rsp = rsp;
-	//cpu_state->rbp = rbp;
+	cpu_state->rsp = cloned_thread.rsp;
+	cpu_state->rflags = cloned_thread.rflags;
+	cpu_state->rbp = cloned_thread.rbp;
 
 	cpu_state->cr0 = read_cr0();
 	cpu_state->cr3 = read_cr3();
 	cpu_state->cr4 = native_read_cr4();
-        asm volatile ("mov %%ss,%0"
-                      : "=rm" (rflags));
-	cpu_state->rflags = rflags;
+        
 	rdmsr(MSR_EFER, low32, high32);
 	cpu_state->efer = low32;
 
@@ -1495,13 +1487,24 @@ static void vmx_setup_initial_guest_state(struct vmx_vcpu *vcpu)
 	get_cpu_state(&current_cpu_state);
 	show_cpu_state(current_cpu_state);
 
-	vcpu->regs[VCPU_REGS_RSP] = cloned_thread.rsp;
+	//vcpu->regs[VCPU_REGS_RSP] = cloned_thread.rsp;
 	vcpu->regs[VCPU_REGS_RBP] = cloned_thread.rbp;
-
 	vcpu->regs[VCPU_REGS_RAX] = cloned_thread.rax;
 	vcpu->regs[VCPU_REGS_RCX] = cloned_thread.rcx;
 	vcpu->regs[VCPU_REGS_RDX] = cloned_thread.rdx;
 	vcpu->regs[VCPU_REGS_RBX] = cloned_thread.rbx;
+	vcpu->regs[VCPU_REGS_RSI] = cloned_thread.rsi;
+	vcpu->regs[VCPU_REGS_RDI] = cloned_thread.rdi;
+	vcpu->regs[VCPU_REGS_R8] = cloned_thread.r8;
+	vcpu->regs[VCPU_REGS_R9] = cloned_thread.r9;
+	vcpu->regs[VCPU_REGS_R10] = cloned_thread.r10;
+	vcpu->regs[VCPU_REGS_R11] = cloned_thread.r11;
+	vcpu->regs[VCPU_REGS_R12] = cloned_thread.r12;
+	vcpu->regs[VCPU_REGS_R13] = cloned_thread.r13;
+	vcpu->regs[VCPU_REGS_R14] = cloned_thread.r15;
+	
+	
+
 #if 0
 	HDEBUG(("----start of 'current' regs from __show_regs:\n"));
 	__show_regs(regs, 1);
@@ -1524,10 +1527,10 @@ static void vmx_setup_initial_guest_state(struct vmx_vcpu *vcpu)
 	   sure we clone the kernel stack pages in the EPT mapping.
 	*/
 
-	vmcs_writel(GUEST_RIP, cloned_thread_rip);
+	vmcs_writel(GUEST_RIP, cloned_thread.rip);
 	//vmcs_writel(GUEST_RSP, current_cpu_state.rsp);
-	vmcs_writel(GUEST_RSP, cloned_thread_rsp);
-	//vmcs_writel(GUEST_RFLAGS, current_cpu_state.rflags);
+	vmcs_writel(GUEST_RSP, cloned_thread.rsp);
+	//vmcs_writel(GUEST_RFLAGS, cloned_thread.rflags);
 	vmcs_writel(GUEST_RFLAGS, 0x02);
 	vmcs_writel(GUEST_IA32_EFER, current_cpu_state.efer);
 
@@ -1538,7 +1541,7 @@ static void vmx_setup_initial_guest_state(struct vmx_vcpu *vcpu)
 	vmcs_write16(GUEST_FS_SELECTOR, current_cpu_state.fs_selector);
 	vmcs_write16(GUEST_GS_SELECTOR, current_cpu_state.gs_selector);
 	vmcs_write16(GUEST_SS_SELECTOR, current_cpu_state.ss_selector);
-	vmcs_write16(GUEST_TR_SELECTOR, current_cpu_state.tr_selector);;
+	vmcs_write16(GUEST_TR_SELECTOR, current_cpu_state.tr_selector);
 
         /* initialize sysenter */
 	vmcs_write32(GUEST_SYSENTER_CS, current_cpu_state.sysenter_cs);
@@ -2006,7 +2009,7 @@ static void vmx_step_instruction(void)
 /**
  * vmx_launch - the main loop for a cloned VMX okernel process (thread)
  */
-int vmx_launch(int64_t *ret_code)
+int vmx_launch(void)
 {
 	int ret = 0;
 	//int done = 0;
@@ -2014,7 +2017,7 @@ int vmx_launch(int64_t *ret_code)
 	
 	struct vmx_vcpu *vcpu;
 
-	c_rip = cloned_thread_rip;
+	c_rip = cloned_thread.rip;
 
 	HDEBUG(("c_rip: (#%#lx)\n", c_rip));
 
@@ -2127,10 +2130,10 @@ tmp_finish:
 	printk(KERN_ERR "vmx: destroying VCPU (VPID %d)\n",
 	       vcpu->vpid);
 
-	*ret_code = vcpu->ret_code;
+	//*ret_code = vcpu->ret_code;
 	//vmx_destroy_vcpu(vcpu);
 	do_exit(0);
-	return 1;
+	return 0;
 }
 
 	

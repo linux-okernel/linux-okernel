@@ -49,9 +49,6 @@ static struct class *okernel_dev_class;
 static int major_no;
 
 int okernel_enabled;
-unsigned long cloned_thread_rip;
-unsigned long cloned_thread_rbp;
-unsigned long cloned_thread_rsp;
 struct nr_cloned_state cloned_thread;
 
 #ifdef CONFIG_OKERNEL_SCHED
@@ -95,15 +92,13 @@ void okernel_dump_stack_info(void)
 	       sp0, sp, sp0-THREAD_SIZE);
 }
 
-void __noclone okernel_enter(int64_t *ret)
+int __noclone okernel_enter(void)
 {
-	int64_t dummy;
-	struct pt_regs *regs;	
-	unsigned long rbp,rsp,rax,rcx,rdx,rbx,rsi,rdi,r8,r9,r10,r11,r12,r13,r15;
-
+	//struct pt_regs *regs;	
+	unsigned long rbp,rsp,rflags,rax,rcx,rdx,rbx,rsi,rdi,r8,r9,r10,r11,r12,r13,r15;
+	int ret;
+	
 	HDEBUG(("called.\n"));
-
-	dummy = 0;
 
 	asm volatile ("mov %%rbp,%0" : "=rm" (rbp));
 	HDEBUG(("cloned thread rbp will be set to  (%#lx)\n", rbp));
@@ -112,6 +107,13 @@ void __noclone okernel_enter(int64_t *ret)
 	asm volatile ("mov %%rsp,%0" : "=rm" (rsp));
 	HDEBUG(("cloned thread rsp will be set to  (%#lx)\n", rsp));
 	cloned_thread.rsp = rsp;
+
+	asm volatile ( "pushf\n\t"
+                   "pop %0"
+                   : "=g"(rflags) );
+	
+	HDEBUG(("cloned thread rflags will be set to  (%#lx)\n", rflags));
+	cloned_thread.rflags = rflags;
 
 	asm volatile ("mov %%rax,%0" : "=rm" (rax));
 	HDEBUG(("cloned thread rax will be set to  (%#lx)\n", rax));
@@ -164,6 +166,7 @@ void __noclone okernel_enter(int64_t *ret)
 	asm volatile ("mov %%r15,%0" : "=rm" (r15));
 	HDEBUG(("cloned thread r15 will be set to  (%#lx)\n", r15));
 	cloned_thread.r15 = r15;
+
 	
 #if 0
 	regs = task_pt_regs(current);
@@ -174,20 +177,21 @@ void __noclone okernel_enter(int64_t *ret)
 
 	asm volatile("xchg %bx, %bx");
 
-	(void)vmx_launch(&dummy);
+	ret = vmx_launch();
 	
-	asm(".Lc_rip_label: ");
+	asm volatile(".Lc_rip_label: ");
+	asm volatile("xchg %bx, %bx");
 #if 1
 	if(vmx_nr_mode()){
 		asm volatile("xchg %bx, %bx");
-		printk(KERN_ERR "Resuming cloned process In NR mode kernel.\n");
-		//asm volatile("xchg %bx, %bx");
-		//printk(KERN_CRIT "About to leave okernel_enter() function...\n");
+		//printk(KERN_CRIT "Resuming cloned process In NR mode kernel.\n");
 		//asm volatile("xchg %bx, %bx");
 		//vmcall(VMCALL_NOP);
+                //printk(KERN_CRIT "About to leave okernel_enter() function...\n");
+		//asm volatile("xchg %bx, %bx");
 	}
 #endif
-	return;
+	return ret;
 }
 
 /* IOCTL to allow okernel ON to be toggled as an alternative to /proc/<pid> toggling */
@@ -201,7 +205,7 @@ static int ok_device_open(struct inode *inode, struct file *file)
 long ok_device_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 {
 	unsigned long val;
-	int64_t ret;
+	int ret;
 
 	HDEBUG(("called.\n"));
 	switch(cmd)
@@ -224,7 +228,7 @@ long ok_device_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 			printk(KERN_CRIT "Calling okernel_enter in  NR mode kernel...shouldn't get here!!\n");
 		}
 		
-		okernel_enter(&ret);
+		ret = okernel_enter();
 		
 #if 1
 		if(vmx_nr_mode()){
@@ -238,7 +242,7 @@ long ok_device_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 #endif
 		current->okernel_status = OKERNEL_OFF;
 
-		if(!ret){
+		if(ret){
 			printk(KERN_ERR "okernel_enter failed for pid <%d> ret (%lu)\n",
 			       current->pid, (unsigned long)ret);
 		}
@@ -291,8 +295,7 @@ static int __init okernel_init(void)
 	asm("mov $.Lc_rip_label, %0" : "=r"(tmpl));
 
 	HDEBUG(("cloned thread RIP will be set to: (%#lx)\n", tmpl));
-	
-	cloned_thread_rip = tmpl;
+	cloned_thread.rip = tmpl;
 	HDEBUG(("Enabled, initialization done.\n"));
 	return 0;
 }

@@ -12,6 +12,7 @@
 
 
 struct nr_cloned_state {
+	unsigned long rflags;
 	unsigned long rax;
 	unsigned long rcx;
 	unsigned long rdx;
@@ -30,10 +31,7 @@ struct nr_cloned_state {
 	unsigned long rip;
 };
 
-/* Where our cloned thread will initially start from initially in VMX non-root mode */
-extern unsigned long cloned_thread_rip;
-extern unsigned long cloned_thread_rbp;
-extern unsigned long cloned_thread_rsp;
+/* Initial cloned thread state */
 extern struct nr_cloned_state cloned_thread;
 
 
@@ -172,7 +170,7 @@ struct vmx_vcpu {
 
 extern __init int vmx_init(void);
 extern void vmx_exit(void);
-extern int vmx_launch(int64_t *ret_code);
+extern int vmx_launch(void);
 extern int vmx_init_ept(struct vmx_vcpu *vcpu);
 extern int vmx_create_ept(struct vmx_vcpu *vcpu);
 extern void vmx_destroy_ept(struct vmx_vcpu *vcpu);
