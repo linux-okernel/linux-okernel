@@ -169,7 +169,7 @@ int __noclone okernel_enter(void)
 
 	asm volatile ("mov %%r14,%0" : "=rm" (r14));
 	HDEBUG(("cloned thread r14 will be set to  (%#lx)\n", r14));
-	cloned_thread.r13 = r14;
+	cloned_thread.r14 = r14;
 
 	asm volatile ("mov %%r15,%0" : "=rm" (r15));
 	HDEBUG(("cloned thread r15 will be set to  (%#lx)\n", r15));
