@@ -265,6 +265,7 @@ long ok_device_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 nr_exit:
 	if(vmx_nr_mode()){
 		printk(KERN_ERR "NR returning okernel invalid IOCTL cmd.\n");
+		BUG();
 		return -ENODEV;
 	}
 	return 0;

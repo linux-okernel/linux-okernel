@@ -131,6 +131,7 @@ inline int is_in_vmx_nr_mode(void)
 
 
 
+
 /* Adapted from https://github.com/rustyrussell/virtbench/blob/master/micro/vmcall.c */
 int vmcall(unsigned int cmd)
 {
@@ -935,6 +936,7 @@ static __init int setup_vmcs_config(struct vmcs_config *vmcs_conf)
 				&_pin_based_exec_control) < 0)
 		return -EIO;
 
+#if 0
 	min =
 
 	      CPU_BASED_CR8_LOAD_EXITING |
@@ -944,10 +946,15 @@ static __init int setup_vmcs_config(struct vmcs_config *vmcs_conf)
 	      CPU_BASED_MOV_DR_EXITING |
 	      CPU_BASED_USE_TSC_OFFSETING |
 	      CPU_BASED_INVLPG_EXITING;
-
+#endif
+#if 1
+	min = CPU_BASED_USE_TSC_OFFSETING;
+		
+#endif
 	opt = CPU_BASED_TPR_SHADOW |
 	      CPU_BASED_USE_MSR_BITMAPS |
 	      CPU_BASED_ACTIVATE_SECONDARY_CONTROLS;
+
 	if (adjust_vmx_controls(min, opt, MSR_IA32_VMX_PROCBASED_CTLS,
 				&_cpu_based_exec_control) < 0)
 		return -EIO;
@@ -958,11 +965,19 @@ static __init int setup_vmcs_config(struct vmcs_config *vmcs_conf)
 
 	if (_cpu_based_exec_control & CPU_BASED_ACTIVATE_SECONDARY_CONTROLS) {
 		min2 = 0;
+#if 0
 		opt2 =  SECONDARY_EXEC_WBINVD_EXITING |
 			SECONDARY_EXEC_ENABLE_VPID |
 			SECONDARY_EXEC_ENABLE_EPT |
 			SECONDARY_EXEC_RDTSCP |
 			SECONDARY_EXEC_ENABLE_INVPCID;
+#endif
+#if 1
+		opt2 =  SECONDARY_EXEC_WBINVD_EXITING |
+			SECONDARY_EXEC_ENABLE_VPID |
+			SECONDARY_EXEC_ENABLE_EPT |
+			SECONDARY_EXEC_RDTSCP;
+#endif
 		if (adjust_vmx_controls(min2, opt2,
 					MSR_IA32_VMX_PROCBASED_CTLS2,
 					&_cpu_based_2nd_exec_control) < 0)
@@ -1689,8 +1704,11 @@ static void vmx_setup_vmcs(struct vmx_vcpu *vcpu)
 	vmcs_write32(PAGE_FAULT_ERROR_CODE_MATCH, 0);
 	vmcs_write32(CR3_TARGET_COUNT, 0);           /* 22.2.1 */
 
-	setup_msr(vcpu);
+	vmcs_write64(MSR_BITMAP, __pa(msr_bitmap));
+	
 #if 0
+	//setup_msr(vcpu);
+	
 	if (vmcs_config.vmentry_ctrl & VM_ENTRY_LOAD_IA32_PAT) {
 		u32 msr_low, msr_high;
 		u64 host_pat;
@@ -1917,7 +1935,7 @@ static int __noclone vmx_run_vcpu(struct vmx_vcpu *vcpu)
 		"mov %c[r15](%0), %%r15 \n\t"
 #endif
 		"mov %c[rcx](%0), %%"R"cx \n\t" /* kills %0 (ecx) */
-
+		// "xchg %%bx, %%bx \n\t"
 		/* Enter guest mode */
 		"jne .Llaunched \n\t"
 		ASM_VMX_VMLAUNCH "\n\t"
@@ -2010,6 +2028,37 @@ static void vmx_step_instruction(void)
         vmcs_writel(GUEST_RIP, vmcs_readl(GUEST_RIP) +
                                vmcs_read32(VM_EXIT_INSTRUCTION_LEN));
 }
+
+static void vmx_handle_cpuid(struct vmx_vcpu *vcpu)
+{
+	unsigned int eax, ebx, ecx, edx;
+
+	eax = vcpu->regs[VCPU_REGS_RAX];
+	ecx = vcpu->regs[VCPU_REGS_RCX];
+	native_cpuid(&eax, &ebx, &ecx, &edx);
+	vcpu->regs[VCPU_REGS_RAX] = eax;
+	vcpu->regs[VCPU_REGS_RBX] = ebx;
+	vcpu->regs[VCPU_REGS_RCX] = ecx;
+	vcpu->regs[VCPU_REGS_RDX] = edx;
+}
+
+static int vmx_handle_nmi_exception(struct vmx_vcpu *vcpu)
+{
+	u32 intr_info;
+
+	vmx_get_cpu(vcpu);
+	intr_info = vmcs_read32(VM_EXIT_INTR_INFO);
+	vmx_put_cpu(vcpu);
+
+	printk(KERN_INFO "vmx: got an exception\n");
+	if ((intr_info & INTR_INFO_INTR_TYPE_MASK) == INTR_TYPE_NMI_INTR)
+		return 0;
+
+	printk(KERN_ERR "vmx: unhandled nmi, intr_info %x\n", intr_info);
+	vcpu->ret_code = ((EFAULT) << 8);
+	return -EIO;
+}
+
 
 /**
  * vmx_launch - the main loop for a cloned VMX okernel process (thread)
@@ -2116,32 +2165,27 @@ int vmx_launch(void)
 		HDEBUG(("Got VMEXIT! (%#x) pid (%d)\n", ret, current->pid));
 
 		//asm volatile("xchg %bx, %bx");
-		
-		if(ret == 1 || ret == 0x12){
+
+		if (ret == EXIT_REASON_VMCALL){
+			HDEBUG(("vmexit: VMCALL\n"));
 			continue;
-		} else {
-			goto tmp_finish;
-		}
-#if 0
-		if (ret == EXIT_REASON_VMCALL)
-			vmx_handle_syscall(vcpu);
-		else if (ret == EXIT_REASON_CPUID)
+		} else if (ret == EXIT_REASON_CPUID) {
 			vmx_handle_cpuid(vcpu);
-		else if (ret == EXIT_REASON_EPT_VIOLATION)
-			done = vmx_handle_ept_violation(vcpu);
-		else if (ret == EXIT_REASON_EXCEPTION_NMI) {
-			if (vmx_handle_nmi_exception(vcpu))
-				done = 1;
+		} else if (ret == EXIT_REASON_EPT_VIOLATION) {
+			HDEBUG(("vmexit: EPT violaton\n"));
+			goto tmp_finish;
+		} else if (ret == EXIT_REASON_EXCEPTION_NMI) {
+			if (vmx_handle_nmi_exception(vcpu)){
+				goto tmp_finish;
+			}
+			goto tmp_finish;
 		} else if (ret != EXIT_REASON_EXTERNAL_INTERRUPT) {
 			printk(KERN_INFO "unhandled exit: reason %d, exit qualification %x\n",
 			       ret, vmcs_read32(EXIT_QUALIFICATION));
-			vmx_dump_cpu(vcpu);
-			done = 1;
+			//vmx_dump_cpu(vcpu);
+			//done = 1;
+			goto tmp_finish;
 		}
-
-		if (done || vcpu->shutdown)
-			break;
-#endif
 	}
 
 tmp_finish:
@@ -2321,9 +2365,9 @@ int __init vmx_init(void)
         /* FIXME: do we need APIC virtualization (flexpriority?) */
 	/* cid: Neeed to look at this */ 
 #if 1
-	memset(msr_bitmap, 0xff, PAGE_SIZE);
-        __vmx_disable_intercept_for_msr(msr_bitmap, MSR_FS_BASE);
-        __vmx_disable_intercept_for_msr(msr_bitmap, MSR_GS_BASE);
+	memset(msr_bitmap, 0x0, PAGE_SIZE);
+        //__vmx_disable_intercept_for_msr(msr_bitmap, MSR_FS_BASE);
+        //__vmx_disable_intercept_for_msr(msr_bitmap, MSR_GS_BASE);
 
         set_bit(0, vmx_vpid_bitmap); /* 0 is reserved for host */
 #endif

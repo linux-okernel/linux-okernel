@@ -46,7 +46,7 @@
 #include <linux/utsname.h>
 #include <linux/ctype.h>
 #include <linux/uio.h>
-#ifdef CONFIG_OKERNEL_PRINTK
+#ifdef CONFIG_OKERNEL
 #include <linux/okernel.h>
 #endif
 
@@ -1916,6 +1916,8 @@ asmlinkage __visible int printk(const char *fmt, ...)
 	va_list args;
 	int r;
 
+
+	//break_in_nr_mode(); //4
 	va_start(args, fmt);
 
 	/*
@@ -1925,10 +1927,10 @@ asmlinkage __visible int printk(const char *fmt, ...)
 	 * disable preemption here.
 	 */
 	vprintk_func = this_cpu_read(printk_func);
+	//break_in_nr_mode(); //5
 	r = vprintk_func(fmt, args);
-
+	//break_in_nr_mode(); //6
 	va_end(args);
-
 	return r;
 }
 EXPORT_SYMBOL(printk);
@@ -2160,6 +2162,9 @@ static int console_cpu_notify(struct notifier_block *self,
  */
 void console_lock(void)
 {
+	if(is_in_vmx_nr_mode())
+		return;
+	
 	might_sleep();
 
 	down_console_sem();
@@ -2180,6 +2185,8 @@ EXPORT_SYMBOL(console_lock);
  */
 int console_trylock(void)
 {
+	if(is_in_vmx_nr_mode())
+		return 1;
 	if (down_trylock_console_sem())
 		return 0;
 	if (console_suspended) {
@@ -2249,6 +2256,9 @@ void console_unlock(void)
 	bool wake_klogd = false;
 	bool retry;
 
+	if(is_in_vmx_nr_mode())
+		return;
+	
 	if (console_suspended) {
 		up_console_sem();
 		return;

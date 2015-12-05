@@ -52,6 +52,12 @@ static inline bool vmx_nr_mode(void)
 }
 
 int is_in_vmx_nr_mode(void);
+static inline void break_in_nr_mode(void)
+{
+	if(is_in_vmx_nr_mode()){
+		asm volatile("xchg %bx, %bx");
+	}
+}
 extern int okernel_enabled;
 int okernel_setup(int* vcpu);
 int okernel_enter(void);
