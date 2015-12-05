@@ -284,7 +284,7 @@ nr_exit:
 		printk(KERN_ERR "NR ioctl locks held:\n");
 		debug_show_all_locks();
 		printk(KERN_ERR "NR ioctl locks held done.\n");
-		return -ENODEV;
+		return 0;
 	}
 	return 0;
 }

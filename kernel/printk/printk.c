@@ -2162,9 +2162,10 @@ static int console_cpu_notify(struct notifier_block *self,
  */
 void console_lock(void)
 {
+#if 0
 	if(is_in_vmx_nr_mode())
 		return;
-	
+#endif	
 	might_sleep();
 
 	down_console_sem();
@@ -2185,8 +2186,10 @@ EXPORT_SYMBOL(console_lock);
  */
 int console_trylock(void)
 {
+#if 0
 	if(is_in_vmx_nr_mode())
 		return 1;
+#endif
 	if (down_trylock_console_sem())
 		return 0;
 	if (console_suspended) {
@@ -2256,9 +2259,10 @@ void console_unlock(void)
 	bool wake_klogd = false;
 	bool retry;
 
+#if 0
 	if(is_in_vmx_nr_mode())
 		return;
-	
+#endif	
 	if (console_suspended) {
 		up_console_sem();
 		return;

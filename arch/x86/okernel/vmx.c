@@ -2091,7 +2091,7 @@ int vmx_launch(void)
 	
 	while (1) {
 
-		HDEBUG(("At start of vmexit() handler loop...\n"));
+		//HDEBUG(("At start of vmexit() handler loop...\n"));
 
 		vmx_get_cpu(vcpu);
 
@@ -2125,7 +2125,7 @@ int vmx_launch(void)
 			siginfo_t info;
 			//uint32_t x;
 
-			HDEBUG(("signal pending...\n"));
+			//HDEBUG(("signal pending...\n"));
 			
 			local_irq_enable();
 			vmx_put_cpu(vcpu);
@@ -2152,7 +2152,7 @@ int vmx_launch(void)
 		}
 #endif
 		
-		HDEBUG(("About to call vmx_run_vcpu...\n"));
+		//HDEBUG(("About to call vmx_run_vcpu...\n"));
 
 		ret = vmx_run_vcpu(vcpu);
 
@@ -2174,12 +2174,12 @@ int vmx_launch(void)
 		
 		vmx_put_cpu(vcpu);
 
-		HDEBUG(("Got VMEXIT! (%#x) pid (%d)\n", ret, current->pid));
+		//HDEBUG(("Got VMEXIT! (%#x) pid (%d)\n", ret, current->pid));
 
 		//asm volatile("xchg %bx, %bx");
 
 		if (ret == EXIT_REASON_VMCALL){
-			HDEBUG(("vmexit: VMCALL\n"));
+			//HDEBUG(("vmexit: VMCALL\n"));
 			nr_schedule_called = 1;
 			continue;
 		} else if (ret == EXIT_REASON_CPUID) {
@@ -2208,7 +2208,7 @@ tmp_finish:
 
 	//*ret_code = vcpu->ret_code;
 	//vmx_destroy_vcpu(vcpu);
-	do_exit(0);
+	//do_exit(0);
 	return 0;
 }
 
