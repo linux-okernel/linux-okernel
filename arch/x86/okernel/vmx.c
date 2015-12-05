@@ -2067,9 +2067,9 @@ int vmx_launch(void)
 {
 	int ret = 0;
 	//int done = 0;
-	unsigned long c_rip;
-	
+	unsigned long c_rip;	
 	struct vmx_vcpu *vcpu;
+	int nr_schedule_called = 0;
 
 	c_rip = cloned_thread.rip;
 
@@ -2103,16 +2103,20 @@ int vmx_launch(void)
 		local_irq_disable();
 
 		//HDEBUG(("2.\n"));
-		
-		if (need_resched()) {
-			//HDEBUG(("3.\n"));
-			local_irq_enable();
-			//HDEBUG(("4.\n"));
-			vmx_put_cpu(vcpu);
-			//HDEBUG(("5.\n"));
-			HDEBUG(("cond_resched called.\n"));
-			cond_resched();
-			continue;
+
+
+		if(nr_schedule_called){
+			nr_schedule_called = 0;
+			if (need_resched()) {
+				//HDEBUG(("3.\n"));
+				local_irq_enable();
+				//HDEBUG(("4.\n"));
+				vmx_put_cpu(vcpu);
+				//HDEBUG(("5.\n"));
+				HDEBUG(("cond_resched called.\n"));
+				cond_resched();
+				continue;
+			}
 		}
 #if 1
 		if (signal_pending(current)) {
@@ -2168,6 +2172,7 @@ int vmx_launch(void)
 
 		if (ret == EXIT_REASON_VMCALL){
 			HDEBUG(("vmexit: VMCALL\n"));
+			nr_schedule_called = 1;
 			continue;
 		} else if (ret == EXIT_REASON_CPUID) {
 			vmx_handle_cpuid(vcpu);

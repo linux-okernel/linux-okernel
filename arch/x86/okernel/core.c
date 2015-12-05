@@ -108,13 +108,15 @@ int __noclone okernel_enter(void)
 	HDEBUG(("cloned thread rsp will be set to  (%#lx)\n", rsp));
 	cloned_thread.rsp = rsp;
 
+#if 0
 	asm volatile ( "pushf\n\t"
                    "pop %0"
                    : "=g"(rflags) );
 	
 	HDEBUG(("cloned thread rflags will be set to  (%#lx)\n", rflags));
 	cloned_thread.rflags = rflags;
-
+#endif
+	
 	asm volatile ("mov %%cr2,%0" : "=rm" (cr2));
 	HDEBUG(("cloned thread cr2 will be set to  (%#lx)\n", cr2));
 	cloned_thread.cr2 = cr2;
@@ -264,8 +266,9 @@ long ok_device_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 	}
 nr_exit:
 	if(vmx_nr_mode()){
-		printk(KERN_ERR "NR returning okernel invalid IOCTL cmd.\n");
-		BUG();
+		printk(KERN_ERR "NR ioctl locks held:\n");
+		debug_show_all_locks();
+		printk(KERN_ERR "NR ioctl locks held done.\n");
 		return -ENODEV;
 	}
 	return 0;
