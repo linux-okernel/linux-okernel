@@ -185,6 +185,20 @@ int __noclone okernel_enter(void)
 	HDEBUG(("----end of 'current' regs from __show_regs:\n"));
 #endif	
 
+#if 1
+	asm volatile ( "pushf\n\t"
+                   "pop %0"
+                   : "=g"(rflags) );
+	
+	HDEBUG(("cloned thread rflags will be set to  (%#lx)\n", rflags));
+	
+	if((rflags & RFLAGS_IF_BIT)){
+		HDEBUG(("cloned thread: interupts enabled via rflags.\n"));
+	}
+	//cloned_thread.rflags = rflags;
+	cloned_thread.rflags = 0x2;
+#endif
+	
 	asm volatile("xchg %bx, %bx");
 
 	ret = vmx_launch();
@@ -194,7 +208,8 @@ int __noclone okernel_enter(void)
 #if 1
 	if(vmx_nr_mode()){
 		asm volatile("xchg %bx, %bx");
-		//printk(KERN_CRIT "Resuming cloned process In NR mode kernel.\n");
+		//local_irq_enable();
+		//printk(KERN_ERR "Resuming cloned process In NR mode kernel.\n");
 		//asm volatile("xchg %bx, %bx");
 		//vmcall(VMCALL_NOP);
                 //printk(KERN_CRIT "About to leave okernel_enter() function...\n");

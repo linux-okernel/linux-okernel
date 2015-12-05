@@ -63,6 +63,7 @@ extern struct nr_cloned_state cloned_thread;
 #define X86_CR4_FSGSBASE	X86_CR4_RDWRGSFS
 #endif
 
+#define RFLAGS_IF_BIT 0x200
 
 #define HPL_DEBUG
 #ifdef HPL_DEBUG

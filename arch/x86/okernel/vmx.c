@@ -1550,8 +1550,8 @@ static void vmx_setup_initial_guest_state(struct vmx_vcpu *vcpu)
 	vmcs_writel(GUEST_RIP, cloned_thread.rip);
 	//vmcs_writel(GUEST_RSP, current_cpu_state.rsp);
 	vmcs_writel(GUEST_RSP, cloned_thread.rsp);
-	//vmcs_writel(GUEST_RFLAGS, cloned_thread.rflags);
-	vmcs_writel(GUEST_RFLAGS, 0x402);
+	vmcs_writel(GUEST_RFLAGS, cloned_thread.rflags);
+	//vmcs_writel(GUEST_RFLAGS, 0x2);
 	vmcs_writel(GUEST_IA32_EFER, current_cpu_state.efer);
 
 	/* configure segment selectors */
@@ -2070,6 +2070,7 @@ int vmx_launch(void)
 	unsigned long c_rip;	
 	struct vmx_vcpu *vcpu;
 	int nr_schedule_called = 0;
+	unsigned long cloned_rflags;
 
 	c_rip = cloned_thread.rip;
 
@@ -2155,10 +2156,17 @@ int vmx_launch(void)
 
 		ret = vmx_run_vcpu(vcpu);
 
-		HDEBUG(("Returned from  call vmx_run_vcpu.\n"));
-		
 		local_irq_enable();
 		
+		//HDEBUG(("Returned from  call vmx_run_vcpu.\n"));
+
+#if 0
+		cloned_rflags = vmcs_readl(GUEST_RFLAGS);
+
+		if(cloned_rflags & RFLAGS_IF_BIT){
+			local_irq_enable();
+		}
+#endif		
 		if (ret == EXIT_REASON_VMCALL ||
 		    ret == EXIT_REASON_CPUID) {
 			vmx_step_instruction();
@@ -2194,6 +2202,7 @@ int vmx_launch(void)
 	}
 
 tmp_finish:
+	local_irq_disable();
 	printk(KERN_ERR "vmx: destroying VCPU (VPID %d)\n",
 	       vcpu->vpid);
 
