@@ -2088,7 +2088,11 @@ int vmx_launch(void)
 		printk(KERN_ERR "okernel: clone kstack failed.\n");
 		goto tmp_finish;
 	}
-	
+
+	HDEBUG(("Check for held locks before  entering vmexit() handling loop:\n"));
+	get_cpu();
+	debug_show_all_locks();
+	put_cpu();
 	while (1) {
 
 		//HDEBUG(("At start of vmexit() handler loop...\n"));
@@ -2114,7 +2118,7 @@ int vmx_launch(void)
 				//HDEBUG(("4.\n"));
 				vmx_put_cpu(vcpu);
 				//HDEBUG(("5.\n"));
-				HDEBUG(("cond_resched called.\n"));
+				//HDEBUG(("cond_resched called.\n"));
 				cond_resched();
 				continue;
 			}
@@ -2202,13 +2206,13 @@ int vmx_launch(void)
 	}
 
 tmp_finish:
-	local_irq_disable();
+	//local_irq_enable();
 	printk(KERN_ERR "vmx: destroying VCPU (VPID %d)\n",
 	       vcpu->vpid);
 
 	//*ret_code = vcpu->ret_code;
 	//vmx_destroy_vcpu(vcpu);
-	//do_exit(0);
+	do_exit(0);
 	return 0;
 }
 

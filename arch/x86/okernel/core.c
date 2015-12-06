@@ -259,6 +259,9 @@ long ok_device_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 		if(vmx_nr_mode()){
 			asm volatile("xchg %bx, %bx");
 			printk(KERN_ERR "Returning in ok_device_ioctl in cloned process NR mode kernel.\n");
+			asm volatile("xchg %bx, %bx");
+			local_irq_enable();
+			//put_cpu();
 			//asm volatile("xchg %bx, %bx");
 			//do_exit(1);
 			//vmcall(VMCALL_NOP);
@@ -281,9 +284,13 @@ long ok_device_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 	}
 nr_exit:
 	if(vmx_nr_mode()){
-		printk(KERN_ERR "NR ioctl locks held:\n");
-		debug_show_all_locks();
-		printk(KERN_ERR "NR ioctl locks held done.\n");
+		//current->lockdep_depth = 0;
+		//debug_show_all_locks();
+		//printk(KERN_ERR "NR ioctl locks held:\n");
+		//debug_show_all_locks();
+		//printk(KERN_ERR "NR ioctl locks held done.\n");
+		printk(KERN_ERR "Returning in ok_device_ioctl in NR - irqs renabled.\n");
+		asm volatile("xchg %bx, %bx");
 		return 0;
 	}
 	return 0;
