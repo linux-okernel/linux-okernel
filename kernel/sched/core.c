@@ -3142,8 +3142,8 @@ static void  __sched okernel_schedule(void)
 	if(is_in_vmx_nr_mode()){
 		/* Return control to the original process running in root-mode VMX */
 		//okernel_schedule_helper();
-		printk(KERN_ERR "vmcall called from NR mode.\n");
-		vmcall(VMCALL_NOP);
+		printk(KERN_ERR "okernel_scheduled called from NR mode - shouldn't get here!\n");
+		BUG();
 	} else {
 		__schedule();
 	}
@@ -3166,18 +3166,26 @@ asmlinkage __visible void __sched schedule(void)
 {
 	struct task_struct *tsk = current;
 
-	sched_submit_work(tsk);
-	do {
-		preempt_disable();
+	if(is_in_vmx_nr_mode()){
+		/* Return control to the original process running in root-mode VMX */
+		/* shouldn't be holding locks at this point? */
+		asm volatile("xchg %bx, %bx");
+		printk(KERN_ERR "schedule called in NR mode.\n");
+		vmcall(VMCALL_NOP);
+	} else {
+		sched_submit_work(tsk);
+		do {
+			preempt_disable();
 #ifdef CONFIG_OKERNEL
-		okernel_schedule();
+			okernel_schedule();
 #else
-		__schedule();
+			__schedule();
 #endif
-		sched_preempt_enable_no_resched();
-	} while (need_resched());
+			sched_preempt_enable_no_resched();
+		} while (need_resched());
+	}
 }
-EXPORT_SYMBOL(schedule);
+	EXPORT_SYMBOL(schedule);
 
 #ifdef CONFIG_CONTEXT_TRACKING
 asmlinkage __visible void __sched schedule_user(void)

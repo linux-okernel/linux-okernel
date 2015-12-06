@@ -44,6 +44,7 @@
 #define __AUDIT_ARCH_64BIT			0x80000000
 #define __AUDIT_ARCH_LE				0x40000000
 
+	
 .code64
 .section .entry.text, "ax"
 
@@ -333,6 +334,18 @@ int_restore_rest:
 
 syscall_return:
 	/* The IRETQ could re-enable interrupts: */
+	/* 
+
+
+	
+        xor %r11,%r11	
+	movq %cr4,%r11
+	andq $0x2000,%r11
+	cmpq $0, %r11
+	jne rmode
+	xchg %bx,%bx
+rmode:
+	*/
 	DISABLE_INTERRUPTS(CLBR_ANY)
 	TRACE_IRQS_IRETQ
 

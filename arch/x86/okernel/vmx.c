@@ -2094,31 +2094,20 @@ int vmx_launch(void)
 	debug_show_all_locks();
 	put_cpu();
 	while (1) {
-
-		//HDEBUG(("At start of vmexit() handler loop...\n"));
-
 		vmx_get_cpu(vcpu);
-
-		//HDEBUG(("1.\n"));
-		
 #if 0
 		if (!__thread_has_fpu(current))
 			math_state_restore();
 #endif
 		local_irq_disable();
-
-		//HDEBUG(("2.\n"));
-
-
+		
 		if(nr_schedule_called){
 			nr_schedule_called = 0;
 			if (need_resched()) {
-				//HDEBUG(("3.\n"));
+				/* should be safe to use printk here...*/
 				local_irq_enable();
-				//HDEBUG(("4.\n"));
 				vmx_put_cpu(vcpu);
-				//HDEBUG(("5.\n"));
-				//HDEBUG(("cond_resched called.\n"));
+				HDEBUG(("cond_resched called.\n"));
 				cond_resched();
 				continue;
 			}
@@ -2127,11 +2116,10 @@ int vmx_launch(void)
 		if (signal_pending(current)) {
 			int signr;
 			siginfo_t info;
-			//uint32_t x;
 
 			//HDEBUG(("signal pending...\n"));
-			
 			local_irq_enable();
+
 			vmx_put_cpu(vcpu);
 
 			spin_lock_irq(&current->sighand->siglock);
@@ -2155,22 +2143,14 @@ int vmx_launch(void)
 #endif
 		}
 #endif
-		
-		//HDEBUG(("About to call vmx_run_vcpu...\n"));
-
 		ret = vmx_run_vcpu(vcpu);
 
-		local_irq_enable();
-		
-		//HDEBUG(("Returned from  call vmx_run_vcpu.\n"));
-
-#if 0
 		cloned_rflags = vmcs_readl(GUEST_RFLAGS);
 
 		if(cloned_rflags & RFLAGS_IF_BIT){
 			local_irq_enable();
 		}
-#endif		
+
 		if (ret == EXIT_REASON_VMCALL ||
 		    ret == EXIT_REASON_CPUID) {
 			vmx_step_instruction();
@@ -2178,18 +2158,20 @@ int vmx_launch(void)
 		
 		vmx_put_cpu(vcpu);
 
-		//HDEBUG(("Got VMEXIT! (%#x) pid (%d)\n", ret, current->pid));
-
 		//asm volatile("xchg %bx, %bx");
 
 		if (ret == EXIT_REASON_VMCALL){
-			//HDEBUG(("vmexit: VMCALL\n"));
-			nr_schedule_called = 1;
+			/* Currently we only use vmcall() in safe
+			 * contexts so can printk here...*/
+			local_irq_enable();
+			HDEBUG(("vmexit: VMCALL\n"));
+			schedule();
+			//goto tmp_finish;
+			//nr_schedule_called = 1;
 			continue;
 		} else if (ret == EXIT_REASON_CPUID) {
 			vmx_handle_cpuid(vcpu);
 		} else if (ret == EXIT_REASON_EPT_VIOLATION) {
-			HDEBUG(("vmexit: EPT violaton\n"));
 			goto tmp_finish;
 		} else if (ret == EXIT_REASON_EXCEPTION_NMI) {
 			if (vmx_handle_nmi_exception(vcpu)){
@@ -2197,8 +2179,8 @@ int vmx_launch(void)
 			}
 			goto tmp_finish;
 		} else if (ret != EXIT_REASON_EXTERNAL_INTERRUPT) {
-			printk(KERN_INFO "unhandled exit: reason %d, exit qualification %x\n",
-			       ret, vmcs_read32(EXIT_QUALIFICATION));
+			//printk(KERN_INFO "unhandled exit: reason %d, exit qualification %x\n",
+			//       ret, vmcs_read32(EXIT_QUALIFICATION));
 			//vmx_dump_cpu(vcpu);
 			//done = 1;
 			goto tmp_finish;
@@ -2206,13 +2188,17 @@ int vmx_launch(void)
 	}
 
 tmp_finish:
-	//local_irq_enable();
-	printk(KERN_ERR "vmx: destroying VCPU (VPID %d)\n",
-	       vcpu->vpid);
-
+	/* (Likely) this may (will) cause a problem if irqs were
+	 * disabled / locks held, etc. in cloned thread on
+	 * vmexit fault - we will have inconsistent kernel
+	 * state we will need to sort out.*/
+	local_irq_enable();
+	
+	printk(KERN_CRIT "vmx: destroying VCPU (VPID %d) - ret (%x) - trigger BUG() for now...\n",
+	       vcpu->vpid, ret);
+	BUG();
 	//*ret_code = vcpu->ret_code;
 	//vmx_destroy_vcpu(vcpu);
-	do_exit(0);
 	return 0;
 }
 
