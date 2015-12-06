@@ -2163,8 +2163,8 @@ int vmx_launch(void)
 		if (ret == EXIT_REASON_VMCALL){
 			/* Currently we only use vmcall() in safe
 			 * contexts so can printk here...*/
-			local_irq_enable();
-			HDEBUG(("vmexit: VMCALL\n"));
+			//local_irq_enable();
+			printk(KERN_ERR "vmcall in vmexit handler.\n");
 			schedule();
 			//goto tmp_finish;
 			//nr_schedule_called = 1;

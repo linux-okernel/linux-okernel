@@ -2162,7 +2162,7 @@ static int console_cpu_notify(struct notifier_block *self,
  */
 void console_lock(void)
 {
-#if 1
+#if 0
 	if(is_in_vmx_nr_mode())
 		return;
 #endif	
@@ -2259,7 +2259,7 @@ void console_unlock(void)
 	bool wake_klogd = false;
 	bool retry;
 
-#if 1
+#if 0
 	if(is_in_vmx_nr_mode())
 		return;
 #endif	
