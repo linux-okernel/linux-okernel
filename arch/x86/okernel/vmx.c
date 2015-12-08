@@ -353,42 +353,57 @@ int create_clone_mapping(struct vmx_vcpu *vcpu, u64 paddr, unsigned long* vaddr)
 	unsigned int n_entries = PAGESIZE / 8; 
 
 	pt_page* pt = NULL;
-	pt_page* pte = NULL;
+	pt_page* pte[4];
 
 	int i = 0;
+	int k;
 	u64* q = NULL;
 	u64 addr = 0;
-	unsigned long stack_page_address = (unsigned long)vaddr + 3*PAGESIZE;
+	//unsigned long stack_page_address = (unsigned long)vaddr + 3*PAGESIZE;
+	unsigned long stack_page_address = (unsigned long)vaddr;
 	u64 stack_pa = __pa(stack_page_address);
 	unsigned int index;
-	
+	void* v;
+	u64 p;
 
 	if((paddr & (PAGESIZE2M -1)) != 0){
 		printk(KERN_ERR "okernel: 2MB unaligned addr passed to EPT split.\n");
 		return 0;
 	}
 	
-	HDEBUG(("page to replace at (%#lx)\n", stack_page_address));
-	
-	pte   = (pt_page*)kmalloc(sizeof(pt_page), GFP_KERNEL);
+	HDEBUG(("starting page to replace at (%#lx)\n", stack_page_address));
 
-	if(!pte){
-		printk(KERN_ERR "okernel: failed to allocate PT table.\n");
-		return 0;
-	}
-	
-	if(!(vt_alloc_page((void**)&pte[0].virt, &pte[0].phys))){
-		printk(KERN_ERR "okernel: failed to allocate PML1 table.\n");
-		return 0;
-	}
+	for(i = 0; i < 4; i++){
+		pte[i]   = (pt_page*)kmalloc(sizeof(pt_page), GFP_KERNEL);
+		
+		if(!pte[i]){
+			printk(KERN_ERR "okernel: failed to allocate PT table (%d)\n", i);
+			return 0;
+		}
 
-
-	HDEBUG(("Replacing kstack with v (%#lx) p (%#lx)\n",
-		(unsigned long)pte[0].virt, (unsigned long)pte[0].phys));
+		v = 0;
+		
+		if(!(vt_alloc_page((void**)&v, *p))){
+			printk(KERN_ERR "okernel: failed to allocate PML1 table.\n");
+			return 0;
+		}
+#if 0
+		if(!(vt_alloc_page((void**)&pte[i]->virt, &pte[i]->phys))){
+			printk(KERN_ERR "okernel: failed to allocate PML1 table.\n");
+			return 0;
+		}
+#endif
+		
+		HDEBUG(("Replacing kstack[%d] with v (%#lx) p (%#lx)\n",
+			i, (unsigned long)pte[i]->virt, (unsigned long)pte[i]->phys));
      
-	HDEBUG(("cloning kernel stack using memcpy...\n"));
-	memcpy((void*)pte[0].virt, (void*)stack_page_address, PAGESIZE);
+	
+	
+	}
 
+	HDEBUG(("cloning kernel stack using memcpy...\n"));
+	memcpy((void*)pte[0]->virt, (void*)stack_page_address, 4*PAGESIZE);
+	
 	pt   = (pt_page*)kmalloc(sizeof(pt_page), GFP_KERNEL);
 
 	if(!pt){
@@ -396,7 +411,7 @@ int create_clone_mapping(struct vmx_vcpu *vcpu, u64 paddr, unsigned long* vaddr)
 		return 0;
 	}
 	
-	if(!(vt_alloc_page((void**)&pt[i].virt, &pt[i].phys))){
+	if(!(vt_alloc_page((void**)&pt[0].virt, &pt[0].phys))){
 		printk(KERN_ERR "okernel: failed to allocate PML1 table.\n");
 		return 0;
 	}
@@ -417,11 +432,14 @@ int create_clone_mapping(struct vmx_vcpu *vcpu, u64 paddr, unsigned long* vaddr)
 		addr = i << 12;
 		if(i == index){
 			/* Plug-in clone */
-			HDEBUG(("replacing kstack physical address (%#lx) vaddr (%#lx) with pa(%#lx)\n",
-				(unsigned long)addr,
-				(unsigned long)stack_page_address,
-				(unsigned long)pte[0].phys));
-			q[i] = pte[0].phys + EPT_R + EPT_W + EPT_X + EPT_CACHE_2 + EPT_CACHE_3;
+			for(k = 0; k < 4; k++){
+				HDEBUG(("replacing kstack physical address (%#lx) vaddr (%#lx) with pa(%#lx)\n",
+					(unsigned long)addr + k*PAGESIZE,
+					(unsigned long)stack_page_address+k*PAGESIZE,
+					(unsigned long)pte[k]->phys));
+				q[i+k] = pte[k]->phys + EPT_R + EPT_W + EPT_X + EPT_CACHE_2 + EPT_CACHE_3;
+			}
+			i = i + 3;
 			//q[i] = 0;
 		} else {
 			if(no_cache_region(addr, PAGESIZE)){
