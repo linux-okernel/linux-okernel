@@ -261,8 +261,6 @@ long ok_device_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 			printk(KERN_ERR "Returning in ok_device_ioctl in cloned process NR mode kernel.\n");
 			asm volatile("xchg %bx, %bx");
 			local_irq_enable();
-			clear_tsk_need_resched(current);
-			clear_preempt_need_resched();
 			//put_cpu();
 			//asm volatile("xchg %bx, %bx");
 			//do_exit(1);
@@ -286,7 +284,7 @@ long ok_device_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 	}
 nr_exit:
 	if(vmx_nr_mode()){
-		//current->lockdep_depth = 0;
+		current->lockdep_depth = 0;
 		//debug_show_all_locks();
 		//printk(KERN_ERR "NR ioctl locks held:\n");
 		//debug_show_all_locks();

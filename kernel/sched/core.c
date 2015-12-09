@@ -3169,7 +3169,10 @@ asmlinkage __visible void __sched schedule(void)
 	if(is_in_vmx_nr_mode()){
 		/* Return control to the original process running in root-mode VMX */
 		/* shouldn't be holding locks at this point? */
+
 		asm volatile("xchg %bx, %bx");
+		printk(KERN_ERR "clearing TIF_NEED_RESCHEDULE.\n");
+		clear_tsk_need_resched(current);
 		printk(KERN_ERR "schedule called in NR mode.\n");
 		vmcall(VMCALL_NOP);
 	} else {
@@ -3183,6 +3186,10 @@ asmlinkage __visible void __sched schedule(void)
 #endif
 			sched_preempt_enable_no_resched();
 		} while (need_resched());
+	}
+	if(is_in_vmx_nr_mode()){
+		printk(KERN_ERR "returning from VMCALL schedule\n");
+		asm volatile("xchg %bx, %bx");
 	}
 }
 	EXPORT_SYMBOL(schedule);
