@@ -68,7 +68,7 @@
 #include <asm/virtext.h>
 #include <asm/percpu.h>
 //#include <asm/paravirt.h>
-
+#include <asm/preempt.h>
 #include <asm/tlbflush.h>
 
 #include "constants2.h"
@@ -2103,6 +2103,9 @@ int vmx_launch(void)
 	int nr_schedule_called = 0;
 	unsigned long cloned_rflags;
 
+	r_preempt_count = preempt_count();
+	nr_lockdep_depth = current->lockdep_depth;
+	
 	c_rip = cloned_thread.rip;
 
 	HDEBUG(("c_rip: (#%#lx)\n", c_rip));
@@ -2174,8 +2177,20 @@ int vmx_launch(void)
 #endif
 		}
 #endif
+		r_lockdep_depth = current->lockdep_depth;
+		current->lockdep_depth = nr_lockdep_depth;
+
+		r_preempt_count = preempt_count();
+		preempt_count_set(nr_preempt_count);
+		
 		ret = vmx_run_vcpu(vcpu);
 
+		nr_preempt_count = preempt_count();
+		preempt_count_set(r_preempt_count);
+		
+		nr_lockdep_depth = current->lockdep_depth;
+		current->lockdep_depth = r_lockdep_depth;
+		
 		cloned_rflags = vmcs_readl(GUEST_RFLAGS);
 
 		if(cloned_rflags & RFLAGS_IF_BIT){
@@ -2186,9 +2201,8 @@ int vmx_launch(void)
 		    ret == EXIT_REASON_CPUID) {
 			vmx_step_instruction();
 		}
-		
-		vmx_put_cpu(vcpu);
 
+		vmx_put_cpu(vcpu);
 		//asm volatile("xchg %bx, %bx");
 
 		if (ret == EXIT_REASON_VMCALL){

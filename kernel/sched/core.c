@@ -3173,6 +3173,7 @@ asmlinkage __visible void __sched schedule(void)
 		asm volatile("xchg %bx, %bx");
 		printk(KERN_ERR "clearing TIF_NEED_RESCHEDULE.\n");
 		clear_tsk_need_resched(current);
+		//clear_preempt_need_resched();
 		printk(KERN_ERR "schedule called in NR mode.\n");
 		vmcall(VMCALL_NOP);
 	} else {

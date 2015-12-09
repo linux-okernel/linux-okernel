@@ -35,7 +35,11 @@ struct nr_cloned_state {
 
 /* Initial cloned thread state */
 extern struct nr_cloned_state cloned_thread;
+extern int r_preempt_count;
+extern int nr_preempt_count;
 
+extern unsigned long r_lockdep_depth;
+extern unsigned long nr_lockdep_depth;
 
 
 #define GPA_STACK_SIZE  ((unsigned long) 1 << 28) /* 256 megabytes */

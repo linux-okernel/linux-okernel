@@ -26,6 +26,7 @@
 #include <asm/unistd_64.h>
 #include <asm/virtext.h>
 #include <asm/percpu.h>
+#include <asm/preempt.h>
 //#include <asm/paravirt.h>
 
 #include <asm/tlbflush.h>
@@ -50,6 +51,10 @@ static int major_no;
 
 int okernel_enabled;
 struct nr_cloned_state cloned_thread;
+unsigned long r_lockdep_depth;
+unsigned long nr_lockdep_depth;
+int r_preempt_count;
+int nr_preempt_count;
 
 #ifdef CONFIG_OKERNEL_SCHED
 void okernel_schedule_helper(void)
@@ -284,8 +289,13 @@ long ok_device_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 	}
 nr_exit:
 	if(vmx_nr_mode()){
+		//lockdep_depth = current->lockdep_depth;
+		//r_preempt_count = preempt_count();
+		preempt_count_set(0); 
 		current->lockdep_depth = 0;
-		//debug_show_all_locks();
+		
+		
+                //debug_show_all_locks();
 		//printk(KERN_ERR "NR ioctl locks held:\n");
 		//debug_show_all_locks();
 		//printk(KERN_ERR "NR ioctl locks held done.\n");
