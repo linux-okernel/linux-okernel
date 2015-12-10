@@ -190,20 +190,24 @@ int __noclone okernel_enter(void)
 	HDEBUG(("----end of 'current' regs from __show_regs:\n"));
 #endif	
 
-#if 1
+#if 0
 	asm volatile ( "pushf\n\t"
                    "pop %0"
                    : "=g"(rflags) );
 	
-	HDEBUG(("cloned thread rflags will be set to  (%#lx)\n", rflags));
-	
 	if((rflags & RFLAGS_IF_BIT)){
 		HDEBUG(("cloned thread: interupts enabled via rflags.\n"));
 	}
-	//cloned_thread.rflags = rflags;
-	cloned_thread.rflags = 0x2;
+	/* Cloned thread will start with interupts disabled. */
+	rflags = (rflags & ~RFLAGS_IF_BIT);
+	cloned_thread.rflags = rflags;
+	//
 #endif
-	
+	/* Start cloned thread with interrupts disabled initially */
+	rflags = 0x002;
+	cloned_thread.rflags = rflags;
+	HDEBUG(("cloned thread rflags will be set to  (%#lx)\n", rflags));
+		
 	asm volatile("xchg %bx, %bx");
 
 	ret = vmx_launch();
@@ -213,12 +217,13 @@ int __noclone okernel_enter(void)
 #if 1
 	if(vmx_nr_mode()){
 		asm volatile("xchg %bx, %bx");
+		printk(KERN_ERR "Returning in ok_device_ioctl in cloned process NR mode kernel.\n");
+		asm volatile("xchg %bx, %bx");
 		//local_irq_enable();
-		//printk(KERN_ERR "Resuming cloned process In NR mode kernel.\n");
-		//asm volatile("xchg %bx, %bx");
-		//vmcall(VMCALL_NOP);
-                //printk(KERN_CRIT "About to leave okernel_enter() function...\n");
-		//asm volatile("xchg %bx, %bx");
+		//lockdep_depth = current->lockdep_depth;
+                //current->lockdep_depth = 0;
+                //r_preempt_count = preempt_count();
+		//preempt_count_set(0);
 	}
 #endif
 	return ret;
@@ -259,20 +264,11 @@ long ok_device_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 		}
 		
 		ret = okernel_enter();
-		
-#if 1
+
 		if(vmx_nr_mode()){
-			asm volatile("xchg %bx, %bx");
-			printk(KERN_ERR "Returning in ok_device_ioctl in cloned process NR mode kernel.\n");
-			asm volatile("xchg %bx, %bx");
-			local_irq_enable();
-			//put_cpu();
-			//asm volatile("xchg %bx, %bx");
-			//do_exit(1);
-			//vmcall(VMCALL_NOP);
 			goto nr_exit;
 		}
-#endif
+
 		current->okernel_status = OKERNEL_OFF;
 
 		if(ret){
@@ -289,19 +285,13 @@ long ok_device_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 	}
 nr_exit:
 	if(vmx_nr_mode()){
-		//lockdep_depth = current->lockdep_depth;
-		//r_preempt_count = preempt_count();
-#if 0
-		preempt_count_set(0); 
-#endif
-		current->lockdep_depth = 0;
 		
-		
-                //debug_show_all_locks();
+		//debug_show_all_locks();
 		//printk(KERN_ERR "NR ioctl locks held:\n");
 		//debug_show_all_locks();
 		//printk(KERN_ERR "NR ioctl locks held done.\n");
 		printk(KERN_ERR "Returning in ok_device_ioctl in NR - irqs renabled.\n");
+		local_irq_enable();
 		asm volatile("xchg %bx, %bx");
 		return 0;
 	}

@@ -3188,8 +3188,8 @@ asmlinkage __visible void __sched schedule(void)
 	}
 	if(is_in_vmx_nr_mode()){
 		printk(KERN_ERR "returning from VMCALL schedule\n");
-		printk(KERN_ERR "clearing TIF_NEED_RESCHEDULE.\n");
-		clear_tsk_need_resched(current);
+		//printk(KERN_ERR "clearing TIF_NEED_RESCHEDULE.\n");
+		//clear_tsk_need_resched(current);
 		asm volatile("xchg %bx, %bx");
 	}
 }

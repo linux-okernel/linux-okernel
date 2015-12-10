@@ -370,6 +370,29 @@ int create_4k_mapping(struct vmx_vcpu *vcpu, u64 paddr)
 }
 #endif
 
+#if 0
+int clone_mapping_4kpage(struct vmx_vcpu *vcpu, u64 paddr)
+{
+	/* Need to check if we are in a 2MB (PTE) region or have
+	 * already been splintered into 4k PTEs */
+	
+	u64 clone_addr;
+	int i;
+	
+	/* generic clone n-pages starting from (virt_to_phys)vaddr within paddr 2MB region. */ 
+	if((paddr & (PAGESIZE2M -1)) != 0){
+		printk(KERN_ERR "okernel: 2MB unaligned addr passed to EPT split.\n");
+		return 0;
+	}
+
+	/* Check we are contained with the 2MB region and in contingous physical pages */
+	for(i = 0; i < npages; i++){
+		clone_addr = __pa(vaddr+i*PAGESIZE);
+		
+
+	return 0;
+}
+#endif
 
 int create_clone_mapping(struct vmx_vcpu *vcpu, u64 paddr, unsigned long* vaddr)
 {
@@ -396,7 +419,9 @@ int create_clone_mapping(struct vmx_vcpu *vcpu, u64 paddr, unsigned long* vaddr)
 	u64 stack_pa = __pa(stack_page_address);
 	unsigned int index;
 	
-
+	/* Need to un-hardcode this */
+	BUG_ON(THREAD_SIZE != 4*PAGESIZE);
+	
 	if((paddr & (PAGESIZE2M -1)) != 0){
 		printk(KERN_ERR "okernel: 2MB unaligned addr passed to EPT split.\n");
 		return 0;
@@ -2101,7 +2126,7 @@ int vmx_launch(void)
 	//int done = 0;
 	unsigned long c_rip;	
 	struct vmx_vcpu *vcpu;
-	int nr_schedule_called = 0;
+	int schedule_ok = 0;
 	unsigned long cloned_rflags;
 
 #if 0
@@ -2137,8 +2162,8 @@ int vmx_launch(void)
 #endif
 		local_irq_disable();
 		
-		if(nr_schedule_called){
-			nr_schedule_called = 0;
+		if(schedule_ok){
+			schedule_ok = 0;
 			if (need_resched()) {
 				/* should be safe to use printk here...*/
 				local_irq_enable();
@@ -2200,7 +2225,9 @@ int vmx_launch(void)
 		cloned_rflags = vmcs_readl(GUEST_RFLAGS);
 
 		if(cloned_rflags & RFLAGS_IF_BIT){
+			schedule_ok = 1;
 			local_irq_enable();
+			vmx_put_cpu(vcpu);
 		}
 
 		if (ret == EXIT_REASON_VMCALL ||
@@ -2208,7 +2235,7 @@ int vmx_launch(void)
 			vmx_step_instruction();
 		}
 
-		vmx_put_cpu(vcpu);
+		//vmx_put_cpu(vcpu);
 		//asm volatile("xchg %bx, %bx");
 
 		if (ret == EXIT_REASON_VMCALL){
@@ -2217,10 +2244,17 @@ int vmx_launch(void)
 			//local_irq_enable();
 			cmd = vcpu->regs[VCPU_REGS_RAX];
 			printk(KERN_ERR "vmcall in vmexit handler: (%lu)\n", cmd);
-			schedule();
-			//goto tmp_finish;
-			//nr_schedule_called = 1;
-			continue;
+			switch(cmd){
+			case VMCALL_SCHED:
+				schedule_ok = 0;
+				schedule();
+				continue;
+			case VMCALL_DOEXIT:
+				do_exit(0);
+			default:
+				printk(KERN_ERR "unexpected VMCALL argument.\n");
+				BUG();
+			}
 		} else if (ret == EXIT_REASON_CPUID) {
 			vmx_handle_cpuid(vcpu);
 		} else if (ret == EXIT_REASON_EPT_VIOLATION) {
@@ -2245,8 +2279,9 @@ tmp_finish:
 	 * vmexit fault - we will have inconsistent kernel
 	 * state we will need to sort out.*/
 	local_irq_enable();
-	
-	printk(KERN_CRIT "vmx: destroying VCPU (VPID %d) - ret (%x) - trigger BUG() for now...\n",
+	vmx_put_cpu(vcpu);
+
+	printk(KERN_CRIT "vmx: leaving vmexit() loop (VPID %d) - ret (%x) - trigger BUG() for now...\n",
 	       vcpu->vpid, ret);
 	BUG();
 	//*ret_code = vcpu->ret_code;
