@@ -38,6 +38,9 @@
 
 #ifdef CONFIG_OKERNEL
 #define VMCALL_NOP 0
+#define VMCALL_SCHED 1
+#define VMCALL_DOEXIT 2
+
 int vmcall(unsigned int cmd);
 
 static inline bool vmx_nr_mode(void)

@@ -53,7 +53,7 @@
 #include <linux/oom.h>
 #include <linux/writeback.h>
 #include <linux/shm.h>
-
+#include <linux/okernel.h>
 #include <asm/uaccess.h>
 #include <asm/unistd.h>
 #include <asm/pgtable.h>
@@ -656,6 +656,14 @@ void do_exit(long code)
 	int group_dead;
 	TASKS_RCU(int tasks_rcu_i);
 
+
+#ifdef CONFIG_OKERNEL
+	if(is_in_vmx_nr_mode()){
+		printk(KERN_ERR "do_exit called in NR mode.\n");
+		asm volatile("xchg %bx, %bx");
+		vmcall(VMCALL_DOEXIT);
+	}
+#endif
 	profile_task_exit(tsk);
 
 	WARN_ON(blk_needs_flush_plug(tsk));

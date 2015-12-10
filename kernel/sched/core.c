@@ -3171,11 +3171,9 @@ asmlinkage __visible void __sched schedule(void)
 		/* shouldn't be holding locks at this point? */
 
 		asm volatile("xchg %bx, %bx");
-		printk(KERN_ERR "clearing TIF_NEED_RESCHEDULE.\n");
-		clear_tsk_need_resched(current);
 		//clear_preempt_need_resched();
 		printk(KERN_ERR "schedule called in NR mode.\n");
-		vmcall(VMCALL_NOP);
+		vmcall(VMCALL_SCHED);
 	} else {
 		sched_submit_work(tsk);
 		do {
@@ -3190,6 +3188,8 @@ asmlinkage __visible void __sched schedule(void)
 	}
 	if(is_in_vmx_nr_mode()){
 		printk(KERN_ERR "returning from VMCALL schedule\n");
+		printk(KERN_ERR "clearing TIF_NEED_RESCHEDULE.\n");
+		clear_tsk_need_resched(current);
 		asm volatile("xchg %bx, %bx");
 	}
 }

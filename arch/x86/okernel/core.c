@@ -291,7 +291,9 @@ nr_exit:
 	if(vmx_nr_mode()){
 		//lockdep_depth = current->lockdep_depth;
 		//r_preempt_count = preempt_count();
+#if 0
 		preempt_count_set(0); 
+#endif
 		current->lockdep_depth = 0;
 		
 		

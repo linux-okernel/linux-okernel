@@ -2097,15 +2097,17 @@ static int vmx_handle_nmi_exception(struct vmx_vcpu *vcpu)
 int vmx_launch(void)
 {
 	int ret = 0;
+	unsigned long cmd;
 	//int done = 0;
 	unsigned long c_rip;	
 	struct vmx_vcpu *vcpu;
 	int nr_schedule_called = 0;
 	unsigned long cloned_rflags;
 
+#if 0
 	r_preempt_count = preempt_count();
 	nr_lockdep_depth = current->lockdep_depth;
-	
+#endif	
 	c_rip = cloned_thread.rip;
 
 	HDEBUG(("c_rip: (#%#lx)\n", c_rip));
@@ -2177,19 +2179,23 @@ int vmx_launch(void)
 #endif
 		}
 #endif
+
+#if 0
 		r_lockdep_depth = current->lockdep_depth;
 		current->lockdep_depth = nr_lockdep_depth;
 
 		r_preempt_count = preempt_count();
 		preempt_count_set(nr_preempt_count);
-		
+#endif		
 		ret = vmx_run_vcpu(vcpu);
 
+#if 0
 		nr_preempt_count = preempt_count();
 		preempt_count_set(r_preempt_count);
 		
 		nr_lockdep_depth = current->lockdep_depth;
 		current->lockdep_depth = r_lockdep_depth;
+#endif
 		
 		cloned_rflags = vmcs_readl(GUEST_RFLAGS);
 
@@ -2209,7 +2215,8 @@ int vmx_launch(void)
 			/* Currently we only use vmcall() in safe
 			 * contexts so can printk here...*/
 			//local_irq_enable();
-			printk(KERN_ERR "vmcall in vmexit handler.\n");
+			cmd = vcpu->regs[VCPU_REGS_RAX];
+			printk(KERN_ERR "vmcall in vmexit handler: (%lu)\n", cmd);
 			schedule();
 			//goto tmp_finish;
 			//nr_schedule_called = 1;
