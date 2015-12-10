@@ -151,7 +151,8 @@ no_cache_region(u64 addr, u64 size)
 {
 	if (((addr >= 0) && (addr < 0x9F00))||((addr >= BIOS_END) && (addr < END_PHYSICAL))){
 		return 0;
-	}                                                                                                                                        return 1;
+	}
+	return 1;
 }
 /* Adapted from e820_end_pfn */
 static unsigned long e820_end_paddr(unsigned long limit_pfn)
@@ -290,54 +291,20 @@ unsigned long* find_pd_entry(struct vmx_vcpu *vcpu, u64 paddr)
 	return pml2_p;
 }
 
-#if 0
-int create_4k_mapping(struct vmx_vcpu *vcpu, u64 paddr)
+unsigned long* find_pt_entry(struct vmx_vcpu *vcpu, u64 paddr)
 {
-	/* Splinter the 2MB EPT mapping  into a 4K PT table at the given paddr. 
-	 * Check paddr is 2MB aligned first.
-	 */
+	/* Find index in a PD that maps a particular 2MB range containing a given address. */
+
+	/* First need the PDP enty from a given PML4 root */
 	epte_t *pml3 = NULL;
 	epte_t *pml2 = NULL;
-	epte_t *pde  = NULL;
-	epte_t *pml4 =  (epte_t*) __va(vcpu->ept_root);
-	unsigned long* pml2_p;
-	int pml3_index, pml2_index;
-	unsigned int n_entries = PAGESIZE / 8; 
-	pt_page* pt = NULL;
-	int i = 0;
-	u64* q = NULL;
-	u64 addr = 0;
+	epte_t *pml1 = NULL;
 
-	if((paddr & (PAGESIZE2M -1)) != 0){
-		printk(KERN_ERR "okernel: 2MB unaligned addr passed to EPT split.\n");
-		return 0;
-	}
-	pt   = (pt_page*)kmalloc(sizeof(pt_page), GFP_KERNEL);
-
-	if(!pt){
-		printk(KERN_ERR "okernel: failed to allocate PT table.\n");
-		return 0;
-	}
+	unsigned long* pml1_p;
 	
-	if(!(vt_alloc_page((void**)&pt[i].virt, &pt[i].phys))){
-		printk(KERN_ERR "okernel: failed to allocate PML1 table.\n");
-		return 0;
-	}
+	int pml3_index, pml2_index, pml1_index;
 
-	memset(pt[i].virt, 0, PAGESIZE);
-	HDEBUG(("n=(%d) PML1 pt virt (%llX) pt phys (%llX)\n", i, (unsigned long long)pt[i].virt, pt[i].phys));
-
-
-	q = pt[0].virt;
-
-	for(i = 0; i < n_entries; i++){
-		addr = i << 12;
-		if(no_cache_region(addr, PAGESIZE)){
-			q[i] = (i << 12) | EPT_R | EPT_W | EPT_X;
-		} else {
-			q[i] = (i << 12) | EPT_R | EPT_W | EPT_X | EPT_CACHE_2 | EPT_CACHE_3;
-		}
-	}
+	epte_t *pml4 =  (epte_t*) __va(vcpu->ept_root);
 
 	pml3 = (epte_t *)epte_page_vaddr(*pml4);
 
@@ -347,57 +314,141 @@ int create_4k_mapping(struct vmx_vcpu *vcpu, u64 paddr)
 	
 	pml2 = (epte_t *)epte_page_vaddr(pml3[pml3_index]);
 
+
 	pml2_index = ((paddr & (GIGABYTE -1)) >> PAGESIZE2M_SHIFT);
 
 	HDEBUG(("addr (%#lx) pml2 index (%i)\n", (unsigned long)paddr, pml2_index));
 
-	pde = (epte_t *)epte_page_vaddr(pml2[pml2_index]);
+	pml1 = (epte_t *)epte_page_vaddr(pml2[pml2_index]);
 
-	pml2_p = &pml2[pml2_index];
+	HDEBUG(("check for 4k page mapping.\n"));
+	BUG_ON(*pml1 & EPT_2M_PAGE);
+
+	pml1_index = ((paddr & (PAGESIZE2M-1)) >> PAGESIZE_SHIFT);
+
+	pml1_p = &pml1[pml1_index];
 	
-	HDEBUG(("addr (%#lx) pde (%#lx)\n", (unsigned long)paddr, (unsigned long)pde));
-
-	
-	//q = (u64*)find_pd_entry(vcpu, paddr);
-
-	//if(!q){
-	//	printk(KERN_ERR "okernel: failed to find pd entry.\n");
-	//	return 0;
-	//}
-	//q = pd[0].virt;
-	pml2[pml2_index] = pt[0].phys + EPT_R + EPT_W + EPT_X;
-	return 1;
+	HDEBUG(("addr (%#lx) pte (%#lx)\n", (unsigned long)paddr, (unsigned long)pml1));
+	return pml1_p;
 }
-#endif
 
-#if 0
-int clone_mapping_4kpage(struct vmx_vcpu *vcpu, u64 paddr)
+
+	
+int split_2M_mapping(struct vmx_vcpu* vcpu, u64 paddr)
 {
-	/* Need to check if we are in a 2MB (PTE) region or have
-	 * already been splintered into 4k PTEs */
+	unsigned long *pml2_e;
+	pt_page *pt = NULL;
+	unsigned int n_entries = PAGESIZE / 8;
+	u64* q = NULL;
+	int i = 0;
+	u64 p_base_addr;
+	u64 addr;
 	
-	u64 clone_addr;
-	int i;
-	
-	/* generic clone n-pages starting from (virt_to_phys)vaddr within paddr 2MB region. */ 
 	if((paddr & (PAGESIZE2M -1)) != 0){
-		printk(KERN_ERR "okernel: 2MB unaligned addr passed to EPT split.\n");
+		printk(KERN_ERR "okernel: 2MB unaligned addr passed to is_2M_mapping.\n");
+		return 0;
+	}
+	
+	if(!(pml2_e =  find_pd_entry(vcpu, paddr))){
+		printk(KERN_ERR "okernel: NULL pml2 entry for paddr (%#lx)\n",
+		       (unsigned long)paddr);
 		return 0;
 	}
 
-	/* Check we are contained with the 2MB region and in contingous physical pages */
-	for(i = 0; i < npages; i++){
-		clone_addr = __pa(vaddr+i*PAGESIZE);
-		
+	/* check if 2M mapping or slpit already */
+	if(!(*pml2_e & EPT_2M_PAGE)){
+		HDEBUG(("paddr ept entry for 2MB region starting at phys addr (%#lx) already split.\n",
+			(unsigned long)paddr));
+		return 0;
+	}
 
-	return 0;
+	/* 2M region base address */
+
+	p_base_addr = (*pml2_e & ~(PAGESIZE2M-1));
+
+	HDEBUG(("base EPT physical addr for table 2M split (%#lx) paddr (%#lx)\n",
+		(unsigned long)p_base_addr, (unsigned long)paddr));
+	
+	/* split the plm2_e into 4k ptes,i.e. have it point to a PML1 table */
+
+        /* First allocate a physical page for the PML1 table (512*4K entries) */ 
+	if(!(pt   = (pt_page*)kmalloc(sizeof(pt_page), GFP_KERNEL))){
+		printk(KERN_ERR "okernel: failed to allocate PT table.\n");
+		return 0;
+	}
+	
+	if(!(vt_alloc_page((void**)&pt[0].virt, &pt[0].phys))){
+		printk(KERN_ERR "okernel: failed to allocate PML1 table.\n");
+		return 0;
+	}
+
+	memset(pt[0].virt, 0, PAGESIZE);
+	HDEBUG(("PML1 pt virt (%llX) pt phys (%llX)\n", (unsigned long long)pt[0].virt, pt[0].phys));
+
+	/* Fill in eack of the 4k ptes for the PML1 */ 
+	q = pt[0].virt;
+
+	for(i = 0; i < n_entries; i++){
+		addr = p_base_addr + i*PAGESIZE;
+		if(no_cache_region(addr, PAGESIZE)){
+			q[i] = addr | EPT_R | EPT_W | EPT_X;
+		} else {
+			q[i] = addr | EPT_R | EPT_W | EPT_X | EPT_CACHE_2 | EPT_CACHE_3;
+		}
+	}
+
+	*pml2_e = pt[0].phys + EPT_R + EPT_W + EPT_X; 
+	return 1;
 }
-#endif
+
+
+int replace_ept_page(struct vmx_vcpu *vcpu, u64 paddr)
+{
+	unsigned long *pml1_p;
+	pt_page *pt;
+	u64 orig_paddr;
+	
+	if(!(split_2M_mapping(vcpu, paddr & ~(PAGESIZE2M-1)))){
+		printk(KERN_ERR "okernel: couldn't split 2MB mapping for (%#lx)\n",
+		       (unsigned long)paddr);
+		return 0;
+	}
+	if(!(pml1_p = find_pt_entry(vcpu, paddr))){
+		printk(KERN_ERR "okernel: failed to find pte for (%#lx)\n",
+		       (unsigned long)paddr);
+		return 0;
+	}
+
+	pt   = (pt_page*)kmalloc(sizeof(pt_page), GFP_KERNEL);
+
+	if(!pt){
+		printk(KERN_ERR "okernel: failed to allocate PT table in replace ept page.\n");
+		return 0;
+	}
+	
+	if(!(vt_alloc_page((void**)&pt[0].virt, &pt[0].phys))){
+		printk(KERN_ERR "okernel: failed to allocate PML1 table.\n");
+		return 0;
+	}
+
+	memset(pt[0].virt, 0, PAGESIZE);
+	HDEBUG(("n=(%d) PML1 pt virt (%llX) pt phys (%llX)\n", 0, (unsigned long long)pt[0].virt, pt[0].phys));
+
+	orig_paddr = *pml1_p & ~(PAGESIZE);
+
+	HDEBUG(("orig paddr (%#lx)\n", (unsigned long)orig_paddr));
+
+	
+	*pml1_p = pt[0].phys | EPT_R | EPT_W | EPT_X | EPT_CACHE_2 | EPT_CACHE_3;
+
+	memcpy(pt[0].virt, __va(orig_paddr), PAGESIZE);
+	return 1;
+}
 
 int create_clone_mapping(struct vmx_vcpu *vcpu, u64 paddr, unsigned long* vaddr)
 {
 	/* Splinter the 2MB EPT mapping  into a 4K PT table at the given paddr. 
-	 * Check paddr is 2MB aligned first.
+	 * Check paddr is 2MB aligned first. Broken.
 	 */
 	epte_t *pml3 = NULL;
 	epte_t *pml2 = NULL;
@@ -2151,9 +2202,9 @@ int vmx_launch(void)
 	}
 
 	HDEBUG(("Check for held locks before  entering vmexit() handling loop:\n"));
-	get_cpu();
+	//get_cpu();
 	debug_show_all_locks();
-	put_cpu();
+	//put_cpu();
 	while (1) {
 		vmx_get_cpu(vcpu);
 #if 0
@@ -2227,7 +2278,7 @@ int vmx_launch(void)
 		if(cloned_rflags & RFLAGS_IF_BIT){
 			schedule_ok = 1;
 			local_irq_enable();
-			vmx_put_cpu(vcpu);
+			
 		}
 
 		if (ret == EXIT_REASON_VMCALL ||
@@ -2235,6 +2286,8 @@ int vmx_launch(void)
 			vmx_step_instruction();
 		}
 
+		vmx_put_cpu(vcpu);
+		
 		//vmx_put_cpu(vcpu);
 		//asm volatile("xchg %bx, %bx");
 
