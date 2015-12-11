@@ -292,7 +292,7 @@ nr_exit:
 		//printk(KERN_ERR "NR ioctl locks held done.\n");
 		printk(KERN_ERR "Returning in ok_device_ioctl in NR - irqs renabled.\n");
 		current->lockdep_depth = 0;
-		preempt_count_set(0);
+		//preempt_count_set(0);
 		local_irq_enable();
 		asm volatile("xchg %bx, %bx");
 		return 0;

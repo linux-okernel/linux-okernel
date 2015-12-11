@@ -2334,7 +2334,7 @@ int vmx_launch(void)
 		cloned_rflags = vmcs_readl(GUEST_RFLAGS);
 
 		if(cloned_rflags & RFLAGS_IF_BIT){
-			schedule_ok = 1;
+			schedule_ok = 0;
 			local_irq_enable();
 			
 		}
