@@ -359,7 +359,7 @@ int split_2M_mapping(struct vmx_vcpu* vcpu, u64 paddr)
 	if(!(*pml2_e & EPT_2M_PAGE)){
 		HDEBUG(("paddr ept entry for 2MB region starting at phys addr (%#lx) already split.\n",
 			(unsigned long)paddr));
-		return 0;
+		return 1;
 	}
 
 	/* 2M region base address */
@@ -407,18 +407,30 @@ int replace_ept_page(struct vmx_vcpu *vcpu, u64 paddr)
 	unsigned long *pml1_p;
 	pt_page *pt;
 	u64 orig_paddr;
+	u64 split_addr;
+
+	split_addr = (paddr & ~(PAGESIZE2M-1));
 	
-	if(!(split_2M_mapping(vcpu, paddr & ~(PAGESIZE2M-1)))){
+	HDEBUG(("Check or split 2M mapping at (%#lx)\n", (unsigned long)split_addr));
+	
+	if(!(split_2M_mapping(vcpu, split_addr))){
 		printk(KERN_ERR "okernel: couldn't split 2MB mapping for (%#lx)\n",
 		       (unsigned long)paddr);
 		return 0;
 	}
+
+	HDEBUG(("Split or check ok: looking for pte for paddr (%#lx)\n",
+		(unsigned long)paddr));
+	
 	if(!(pml1_p = find_pt_entry(vcpu, paddr))){
 		printk(KERN_ERR "okernel: failed to find pte for (%#lx)\n",
 		       (unsigned long)paddr);
 		return 0;
 	}
 
+	HDEBUG(("pte val for paddr (%#lx) is (%#lx)\n",
+		(unsigned long)paddr, (unsigned long)*pml1_p)); 
+	
 	pt   = (pt_page*)kmalloc(sizeof(pt_page), GFP_KERNEL);
 
 	if(!pt){
@@ -432,18 +444,62 @@ int replace_ept_page(struct vmx_vcpu *vcpu, u64 paddr)
 	}
 
 	memset(pt[0].virt, 0, PAGESIZE);
-	HDEBUG(("n=(%d) PML1 pt virt (%llX) pt phys (%llX)\n", 0, (unsigned long long)pt[0].virt, pt[0].phys));
 
-	orig_paddr = *pml1_p & ~(PAGESIZE);
+	HDEBUG(("Replacement page pt virt (%llX) pt phys (%llX)\n", (unsigned long long)pt[0].virt, pt[0].phys));
+
+	orig_paddr = (*pml1_p & ~(PAGESIZE-1));
 
 	HDEBUG(("orig paddr (%#lx)\n", (unsigned long)orig_paddr));
-
 	
+	if(orig_paddr != paddr){
+		printk(KERN_ERR "address mis-match in EPT tables.\n");
+		return 0;
+	}
+	
+	HDEBUG(("Replacing (%#lx) as pte entry with (%#lx)\n",
+		(unsigned long)(*pml1_p), (unsigned long)(pt[0].phys | EPT_R | EPT_W | EPT_X | EPT_CACHE_2 | EPT_CACHE_3)));
+
 	*pml1_p = pt[0].phys | EPT_R | EPT_W | EPT_X | EPT_CACHE_2 | EPT_CACHE_3;
 
+	HDEBUG(("copying data from va (%#lx) to va of replacement physical (%#lx)\n",
+		(unsigned long)__va(orig_paddr), (unsigned long)pt[0].virt));
+	
 	memcpy(pt[0].virt, __va(orig_paddr), PAGESIZE);
+	HDEBUG(("Done for pa (%#lx)\n", (unsigned long)paddr));
 	return 1;
 }
+
+
+int clone_kstack2(struct vmx_vcpu *vcpu)
+{
+	int n_pages;
+	unsigned long k_stack;
+	int i;
+	u64 paddr;
+	
+	n_pages = THREAD_SIZE / PAGESIZE;
+
+	BUG_ON(n_pages != 4);
+
+	k_stack  = (unsigned long)current->stack;
+		
+	HDEBUG(("kernel thread_info (tsk->stack) vaddr (%#lx) paddr (%#lx) top of stack (%#lx)\n",
+		k_stack, __pa(k_stack), current_top_of_stack()));
+
+	for(i = 0; i < n_pages; i++){
+		paddr = __pa(k_stack + i*PAGESIZE);
+		HDEBUG(("ept page clone on (%#lx)\n", (unsigned long)paddr));
+		if(!(replace_ept_page(vcpu, paddr))){
+			printk(KERN_ERR "failed to clone page at (%#lx)\n",
+			       (unsigned long)paddr);
+			return 0;
+		}
+	}
+	return 1;
+}
+
+
+
 
 int create_clone_mapping(struct vmx_vcpu *vcpu, u64 paddr, unsigned long* vaddr)
 {
@@ -569,6 +625,8 @@ int create_clone_mapping(struct vmx_vcpu *vcpu, u64 paddr, unsigned long* vaddr)
 	//*q = pt[0].phys + EPT_R + EPT_W + EPT_X;
 	return 1;
 }
+
+
 
 int clone_kstack(struct vmx_vcpu *vcpu)
 {
@@ -2196,7 +2254,7 @@ int vmx_launch(void)
 	printk(KERN_ERR "vmx: created VCPU (VPID %d)\n",
 	       vcpu->vpid);
 
-	if(!clone_kstack(vcpu)){
+	if(!clone_kstack2(vcpu)){
 		printk(KERN_ERR "okernel: clone kstack failed.\n");
 		goto tmp_finish;
 	}
