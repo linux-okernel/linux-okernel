@@ -2154,18 +2154,21 @@ int vmx_launch(void)
 		}
 #endif
 
-#if 0
+#if 1
 		r_lockdep_depth = current->lockdep_depth;
+		if(vcpu->launched == 0){
+			nr_lockdep_depth = r_lockdep_depth;
+		}
 		current->lockdep_depth = nr_lockdep_depth;
 
-		r_preempt_count = preempt_count();
-		preempt_count_set(nr_preempt_count);
+		//r_preempt_count = preempt_count();
+		//preempt_count_set(nr_preempt_count);
 #endif		
 		ret = vmx_run_vcpu(vcpu);
 
-#if 0
-		nr_preempt_count = preempt_count();
-		preempt_count_set(r_preempt_count);
+#if 1
+		//nr_preempt_count = preempt_count();
+		//preempt_count_set(r_preempt_count);
 		
 		nr_lockdep_depth = current->lockdep_depth;
 		current->lockdep_depth = r_lockdep_depth;

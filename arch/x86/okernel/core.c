@@ -220,7 +220,7 @@ int __noclone okernel_enter(void)
 		printk(KERN_ERR "Returning in ok_device_ioctl in cloned process NR mode kernel.\n");
 		asm volatile("xchg %bx, %bx");
 		//local_irq_enable();
-		//lockdep_depth = current->lockdep_depth;
+		
                 
                 //r_preempt_count = preempt_count();
 		//preempt_count_set(0);
@@ -291,6 +291,7 @@ nr_exit:
 		//debug_show_all_locks();
 		//printk(KERN_ERR "NR ioctl locks held done.\n");
 		printk(KERN_ERR "Returning in ok_device_ioctl in NR - irqs renabled.\n");
+		//lockdep_depth = current->lockdep_depth;
 		current->lockdep_depth = 0;
 		//preempt_count_set(0);
 		local_irq_enable();
