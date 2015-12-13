@@ -2868,9 +2868,13 @@ static noinline void __schedule_bug(struct task_struct *prev)
 	if (oops_in_progress)
 		return;
 
-	printk(KERN_ERR "BUG: scheduling while atomic: %s/%d/0x%08x\n",
+	if(is_in_vmx_nr_mode()){
+		printk(KERN_ERR "BUG: NR scheduling while atomic: %s/%d/0x%08x\n",
 		prev->comm, prev->pid, preempt_count());
-
+	} else {
+		printk(KERN_ERR "BUG: scheduling while atomic: %s/%d/0x%08x\n",
+		prev->comm, prev->pid, preempt_count());
+	}
 	debug_show_held_locks(prev);
 	print_modules();
 	if (irqs_disabled())
@@ -3165,7 +3169,9 @@ static inline void sched_submit_work(struct task_struct *tsk)
 asmlinkage __visible void __sched schedule(void)
 {
 	struct task_struct *tsk = current;
-
+	struct thread_info *ti;
+	//ti = current_thread_info();
+	
 	if(is_in_vmx_nr_mode()){
 		/* Return control to the original process running in root-mode VMX */
 		/* shouldn't be holding locks at this point? */
@@ -3173,6 +3179,11 @@ asmlinkage __visible void __sched schedule(void)
 		asm volatile("xchg %bx, %bx");
 		//clear_preempt_need_resched();
 		printk(KERN_ERR "schedule called in NR mode.\n");
+                //current->lockdep_depth_nr = current->lockdep_depth;
+#ifdef CONFIG_PREEMPT_RCU
+		//current->rcu_read_lock_nesting_nr = current->rcu_read_lock_nesting;
+#endif
+		//ti->saved_preempt_count = preempt_count();
 		vmcall(VMCALL_SCHED);
 	} else {
 		sched_submit_work(tsk);
@@ -3187,8 +3198,17 @@ asmlinkage __visible void __sched schedule(void)
 		} while (need_resched());
 	}
 	if(is_in_vmx_nr_mode()){
-		printk(KERN_ERR "returning from VMCALL schedule\n");
-		printk(KERN_ERR "clearing TIF_NEED_RESCHEDULE.\n");
+		
+		//preempt_count_set(ti->saved_preempt_count);
+		//local_irq_enable();
+		//current->hardirqs_enabled = 1;
+                //current->lockdep_depth = current->lockdep_depth_nr;
+#ifdef CONFIG_PREEMPT_RCU
+  		//current->rcu_read_lock_nesting_depth = current->rcu_read_lock_nesting_nr;
+#endif
+		//printk(KERN_ERR "NR set preempt count to (%#x)\n", ti->saved_preempt_count);
+		printk(KERN_ERR "NR cleared TIF_NEED_RESCHEDULE.\n");
+		printk(KERN_ERR "NR returning from VMCALL schedule\n");
 		clear_tsk_need_resched(current);
 		asm volatile("xchg %bx, %bx");
 	}
@@ -7491,8 +7511,17 @@ void __init sched_init(void)
 #ifdef CONFIG_DEBUG_ATOMIC_SLEEP
 static inline int preempt_count_equals(int preempt_offset)
 {
-	int nested = (preempt_count() & ~PREEMPT_ACTIVE) + rcu_preempt_depth();
+#if 0
+	int nested;
 
+
+	if(is_in_vmx_nr_mode()){
+		printk(KERN_ERR "preempt_c_e: p_c (%#x) ~PA (%#lx) rcu_pr_dep (%#x) offest (%#x)\n",
+		       preempt_count(), ~PREEMPT_ACTIVE, rcu_preempt_depth(), preempt_offset);
+	}
+	nested = (preempt_count() & ~PREEMPT_ACTIVE) + rcu_preempt_depth();
+#endif
+	int nested = (preempt_count() & ~PREEMPT_ACTIVE) + rcu_preempt_depth();
 	return (nested == preempt_offset);
 }
 
@@ -7527,14 +7556,29 @@ void ___might_sleep(const char *file, int line, int preempt_offset)
 		return;
 	prev_jiffy = jiffies;
 
-	printk(KERN_ERR
-		"BUG: sleeping function called from invalid context at %s:%d\n",
-			file, line);
-	printk(KERN_ERR
-		"in_atomic(): %d, irqs_disabled(): %d, pid: %d, name: %s\n",
-			in_atomic(), irqs_disabled(),
-			current->pid, current->comm);
-
+	if(is_in_vmx_nr_mode()){
+		printk(KERN_ERR "NR preempt_count_equals (%d) !irqs_disabled (%d) !idle (%d)\n",
+		       preempt_count_equals(preempt_offset), !irqs_disabled(), !is_idle_task(current));
+		printk(KERN_ERR
+		       "BUG: NR sleeping function called from invalid context at %s:%d\n",
+		       file, line);
+		printk(KERN_ERR
+		       "NR in_atomic(): %d, irqs_disabled(): %d, pid: %d, name: %s\n",
+		       in_atomic(), irqs_disabled(),
+		       current->pid, current->comm);
+		printk(KERN_ERR "NR preempt_offset (%d) preempt_count (%d) rcu_preempt_depth (%d)\n",
+		       preempt_offset, preempt_count(), rcu_preempt_depth());
+	} else {
+		printk(KERN_ERR
+		       "BUG: sleeping function called from invalid context at %s:%d\n",
+		       file, line);
+		printk(KERN_ERR
+		       "in_atomic(): %d, irqs_disabled(): %d, pid: %d, name: %s\n",
+		       in_atomic(), irqs_disabled(),
+		       current->pid, current->comm);
+		printk(KERN_ERR "preempt_offset (%d) preempt_count (%d) rcu_preempt_depth (%d)\n",
+		       preempt_offset, preempt_count(), rcu_preempt_depth());
+	}
 	if (task_stack_end_corrupted(current))
 		printk(KERN_EMERG "Thread overran stack, or stack corrupted\n");
 

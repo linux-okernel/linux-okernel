@@ -402,7 +402,8 @@ int split_2M_mapping(struct vmx_vcpu* vcpu, u64 paddr)
 }
 
 
-int replace_ept_page(struct vmx_vcpu *vcpu, u64 paddr)
+/* Returns virtual mapping of the new page */
+void* replace_ept_page(struct vmx_vcpu *vcpu, u64 paddr)
 {
 	unsigned long *pml1_p;
 	pt_page *pt;
@@ -416,7 +417,7 @@ int replace_ept_page(struct vmx_vcpu *vcpu, u64 paddr)
 	if(!(split_2M_mapping(vcpu, split_addr))){
 		printk(KERN_ERR "okernel: couldn't split 2MB mapping for (%#lx)\n",
 		       (unsigned long)paddr);
-		return 0;
+		return NULL;
 	}
 
 	HDEBUG(("Split or check ok: looking for pte for paddr (%#lx)\n",
@@ -425,7 +426,7 @@ int replace_ept_page(struct vmx_vcpu *vcpu, u64 paddr)
 	if(!(pml1_p = find_pt_entry(vcpu, paddr))){
 		printk(KERN_ERR "okernel: failed to find pte for (%#lx)\n",
 		       (unsigned long)paddr);
-		return 0;
+		return NULL;
 	}
 
 	HDEBUG(("pte val for paddr (%#lx) is (%#lx)\n",
@@ -435,12 +436,12 @@ int replace_ept_page(struct vmx_vcpu *vcpu, u64 paddr)
 
 	if(!pt){
 		printk(KERN_ERR "okernel: failed to allocate PT table in replace ept page.\n");
-		return 0;
+		return NULL;
 	}
 	
 	if(!(vt_alloc_page((void**)&pt[0].virt, &pt[0].phys))){
 		printk(KERN_ERR "okernel: failed to allocate PML1 table.\n");
-		return 0;
+		return NULL;
 	}
 
 	memset(pt[0].virt, 0, PAGESIZE);
@@ -453,7 +454,7 @@ int replace_ept_page(struct vmx_vcpu *vcpu, u64 paddr)
 	
 	if(orig_paddr != paddr){
 		printk(KERN_ERR "address mis-match in EPT tables.\n");
-		return 0;
+		return NULL;
 	}
 	
 	HDEBUG(("Replacing (%#lx) as pte entry with (%#lx)\n",
@@ -466,7 +467,7 @@ int replace_ept_page(struct vmx_vcpu *vcpu, u64 paddr)
 	
 	memcpy(pt[0].virt, __va(orig_paddr), PAGESIZE);
 	HDEBUG(("Done for pa (%#lx)\n", (unsigned long)paddr));
-	return 1;
+	return pt[0].virt;
 }
 
 
@@ -476,6 +477,7 @@ int clone_kstack2(struct vmx_vcpu *vcpu)
 	unsigned long k_stack;
 	int i;
 	u64 paddr;
+	void* vaddr;
 	
 	n_pages = THREAD_SIZE / PAGESIZE;
 
@@ -489,10 +491,16 @@ int clone_kstack2(struct vmx_vcpu *vcpu)
 	for(i = 0; i < n_pages; i++){
 		paddr = __pa(k_stack + i*PAGESIZE);
 		HDEBUG(("ept page clone on (%#lx)\n", (unsigned long)paddr));
-		if(!(replace_ept_page(vcpu, paddr))){
+		/* also need replace_ept_contiguous_region */
+		if(!(vaddr = replace_ept_page(vcpu, paddr))){
 			printk(KERN_ERR "failed to clone page at (%#lx)\n",
 			       (unsigned long)paddr);
 			return 0;
+		}
+                /* FIX: we assume for now that the thread_info
+		 * structure is at the bottom of the first page */
+		if(i == 0){
+			vcpu->cloned_thread_info = (struct thread_info*)vaddr;
 		}
 	}
 	return 1;
@@ -2077,6 +2085,13 @@ int vmx_launch(void)
 	struct vmx_vcpu *vcpu;
 	int schedule_ok = 0;
 	unsigned long cloned_rflags;
+	struct thread_info *nr_ti;
+	struct thread_info *r_ti;
+	unsigned int nr_irq_enabled;
+	
+#ifdef CONFIG_PREEMPT_RCU
+	unsigned long r_rcu_read_lock_nesting;
+#endif	     
 
 #if 0
 	r_preempt_count = preempt_count();
@@ -2100,17 +2115,30 @@ int vmx_launch(void)
 	}
 
 	HDEBUG(("Check for held locks before  entering vmexit() handling loop:\n"));
-	//get_cpu();
 	debug_show_all_locks();
-	//put_cpu();
+
+
+	
+	
+	schedule_ok = 0;
+	current->lockdep_depth_nr = 0;
+
+	printk(KERN_ERR "R: Before vmexit handling loop: in_atomic(): %d, irqs_disabled(): %d, pid: %d, name: %s\n",
+	       in_atomic(), irqs_disabled(), current->pid, current->comm);
+	printk(KERN_ERR "R: preempt_count (%d) rcu_preempt_depth (%d)\n",
+	       preempt_count(), rcu_preempt_depth());
+
 	while (1) {
+
 		vmx_get_cpu(vcpu);
+		local_irq_disable();
+
 #if 0
 		if (!__thread_has_fpu(current))
 			math_state_restore();
 #endif
-		local_irq_disable();
-		
+
+#if 0
 		if(schedule_ok){
 			schedule_ok = 0;
 			if (need_resched()) {
@@ -2119,10 +2147,14 @@ int vmx_launch(void)
 				vmx_put_cpu(vcpu);
 				HDEBUG(("cond_resched called.\n"));
 				cond_resched();
+				local_irq_disable();
+				vmx_get_cpu(vcpu);
 				continue;
 			}
 		}
-#if 1
+#endif
+#if 0
+		
 		if (signal_pending(current)) {
 			int signr;
 			siginfo_t info;
@@ -2154,58 +2186,59 @@ int vmx_launch(void)
 		}
 #endif
 
-#if 1
-		r_lockdep_depth = current->lockdep_depth;
-		if(vcpu->launched == 0){
-			nr_lockdep_depth = r_lockdep_depth;
-		}
-		current->lockdep_depth = nr_lockdep_depth;
-
-		//r_preempt_count = preempt_count();
-		//preempt_count_set(nr_preempt_count);
-#endif		
+		/*************************** GO FOR IT... ************************/
 		ret = vmx_run_vcpu(vcpu);
+                /*************************** GONE FOR IT *************************/
 
-#if 1
-		//nr_preempt_count = preempt_count();
-		//preempt_count_set(r_preempt_count);
-		
-		nr_lockdep_depth = current->lockdep_depth;
-		current->lockdep_depth = r_lockdep_depth;
-#endif
-		
 		cloned_rflags = vmcs_readl(GUEST_RFLAGS);
-
 		if(cloned_rflags & RFLAGS_IF_BIT){
-			if(!rcu_scheduler_active){
-				schedule_ok = 1;
-			}
 			local_irq_enable();
-			
 		}
-
+		
 		if (ret == EXIT_REASON_VMCALL ||
 		    ret == EXIT_REASON_CPUID) {
 			vmx_step_instruction();
 		}
 
 		vmx_put_cpu(vcpu);
-		
-		//vmx_put_cpu(vcpu);
-		//asm volatile("xchg %bx, %bx");
+	
 
+		/* The cloned thread may still have pre-emption
+		 * disabled, so we can safely do this since it is
+		 * maintained as a per-cpu variable */
+		//vmx_put_cpu(vcpu);
+		
 		if (ret == EXIT_REASON_VMCALL){
 			/* Currently we only use vmcall() in safe
 			 * contexts so can printk here...*/
-			//local_irq_enable();
 			cmd = vcpu->regs[VCPU_REGS_RAX];
-			printk(KERN_ERR "vmcall in vmexit handler: (%lu)\n", cmd);
+			nr_ti = vcpu->cloned_thread_info;
+			r_ti = current_thread_info();
+			
+			printk(KERN_ERR "R: vmcall in vmexit: (%lu) preempt_c (%d) Rsaved (%#x) NR saved (%#x)\n",
+			       cmd, preempt_count(), r_ti->saved_preempt_count, nr_ti->saved_preempt_count);
+
+			printk(KERN_ERR "R: vmcall in_atomic(): %d, irqs_disabled(): %d, pid: %d, name: %s\n",
+			       in_atomic(), irqs_disabled(), current->pid, current->comm);
+			printk(KERN_ERR "R: preempt_count (%d) rcu_preempt_depth (%d)\n",
+			       preempt_count(), rcu_preempt_depth());
+
+			/* check for consistenncy */
+			BUG_ON(irqs_disabled());
+
 			switch(cmd){
 			case VMCALL_SCHED:
-				schedule_ok = 0;
+				printk(KERN_ERR "R: calling schedule...\n");
 				schedule();
 				continue;
+#if 0
+			case VMCALL_PREEMPT_SCHED:
+				schedule_ok = 0;
+				okernel_schedule();
+				continue;
+#endif
 			case VMCALL_DOEXIT:
+				printk(KERN_ERR "R: calling do_exit...\n");
 				do_exit(0);
 			default:
 				printk(KERN_ERR "unexpected VMCALL argument.\n");
@@ -2216,15 +2249,11 @@ int vmx_launch(void)
 		} else if (ret == EXIT_REASON_EPT_VIOLATION) {
 			goto tmp_finish;
 		} else if (ret == EXIT_REASON_EXCEPTION_NMI) {
-			if (vmx_handle_nmi_exception(vcpu)){
-				goto tmp_finish;
-			}
+			//if (vmx_handle_nmi_exception(vcpu)){
+			//	goto tmp_finish;
+			//}
 			goto tmp_finish;
 		} else if (ret != EXIT_REASON_EXTERNAL_INTERRUPT) {
-			//printk(KERN_INFO "unhandled exit: reason %d, exit qualification %x\n",
-			//       ret, vmcs_read32(EXIT_QUALIFICATION));
-			//vmx_dump_cpu(vcpu);
-			//done = 1;
 			goto tmp_finish;
 		}
 	}
@@ -2235,7 +2264,7 @@ tmp_finish:
 	 * vmexit fault - we will have inconsistent kernel
 	 * state we will need to sort out.*/
 	local_irq_enable();
-	vmx_put_cpu(vcpu);
+	//vmx_put_cpu(vcpu);
 
 	printk(KERN_CRIT "vmx: leaving vmexit() loop (VPID %d) - ret (%x) - trigger BUG() for now...\n",
 	       vcpu->vpid, ret);

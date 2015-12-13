@@ -45,6 +45,7 @@
 #include <linux/bitops.h>
 #include <linux/gfp.h>
 #include <linux/kmemcheck.h>
+#include <linux/okernel.h>
 
 #include <asm/sections.h>
 
@@ -3515,6 +3516,10 @@ static void check_flags(unsigned long flags)
 	if (!debug_locks)
 		return;
 
+	if(is_in_vmx_nr_mode()){
+		printk(KERN_ERR "check flags in NR mode...\n");
+	}
+	
 	if (irqs_disabled_flags(flags)) {
 		if (DEBUG_LOCKS_WARN_ON(current->hardirqs_enabled)) {
 			printk("possible reason: unannotated irqs-off.\n");
@@ -3524,6 +3529,8 @@ static void check_flags(unsigned long flags)
 			printk("possible reason: unannotated irqs-on.\n");
 		}
 	}
+	
+	
 
 	/*
 	 * We dont accurately track softirq state in e.g.
@@ -3542,6 +3549,9 @@ static void check_flags(unsigned long flags)
 
 	if (!debug_locks)
 		print_irqtrace_events(current);
+	if(is_in_vmx_nr_mode()){
+		printk(KERN_ERR "check flags done in NR mode.\n");
+	}
 #endif
 }
 
