@@ -309,6 +309,7 @@ nr_exit:
 		       preempt_count(), rcu_preempt_depth(), ti->saved_preempt_count);
 		printk(KERN_ERR "NR starting back towards user space...\n");
 		local_irq_enable();
+		current->hardirqs_enabled = 1;
 		asm volatile("xchg %bx, %bx");
 		return 0;
 	}

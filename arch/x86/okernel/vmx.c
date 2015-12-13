@@ -2117,9 +2117,6 @@ int vmx_launch(void)
 	HDEBUG(("Check for held locks before  entering vmexit() handling loop:\n"));
 	debug_show_all_locks();
 
-
-	
-	
 	schedule_ok = 0;
 	current->lockdep_depth_nr = 0;
 

@@ -3517,7 +3517,8 @@ static void check_flags(unsigned long flags)
 		return;
 
 	if(is_in_vmx_nr_mode()){
-		printk(KERN_ERR "check flags in NR mode...\n");
+		printk(KERN_ERR "NR: check IR status against flags: flags (%#lx) c->hirqs_en (%d)\n",
+		       flags, current->hardirqs_enabled);
 	}
 	
 	if (irqs_disabled_flags(flags)) {

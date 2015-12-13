@@ -3169,8 +3169,8 @@ static inline void sched_submit_work(struct task_struct *tsk)
 asmlinkage __visible void __sched schedule(void)
 {
 	struct task_struct *tsk = current;
-	struct thread_info *ti;
-	//ti = current_thread_info();
+	volatile struct thread_info *ti;
+	
 	
 	if(is_in_vmx_nr_mode()){
 		/* Return control to the original process running in root-mode VMX */
@@ -3178,12 +3178,12 @@ asmlinkage __visible void __sched schedule(void)
 
 		asm volatile("xchg %bx, %bx");
 		//clear_preempt_need_resched();
-		printk(KERN_ERR "schedule called in NR mode.\n");
-                //current->lockdep_depth_nr = current->lockdep_depth;
-#ifdef CONFIG_PREEMPT_RCU
-		//current->rcu_read_lock_nesting_nr = current->rcu_read_lock_nesting;
-#endif
-		//ti->saved_preempt_count = preempt_count();
+		ti = current_thread_info();
+		printk(KERN_ERR "NR: schedule called.\n");
+		printk(KERN_ERR "NR: schedule in_atomic(): %d, irqs_disabled(): %d, pid: %d, name: %s\n",
+		       in_atomic(), irqs_disabled(), current->pid, current->comm);
+		printk(KERN_ERR "NR: schedule preempt_count (%#x) rcu_preempt_depth (%#x) saved preempt (%#x)\n",
+		       preempt_count(), rcu_preempt_depth(), ti->saved_preempt_count);
 		vmcall(VMCALL_SCHED);
 	} else {
 		sched_submit_work(tsk);
@@ -3198,22 +3198,23 @@ asmlinkage __visible void __sched schedule(void)
 		} while (need_resched());
 	}
 	if(is_in_vmx_nr_mode()){
-		
-		//preempt_count_set(ti->saved_preempt_count);
-		//local_irq_enable();
-		//current->hardirqs_enabled = 1;
-                //current->lockdep_depth = current->lockdep_depth_nr;
-#ifdef CONFIG_PREEMPT_RCU
-  		//current->rcu_read_lock_nesting_depth = current->rcu_read_lock_nesting_nr;
-#endif
-		//printk(KERN_ERR "NR set preempt count to (%#x)\n", ti->saved_preempt_count);
+		ti = current_thread_info();
 		printk(KERN_ERR "NR cleared TIF_NEED_RESCHEDULE.\n");
 		printk(KERN_ERR "NR returning from VMCALL schedule\n");
+		printk(KERN_ERR "NR: schedule return in_atomic(): %d, irqs_disabled(): %d, pid: %d, name: %s\n",
+		       in_atomic(), irqs_disabled(), current->pid, current->comm);
+		printk(KERN_ERR "NR: schedule return preempt_count (%#x) rcu_preempt_depth (%#x) saved preempt (%#x)\n",
+		       preempt_count(), rcu_preempt_depth(), ti->saved_preempt_count);
 		clear_tsk_need_resched(current);
+		if(!irqs_disabled()){
+			current->hardirqs_enabled = 1;
+		}
+		printk(KERN_ERR "NR: current->hardirqs_enabled (%d) before sched return.\n",
+		       current->hardirqs_enabled);
 		asm volatile("xchg %bx, %bx");
 	}
 }
-	EXPORT_SYMBOL(schedule);
+EXPORT_SYMBOL(schedule);
 
 #ifdef CONFIG_CONTEXT_TRACKING
 asmlinkage __visible void __sched schedule_user(void)
@@ -7556,6 +7557,10 @@ void ___might_sleep(const char *file, int line, int preempt_offset)
 		return;
 	prev_jiffy = jiffies;
 
+	if(is_in_vmx_nr_mode()){
+		return;
+	}
+	
 	if(is_in_vmx_nr_mode()){
 		printk(KERN_ERR "NR preempt_count_equals (%d) !irqs_disabled (%d) !idle (%d)\n",
 		       preempt_count_equals(preempt_offset), !irqs_disabled(), !is_idle_task(current));
