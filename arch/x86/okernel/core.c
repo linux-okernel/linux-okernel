@@ -302,14 +302,16 @@ nr_exit:
 		//ti->saved_preempt_count = 0;
 		//preempt_count_set(ti->saved_preempt_count);
 		current->lockdep_depth = 0;
+		current->hardirqs_enabled = 1;
+		local_irq_enable();
+
 		printk(KERN_ERR "NR: set state for return through kernel to upace from ok_device_ioctl:\n");
 		printk(KERN_ERR "NR: in_atomic(): %d, irqs_disabled(): %d, pid: %d, name: %s\n",
 		       in_atomic(), irqs_disabled(), current->pid, current->comm);
 		printk(KERN_ERR "NR: preempt_count (%#x) rcu_preempt_depth (%#x) saved preempt (%#x)\n",
 		       preempt_count(), rcu_preempt_depth(), ti->saved_preempt_count);
 		printk(KERN_ERR "NR: starting back towards user space...\n");
-		local_irq_enable();
-		current->hardirqs_enabled = 1;
+		
 		asm volatile("xchg %bx, %bx");
 		return 0;
 	}

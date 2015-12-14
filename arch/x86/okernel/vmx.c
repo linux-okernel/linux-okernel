@@ -2135,9 +2135,10 @@ int vmx_launch(void)
 			math_state_restore();
 #endif
 
-#if 0
+#if 1
 		if(schedule_ok){
 			schedule_ok = 0;
+			HDEBUG(("checking if resched needed...\n"));
 			if (need_resched()) {
 				/* should be safe to use printk here...*/
 				local_irq_enable();
@@ -2147,6 +2148,8 @@ int vmx_launch(void)
 				local_irq_disable();
 				vmx_get_cpu(vcpu);
 				continue;
+			} else {
+				HDEBUG(("no resched needed.\n"));
 			}
 		}
 #endif
@@ -2190,6 +2193,9 @@ int vmx_launch(void)
 		cloned_rflags = vmcs_readl(GUEST_RFLAGS);
 		if(cloned_rflags & RFLAGS_IF_BIT){
 			local_irq_enable();
+			if(!rcu_scheduler_active){
+				schedule_ok = 1;
+			}
 		}
 		
 		if (ret == EXIT_REASON_VMCALL ||
@@ -2226,6 +2232,7 @@ int vmx_launch(void)
 			switch(cmd){
 			case VMCALL_SCHED:
 				printk(KERN_ERR "R: calling schedule...\n");
+				schedule_ok = 0;
 				schedule();
 				continue;
 #if 0
