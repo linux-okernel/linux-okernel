@@ -829,6 +829,10 @@ static void set_load_weight(struct task_struct *p)
 
 static void enqueue_task(struct rq *rq, struct task_struct *p, int flags)
 {
+	if(p->okernel_status == OKERNEL_ON){
+		printk(KERN_ERR "NR(%d): in enqueue task.\n",
+		       is_in_vmx_nr_mode());
+	}
 	update_rq_clock(rq);
 	sched_info_queued(rq, p);
 	p->sched_class->enqueue_task(rq, p, flags);
@@ -846,6 +850,10 @@ void activate_task(struct rq *rq, struct task_struct *p, int flags)
 	if (task_contributes_to_load(p))
 		rq->nr_uninterruptible--;
 
+	if(p->okernel_status == OKERNEL_ON){
+		printk(KERN_ERR "NR(%d): About to enqueue OKERNEL process.\n",
+		       is_in_vmx_nr_mode());
+	}
 	enqueue_task(rq, p, flags);
 }
 
@@ -3175,11 +3183,13 @@ asmlinkage __visible void __sched schedule(void)
 	if(is_in_vmx_nr_mode()){
 		/* Return control to the original process running in root-mode VMX */
 		/* shouldn't be holding locks at this point? */
-
+		printk(KERN_ERR "NR: schedule called.\n");
 		asm volatile("xchg %bx, %bx");
 		//clear_preempt_need_resched();
+		local_irq_disable();
+		//current->hardirqs_enabled = 0;
+		current->hardirqs_enabled_nr = 1;
 		ti = current_thread_info();
-		printk(KERN_ERR "NR: schedule called.\n");
 		printk(KERN_ERR "NR: schedule in_atomic(): %d, irqs_disabled(): %d, pid: %d, name: %s\n",
 		       in_atomic(), irqs_disabled(), current->pid, current->comm);
 		printk(KERN_ERR "NR: schedule preempt_count (%#x) rcu_preempt_depth (%#x) saved preempt (%#x)\n",
@@ -3200,6 +3210,16 @@ asmlinkage __visible void __sched schedule(void)
 		} while (need_resched());
 	}
 	if(is_in_vmx_nr_mode()){
+		//current->hardirqs_enabled = 1;
+		printk(KERN_ERR "NR: schedule return before irq_enable: \n");
+		asm volatile("xchg %bx, %bx");
+		printk(KERN_ERR "NR: schedule before (in_atomic(): %d, irqs_disabled(): %d, pid: %d, name: %s)\n",
+		       in_atomic(), irqs_disabled(), current->pid, current->comm);
+		printk(KERN_ERR "NR: schedule before (current->h_irqs_en (%d) current->h_irqs_en_nr (%d))\n",
+		       current->hardirqs_enabled, current->hardirqs_enabled_nr);
+		if(current->hardirqs_enabled_nr == 1){
+			local_irq_enable();
+		}
 		ti = current_thread_info();
 		printk(KERN_ERR "NR: cleared TIF_NEED_RESCHEDULE.\n");
 		printk(KERN_ERR "NR: returning from VMCALL schedule\n");
@@ -7561,7 +7581,8 @@ void ___might_sleep(const char *file, int line, int preempt_offset)
 		return;
 	prev_jiffy = jiffies;
 
-	if(is_in_vmx_nr_mode()){
+	/* Ok at the moment since the original thread holds the preempt lock */
+	if((is_in_vmx_nr_mode()) && (preempt_count()==1) && (!irqs_disabled())){
 		return;
 	}
 	

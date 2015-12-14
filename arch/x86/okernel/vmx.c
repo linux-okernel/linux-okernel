@@ -2190,8 +2190,11 @@ int vmx_launch(void)
 		ret = vmx_run_vcpu(vcpu);
                 /*************************** GONE FOR IT *************************/
 
-		cloned_rflags = vmcs_readl(GUEST_RFLAGS);
-		if(cloned_rflags & RFLAGS_IF_BIT){
+		//cloned_rflags = vmcs_readl(GUEST_RFLAGS);
+		//if((cloned_rflags & RFLAGS_IF_BIT) ||
+
+
+		if ((current->hardirqs_enabled_nr == 1)){
 			local_irq_enable();
 			if(!rcu_scheduler_active){
 				schedule_ok = 1;
@@ -2233,7 +2236,10 @@ int vmx_launch(void)
 			case VMCALL_SCHED:
 				printk(KERN_ERR "R: calling schedule...\n");
 				schedule_ok = 0;
+				asm volatile("xchg %bx, %bx");
 				schedule();
+				printk(KERN_ERR "R: returning from schedule.\n");
+				asm volatile("xchg %bx, %bx");
 				continue;
 #if 0
 			case VMCALL_PREEMPT_SCHED:
