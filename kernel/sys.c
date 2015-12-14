@@ -54,6 +54,7 @@
 #include <linux/cred.h>
 
 #include <linux/kmsg_dump.h>
+#include <linux/okernel.h>
 /* Move somewhere else to avoid recompiling? */
 #include <generated/utsrelease.h>
 
@@ -829,6 +830,10 @@ change_okay:
  */
 SYSCALL_DEFINE0(getpid)
 {
+	if(is_in_vmx_nr_mode()){
+		printk(KERN_ERR "NR: getpid called - returing (%d)\n",
+		       task_tgid_vnr(current));
+	}
 	return task_tgid_vnr(current);
 }
 
@@ -848,10 +853,15 @@ SYSCALL_DEFINE0(getppid)
 {
 	int pid;
 
+	if(is_in_vmx_nr_mode()){
+		printk(KERN_ERR "NR: getppid called.\n");
+	}
 	rcu_read_lock();
 	pid = task_tgid_vnr(rcu_dereference(current->real_parent));
 	rcu_read_unlock();
-
+	if(is_in_vmx_nr_mode()){
+		printk(KERN_ERR "NR: getppid called - returning (%d)\n", pid);
+	}
 	return pid;
 }
 
