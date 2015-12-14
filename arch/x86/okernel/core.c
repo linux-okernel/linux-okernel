@@ -281,18 +281,10 @@ long ok_device_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 nr_exit:
 	if(vmx_nr_mode()){
 		ti = current_thread_info();
-		//debug_show_all_locks();
-		//printk(KERN_ERR "NR ioctl locks held:\n");
-		//debug_show_all_locks();
-		//printk(KERN_ERR "NR ioctl locks held done.\n");
-		
-		//lockdep_depth = current->lockdep_depth;
-		//HDEBUG(("1. starting path back to user-space from NR-kernel: preempt_count (%#x) saved (%#x)\n",
-		//	preempt_count(), ti->saved_preempt_count));
-		//put_cpu();
-		//HDEBUG(("2. starting path back to user-space from NR-kernel: preempt_count (%#x) saved (%#x)\n",
-		//	preempt_count(), ti->saved_preempt_count));
+	
 		printk(KERN_ERR "NR: initial state in return from ok_device_ioctl:\n");
+		printk(KERN_ERR "NR: current->h_irqs_en (%d) current->h_irqs_en_nr (%d)\n",
+		       current->hardirqs_enabled, current->hardirqs_enabled_nr);
 		printk(KERN_ERR "NR: in_atomic(): %d, irqs_disabled(): %d, pid: %d, name: %s\n",
 		       in_atomic(), irqs_disabled(), current->pid, current->comm);
 		printk(KERN_ERR "NR: preempt_count (%#x) rcu_preempt_depth (%#x)\n",
@@ -301,17 +293,21 @@ nr_exit:
 		//current->lockdep_depth = current->lockdep_depth_nr;
 		//ti->saved_preempt_count = 0;
 		//preempt_count_set(ti->saved_preempt_count);
+
 		current->lockdep_depth = 0;
 		current->hardirqs_enabled = 1;
+		current->hardirqs_enabled_nr = 1;
 		local_irq_enable();
-
+		
+		printk(KERN_ERR "NR: ------------------------------------------------------------------\n");
 		printk(KERN_ERR "NR: set state for return through kernel to upace from ok_device_ioctl:\n");
+		printk(KERN_ERR "NR: current->h_irqs_en (%d) current->h_irqs_en_nr (%d)\n",
+		       current->hardirqs_enabled, current->hardirqs_enabled_nr);
 		printk(KERN_ERR "NR: in_atomic(): %d, irqs_disabled(): %d, pid: %d, name: %s\n",
 		       in_atomic(), irqs_disabled(), current->pid, current->comm);
 		printk(KERN_ERR "NR: preempt_count (%#x) rcu_preempt_depth (%#x) saved preempt (%#x)\n",
 		       preempt_count(), rcu_preempt_depth(), ti->saved_preempt_count);
 		printk(KERN_ERR "NR: starting back towards user space...\n");
-		
 		asm volatile("xchg %bx, %bx");
 		return 0;
 	}

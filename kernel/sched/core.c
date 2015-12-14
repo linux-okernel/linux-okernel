@@ -3184,6 +3184,8 @@ asmlinkage __visible void __sched schedule(void)
 		       in_atomic(), irqs_disabled(), current->pid, current->comm);
 		printk(KERN_ERR "NR: schedule preempt_count (%#x) rcu_preempt_depth (%#x) saved preempt (%#x)\n",
 		       preempt_count(), rcu_preempt_depth(), ti->saved_preempt_count);
+		printk(KERN_ERR "NR: schedule current->h_irqs_en (%d) current->h_irqs_en_nr (%d)\n",
+		       current->hardirqs_enabled, current->hardirqs_enabled_nr);
 		vmcall(VMCALL_SCHED);
 	} else {
 		sched_submit_work(tsk);
@@ -3209,8 +3211,10 @@ asmlinkage __visible void __sched schedule(void)
 		if(!irqs_disabled()){
 			current->hardirqs_enabled = 1;
 		}
-		printk(KERN_ERR "NR: current->hardirqs_enabled (%d) before sched return.\n",
-		       current->hardirqs_enabled);
+		
+		printk(KERN_ERR "NR: schedule return current->h_irqs_en (%d) current->h_irqs_en_nr (%d)\n",
+		       current->hardirqs_enabled, current->hardirqs_enabled_nr);
+		
 		asm volatile("xchg %bx, %bx");
 	}
 }
