@@ -2238,7 +2238,7 @@ int vmx_launch(void)
 				printk(KERN_ERR "R: calling do_exit...\n");
 				do_exit(0);
 			default:
-				printk(KERN_ERR "unexpected VMCALL argument.\n");
+				printk(KERN_ERR "R: unexpected VMCALL argument.\n");
 				BUG();
 			}
 		} else if (ret == EXIT_REASON_CPUID) {
@@ -2263,7 +2263,7 @@ tmp_finish:
 	local_irq_enable();
 	//vmx_put_cpu(vcpu);
 
-	printk(KERN_CRIT "vmx: leaving vmexit() loop (VPID %d) - ret (%x) - trigger BUG() for now...\n",
+	printk(KERN_CRIT "R: leaving vmexit() loop (VPID %d) - ret (%x) - trigger BUG() for now...\n",
 	       vcpu->vpid, ret);
 	BUG();
 	//*ret_code = vcpu->ret_code;

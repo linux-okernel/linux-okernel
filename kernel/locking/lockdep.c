@@ -3551,7 +3551,7 @@ static void check_flags(unsigned long flags)
 	if (!debug_locks)
 		print_irqtrace_events(current);
 	if(is_in_vmx_nr_mode()){
-		printk(KERN_ERR "check flags done in NR mode.\n");
+		printk(KERN_ERR "NR: check flags done.\n");
 	}
 #endif
 }

@@ -3146,7 +3146,7 @@ static void  __sched okernel_schedule(void)
 	if(is_in_vmx_nr_mode()){
 		/* Return control to the original process running in root-mode VMX */
 		//okernel_schedule_helper();
-		printk(KERN_ERR "okernel_scheduled called from NR mode - shouldn't get here!\n");
+		printk(KERN_ERR "NR: okernel_scheduled called - shouldn't get here!\n");
 		BUG();
 	} else {
 		__schedule();
@@ -3199,8 +3199,8 @@ asmlinkage __visible void __sched schedule(void)
 	}
 	if(is_in_vmx_nr_mode()){
 		ti = current_thread_info();
-		printk(KERN_ERR "NR cleared TIF_NEED_RESCHEDULE.\n");
-		printk(KERN_ERR "NR returning from VMCALL schedule\n");
+		printk(KERN_ERR "NR: cleared TIF_NEED_RESCHEDULE.\n");
+		printk(KERN_ERR "NR: returning from VMCALL schedule\n");
 		printk(KERN_ERR "NR: schedule return in_atomic(): %d, irqs_disabled(): %d, pid: %d, name: %s\n",
 		       in_atomic(), irqs_disabled(), current->pid, current->comm);
 		printk(KERN_ERR "NR: schedule return preempt_count (%#x) rcu_preempt_depth (%#x) saved preempt (%#x)\n",

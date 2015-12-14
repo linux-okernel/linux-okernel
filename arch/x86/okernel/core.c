@@ -217,7 +217,7 @@ int __noclone okernel_enter(void)
 
 	if(vmx_nr_mode()){
 		asm volatile("xchg %bx, %bx");
-		printk(KERN_ERR "Returning in ok_device_ioctl in cloned process NR mode kernel.\n");
+		printk(KERN_ERR "NR: Returning from okernel_enter.\n");
 		asm volatile("xchg %bx, %bx");
 	}
 	return ret;
@@ -255,7 +255,7 @@ long ok_device_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 		current->okernel_status = OKERNEL_ON;
 
 		if(vmx_nr_mode()){
-			printk(KERN_CRIT "Calling okernel_enter in  NR mode kernel...shouldn't get here!!\n");
+			printk(KERN_CRIT "NR: Calling okernel_enter in  NR mode kernel...shouldn't get here!!\n");
 		}
 		
 		ret = okernel_enter();
@@ -270,7 +270,7 @@ long ok_device_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 			printk(KERN_ERR "okernel_enter failed for pid <%d> ret (%lu)\n",
 			       current->pid, (unsigned long)ret);
 		}
-		HDEBUG(("NR kernel off for <%d>\n", current->pid));
+		HDEBUG(("outer kernel off for <%d>\n", current->pid));
 		break;
 	default:
 	
@@ -292,22 +292,22 @@ nr_exit:
 		//put_cpu();
 		//HDEBUG(("2. starting path back to user-space from NR-kernel: preempt_count (%#x) saved (%#x)\n",
 		//	preempt_count(), ti->saved_preempt_count));
-		printk(KERN_ERR "NR initial state in return from ok_device_ioctl:\n");
-		printk(KERN_ERR "NR in_atomic(): %d, irqs_disabled(): %d, pid: %d, name: %s\n",
+		printk(KERN_ERR "NR: initial state in return from ok_device_ioctl:\n");
+		printk(KERN_ERR "NR: in_atomic(): %d, irqs_disabled(): %d, pid: %d, name: %s\n",
 		       in_atomic(), irqs_disabled(), current->pid, current->comm);
-		printk(KERN_ERR "NR preempt_count (%#x) rcu_preempt_depth (%#x)\n",
+		printk(KERN_ERR "NR: preempt_count (%#x) rcu_preempt_depth (%#x)\n",
 		       preempt_count(), rcu_preempt_depth());
 		
 		//current->lockdep_depth = current->lockdep_depth_nr;
 		//ti->saved_preempt_count = 0;
 		//preempt_count_set(ti->saved_preempt_count);
 		current->lockdep_depth = 0;
-		printk(KERN_ERR "NR set state for return through kernel to upace from ok_device_ioctl:\n");
-		printk(KERN_ERR "NR in_atomic(): %d, irqs_disabled(): %d, pid: %d, name: %s\n",
+		printk(KERN_ERR "NR: set state for return through kernel to upace from ok_device_ioctl:\n");
+		printk(KERN_ERR "NR: in_atomic(): %d, irqs_disabled(): %d, pid: %d, name: %s\n",
 		       in_atomic(), irqs_disabled(), current->pid, current->comm);
-		printk(KERN_ERR "NR preempt_count (%#x) rcu_preempt_depth (%#x) saved preempt (%#x)\n",
+		printk(KERN_ERR "NR: preempt_count (%#x) rcu_preempt_depth (%#x) saved preempt (%#x)\n",
 		       preempt_count(), rcu_preempt_depth(), ti->saved_preempt_count);
-		printk(KERN_ERR "NR starting back towards user space...\n");
+		printk(KERN_ERR "NR: starting back towards user space...\n");
 		local_irq_enable();
 		current->hardirqs_enabled = 1;
 		asm volatile("xchg %bx, %bx");

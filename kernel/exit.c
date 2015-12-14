@@ -659,7 +659,7 @@ void do_exit(long code)
 
 #ifdef CONFIG_OKERNEL
 	if(is_in_vmx_nr_mode()){
-		printk(KERN_ERR "do_exit called in NR mode.\n");
+		printk(KERN_ERR "NR: do_exit called.\n");
 		asm volatile("xchg %bx, %bx");
 		vmcall(VMCALL_DOEXIT);
 	}

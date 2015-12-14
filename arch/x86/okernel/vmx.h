@@ -71,13 +71,13 @@ extern unsigned long nr_lockdep_depth;
 
 #define HPL_DEBUG
 #ifdef HPL_DEBUG
-#define HDEBUG(args) (printk(KERN_ERR "ok: cpu(%d) nr (%u) %s: ", raw_smp_processor_id(),vmx_nr_mode(), __func__), printk args)
+#define HDEBUG(args) (printk(KERN_ERR "NR(%u): cpu(%d) %s: ", vmx_nr_mode(), raw_smp_processor_id(), __func__), printk args)
 #else
 #define HDEBUG(args)
 #endif
 //#define HPL_DEBUG2
 #ifdef HPL_DEBUG2
-#define HDEBUG2(args) (printk(KERN_ERR "ok: cpu(%d) %s: ", raw_smp_processor_id(), __func__), printk args)
+#define HDEBUG2(args) (printk(KERN_ERR "NR(%u):  cpu(%d) %s: ", vmx_nr_mode(), raw_smp_processor_id(), __func__), printk args)
 #else
 #define HDEBUG2(args)
 #endif
