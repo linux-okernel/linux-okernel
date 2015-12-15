@@ -2221,13 +2221,13 @@ int vmx_launch(void)
 			nr_ti = vcpu->cloned_thread_info;
 			r_ti = current_thread_info();
 			
-			printk(KERN_ERR "R: vmcall in vmexit: (%lu) preempt_c (%d) Rsaved (%#x) NR saved (%#x)\n",
-			       cmd, preempt_count(), r_ti->saved_preempt_count, nr_ti->saved_preempt_count);
-
+			printk(KERN_ERR "R: vmcall in vmexit: (%lu) Rsaved preempt_c (%#x) NR saved (%#x)\n",
+			       cmd, r_ti->saved_preempt_count, nr_ti->saved_preempt_count);
 			printk(KERN_ERR "R: vmcall in_atomic(): %d, irqs_disabled(): %d, pid: %d, name: %s\n",
 			       in_atomic(), irqs_disabled(), current->pid, current->comm);
 			printk(KERN_ERR "R: preempt_count (%d) rcu_preempt_depth (%d)\n",
 			       preempt_count(), rcu_preempt_depth());
+			printk(KERN_ERR "R: current->lockdep_depth (%d)\n", current->lockdep_depth);
 
 			/* check for consistenncy */
 			BUG_ON(irqs_disabled());
@@ -2248,6 +2248,13 @@ int vmx_launch(void)
 				asm volatile("xchg %bx, %bx");
 				memcpy(nr_ti, r_ti, sizeof(struct thread_info));
 				printk(KERN_ERR "R: returning from schedule.\n");
+				printk(KERN_ERR "R: returning from schedule Rsaved prempt_c (%#x) NR saved (%#x)\n",
+				       r_ti->saved_preempt_count, nr_ti->saved_preempt_count);
+				printk(KERN_ERR "R: ret from sched in_atomic(): %d, irqs_disabled(): %d, pid: %d, name: %s\n",
+				       in_atomic(), irqs_disabled(), current->pid, current->comm);
+				printk(KERN_ERR "R: ret from preempt_count (%d) rcu_preempt_depth (%d)\n",
+				       preempt_count(), rcu_preempt_depth());
+				printk(KERN_ERR "R: current->lockdep_depth (%d)\n", current->lockdep_depth);
 				asm volatile("xchg %bx, %bx");
 				continue;
 #if 0

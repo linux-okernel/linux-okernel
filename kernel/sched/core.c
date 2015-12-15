@@ -3196,6 +3196,7 @@ asmlinkage __visible void __sched schedule(void)
 		       preempt_count(), rcu_preempt_depth(), ti->saved_preempt_count);
 		printk(KERN_ERR "NR: schedule current->h_irqs_en (%d) current->h_irqs_en_nr (%d)\n",
 		       current->hardirqs_enabled, current->hardirqs_enabled_nr);
+		printk(KERN_ERR "NR: current->lockdep_depth (%d)\n", current->lockdep_depth);
 		vmcall(VMCALL_SCHED);
 	} else {
 		sched_submit_work(tsk);
@@ -3221,13 +3222,15 @@ asmlinkage __visible void __sched schedule(void)
 			local_irq_enable();
 		}
 		ti = current_thread_info();
-		printk(KERN_ERR "NR: cleared TIF_NEED_RESCHEDULE.\n");
+		
 		printk(KERN_ERR "NR: returning from VMCALL schedule\n");
 		printk(KERN_ERR "NR: schedule return in_atomic(): %d, irqs_disabled(): %d, pid: %d, name: %s\n",
 		       in_atomic(), irqs_disabled(), current->pid, current->comm);
 		printk(KERN_ERR "NR: schedule return preempt_count (%#x) rcu_preempt_depth (%#x) saved preempt (%#x)\n",
 		       preempt_count(), rcu_preempt_depth(), ti->saved_preempt_count);
+		printk(KERN_ERR "NR: current->lockdep_depth (%d)\n", current->lockdep_depth);
 		//clear_tsk_need_resched(current);
+		//printk(KERN_ERR "NR: cleared TIF_NEED_RESCHEDULE.\n");
 		if(!irqs_disabled()){
 			current->hardirqs_enabled = 1;
 		}

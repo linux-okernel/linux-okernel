@@ -289,6 +289,9 @@ nr_exit:
 		       in_atomic(), irqs_disabled(), current->pid, current->comm);
 		printk(KERN_ERR "NR: preempt_count (%#x) rcu_preempt_depth (%#x)\n",
 		       preempt_count(), rcu_preempt_depth());
+		printk(KERN_ERR "NR: ti->saved_preempt_count (%#x) current->lockdep_depth (%d)\n",
+		       ti->saved_preempt_count, current->lockdep_depth);
+		       
 		
 		//current->lockdep_depth = current->lockdep_depth_nr;
 		//ti->saved_preempt_count = 0;
@@ -307,6 +310,8 @@ nr_exit:
 		       in_atomic(), irqs_disabled(), current->pid, current->comm);
 		printk(KERN_ERR "NR: preempt_count (%#x) rcu_preempt_depth (%#x) saved preempt (%#x)\n",
 		       preempt_count(), rcu_preempt_depth(), ti->saved_preempt_count);
+		printk(KERN_ERR "NR: ti->saved_preempt_count (%#x) current->lockdep_depth (%d)\n",
+		       ti->saved_preempt_count, current->lockdep_depth);
 		printk(KERN_ERR "NR: starting back towards user space...\n");
 		asm volatile("xchg %bx, %bx");
 		return 0;
