@@ -117,6 +117,7 @@ int __noclone okernel_enter(void)
 	asm volatile ( "pushf\n\t"
                    "pop %0"
                    : "=g"(rflags) );
+
 	
 	HDEBUG(("cloned thread rflags will be set to  (%#lx)\n", rflags));
 	cloned_thread.rflags = rflags;
@@ -203,8 +204,8 @@ int __noclone okernel_enter(void)
 	cloned_thread.rflags = rflags;
 	//
 #endif
-	/* Start cloned thread with interrupts disabled initially */
-	rflags = 0x002;
+	/* Start cloned thread with interrupts enabled even though they may really be disabled. */
+	rflags = 0x202;
 	cloned_thread.rflags = rflags;
 	HDEBUG(("cloned thread rflags will be set to  (%#lx)\n", rflags));
 		
@@ -299,10 +300,10 @@ nr_exit:
 
 		//current->lockdep_depth = 0;
 		//current->hardirqs_enabled = 1;
-		current->hardirqs_enabled_nr = 1;
+		//current->hardirqs_enabled_nr = 1;
 		current->preempt_count_nr = 0;
 		put_cpu();
-		local_irq_enable();
+		//local_irq_enable();
 		
 		printk(KERN_ERR "NR: ------------------------------------------------------------------\n");
 		printk(KERN_ERR "NR: set state for return through kernel to upace from ok_device_ioctl:\n");
@@ -316,6 +317,7 @@ nr_exit:
 		       ti->saved_preempt_count, current->lockdep_depth);
 		printk(KERN_ERR "NR: starting back towards user space...\n");
 		asm volatile("xchg %bx, %bx");
+		BUG_ON(irqs_disabled());
 		return 0;
 	}
 	return 0;

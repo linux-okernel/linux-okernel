@@ -172,7 +172,8 @@ struct vmx_vcpu {
 	} msr_autoload;
 
 	struct vmcs *vmcs;
-	struct thread_info* cloned_thread_info;
+	struct thread_info *cloned_thread_info;
+	struct task_struct *cloned_tsk;
 	void *syscall_tbl;
 
 };

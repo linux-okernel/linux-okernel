@@ -3204,7 +3204,7 @@ asmlinkage __visible void __sched schedule(void)
 		get_cpu();
 
                 //current->hardirqs_enabled = 0;
-		current->hardirqs_enabled_nr = 1;
+		//current->hardirqs_enabled_nr = 1;
 		ti = current_thread_info();
 		printk(KERN_ERR "NR: schedule in_atomic(): %d, irqs_disabled(): %d, pid: %d, name: %s\n",
 		       in_atomic(), irqs_disabled(), current->pid, current->comm);

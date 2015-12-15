@@ -477,7 +477,7 @@ int clone_kstack2(struct vmx_vcpu *vcpu)
 	unsigned long k_stack;
 	int i;
 	u64 paddr;
-	void* vaddr;
+	void  *vaddr;
 	
 	n_pages = THREAD_SIZE / PAGESIZE;
 
@@ -501,6 +501,44 @@ int clone_kstack2(struct vmx_vcpu *vcpu)
 		 * structure is at the bottom of the first page */
 		if(i == 0){
 			vcpu->cloned_thread_info = (struct thread_info*)vaddr;
+		}
+	}
+	return 1;
+}
+
+
+int clone_tsk(struct vmx_vcpu *vcpu)
+{	
+	struct task_struct *orig_tsk = current;
+	u64 orig_tsk_paddr;
+	u64 paddr;
+	void *vaddr;
+	int size, n_pages;
+	int i;
+	
+
+	/* Assumes tsk struct sits across contiguous physical pages */
+	HDEBUG(("cloning task struct (vaddr: %#lx)\n", (unsigned long)current));
+
+	size = sizeof(struct task_struct);
+
+	n_pages = size / PAGESIZE +1;
+
+	HDEBUG(("Need to clone tsk_size (%d) n_pages (%d)\n", size, n_pages));
+
+	for(i = 0; i < n_pages; i++){
+		paddr = __pa((unsigned long)orig_tsk + i*PAGESIZE);
+		HDEBUG(("ept page clone on (%#lx)\n", (unsigned long)paddr));
+		/* also need replace_ept_contiguous_region */
+		if(!(vaddr = replace_ept_page(vcpu, paddr))){
+			printk(KERN_ERR "failed to clone page at (%#lx)\n",
+			       (unsigned long)paddr);
+			return 0;
+		}
+                /* FIX: we assume for now that the thread_info
+		 * structure is at the bottom of the first page */
+		if(i == 0){
+			vcpu->cloned_tsk = (struct task_struct*)vaddr;
 		}
 	}
 	return 1;
@@ -2088,6 +2126,10 @@ int vmx_launch(void)
 	struct thread_info *nr_ti;
 	struct thread_info *r_ti;
 	unsigned int nr_irq_enabled;
+
+	//struct task_struct *orig_tsk = current;
+	struct task_struct *cloned_tsk;
+	
 	
 #ifdef CONFIG_PREEMPT_RCU
 	unsigned long r_rcu_read_lock_nesting;
@@ -2116,9 +2158,14 @@ int vmx_launch(void)
 		printk(KERN_ERR "okernel: clone kstack failed.\n");
 		goto tmp_finish;
 	}
-
+	if(!(clone_tsk(vcpu))){
+		printk(KERN_ERR "okernel: clone tsk failed.\n");
+		goto tmp_finish;
+	}
+	
 	nr_ti = vcpu->cloned_thread_info;
 	r_ti = current_thread_info();
+	cloned_tsk = vcpu->cloned_tsk;
 	
 	HDEBUG(("Check for held locks before  entering vmexit() handling loop:\n"));
 	debug_show_all_locks();
@@ -2132,14 +2179,24 @@ int vmx_launch(void)
 	       preempt_count(), rcu_preempt_depth());
 
 	current->preempt_count_nr = 1;
-	
+
+	/* Do properly */
+	cloned_rflags = 0x202;
+	cloned_tsk->hardirqs_enabled = 1;
+
 	while (1) {
 
-		if(current->preempt_count_nr == 1){
-			vmx_get_cpu(vcpu);
-		}
 		local_irq_disable();
+		vmx_get_cpu(vcpu);
 
+#if 0
+		if(cloned_rflags & RFLAGS_IF_BIT){
+			/* Really need to duplicate this state */
+			current->hardirqs_enabled = 1;
+		}
+#endif
+no_preempt_return:
+	      
 #if 0
 		if (!__thread_has_fpu(current))
 			math_state_restore();
@@ -2201,27 +2258,36 @@ int vmx_launch(void)
                 /*************************** GONE FOR IT *************************/
 
 		cloned_rflags = vmcs_readl(GUEST_RFLAGS);
-		if((cloned_rflags & RFLAGS_IF_BIT)){
-			local_irq_enable();
-			if(!rcu_scheduler_active){
-				schedule_ok = 1;
+
+		if(!(cloned_rflags & RFLAGS_IF_BIT)){
+			/* need to be careful here, cloned thread has
+			 * disabled interrupts so don't undermine any
+			 * state, and we don't want to be
+			 * pre-empted. Should not be a vmcall()
+			 * exit.
+                         */
+			if (ret != EXIT_REASON_EXTERNAL_INTERRUPT) {
+				BUG();
+				goto tmp_finish;
+			} else {
+				cloned_tsk->hardirqs_enabled = 0;
+				goto no_preempt_return;
 			}
 		}
+
+		cloned_tsk->hardirqs_enabled = 1;
+		local_irq_enable();
 		
+		//if(!rcu_scheduler_active){
+		//	schedule_ok = 1;
+		//}
+	    
 		if (ret == EXIT_REASON_VMCALL ||
 		    ret == EXIT_REASON_CPUID) {
 			vmx_step_instruction();
 		}
 
-		if(current->preempt_count_nr == 1){
-			vmx_put_cpu(vcpu);
-		}
-	
-
-		/* The cloned thread may still have pre-emption
-		 * disabled, so we can safely do this since it is
-		 * maintained as a per-cpu variable */
-		//vmx_put_cpu(vcpu);
+		vmx_put_cpu(vcpu);
 		
 		if (ret == EXIT_REASON_VMCALL){
 			/* Currently we only use vmcall() in safe
@@ -2231,8 +2297,7 @@ int vmx_launch(void)
 			BUG_ON(irqs_disabled());
 			
 			cmd = vcpu->regs[VCPU_REGS_RAX];
-			
-			
+						
 			printk(KERN_ERR "R: vmcall in vmexit: (%lu) Rsaved preempt_c (%#x) NR saved (%#x)\n",
 			       cmd, r_ti->saved_preempt_count, nr_ti->saved_preempt_count);
 			printk(KERN_ERR "R: vmcall in_atomic(): %d, irqs_disabled(): %d, pid: %d, name: %s\n",
@@ -2274,7 +2339,6 @@ int vmx_launch(void)
 #endif
 			case VMCALL_DOEXIT:
 				printk(KERN_ERR "R: calling do_exit...\n");
-				vmx_put_cpu(vcpu);
 				do_exit(0);
 			default:
 				printk(KERN_ERR "R: unexpected VMCALL argument.\n");
@@ -2296,11 +2360,9 @@ int vmx_launch(void)
 
 tmp_finish:
 	/* (Likely) this may (will) cause a problem if irqs were
-	 * disabled / locks held, etc. in cloned thread on
-	 * vmexit fault - we will have inconsistent kernel
-	 * state we will need to sort out.*/
-	local_irq_enable();
-	//vmx_put_cpu(vcpu);
+	 * disabled / locks held, etc. in cloned thread on vmexit
+	 * fault - we will have inconsistent kernel state we will need
+	 * to sort out.*/
 
 	printk(KERN_CRIT "R: leaving vmexit() loop (VPID %d) - ret (%x) - trigger BUG() for now...\n",
 	       vcpu->vpid, ret);
