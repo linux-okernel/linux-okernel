@@ -3227,7 +3227,7 @@ asmlinkage __visible void __sched schedule(void)
 		       in_atomic(), irqs_disabled(), current->pid, current->comm);
 		printk(KERN_ERR "NR: schedule return preempt_count (%#x) rcu_preempt_depth (%#x) saved preempt (%#x)\n",
 		       preempt_count(), rcu_preempt_depth(), ti->saved_preempt_count);
-		clear_tsk_need_resched(current);
+		//clear_tsk_need_resched(current);
 		if(!irqs_disabled()){
 			current->hardirqs_enabled = 1;
 		}

@@ -2153,7 +2153,7 @@ int vmx_launch(void)
 			}
 		}
 #endif
-#if 0
+#if 1
 		
 		if (signal_pending(current)) {
 			int signr;
@@ -2238,6 +2238,10 @@ int vmx_launch(void)
 				schedule_ok = 0;
 				asm volatile("xchg %bx, %bx");
 				schedule();
+				/* Re-sync cloned-thread thread_info */
+				//printk(KERN_ERR "R: syncing cloned thread_info state...\n");
+				//asm volatile("xchg %bx, %bx");
+				//memcpy(nr_ti, r_ti, sizeof(struct thread_info));
 				printk(KERN_ERR "R: returning from schedule.\n");
 				asm volatile("xchg %bx, %bx");
 				continue;
