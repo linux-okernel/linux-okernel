@@ -3184,10 +3184,26 @@ asmlinkage __visible void __sched schedule(void)
 		/* Return control to the original process running in root-mode VMX */
 		/* shouldn't be holding locks at this point? */
 		printk(KERN_ERR "NR: schedule called.\n");
+		printk(KERN_ERR "NR: Check for held locks before vmcall:\n");
 		asm volatile("xchg %bx, %bx");
+		debug_show_all_locks();
 		//clear_preempt_need_resched();
-		local_irq_disable();
-		//current->hardirqs_enabled = 0;
+		if(preempt_count()){
+			printk("NR: BUG schedule called with preempt_count (%d)\n",
+			       preempt_count());
+			BUG();
+		}
+		if(irqs_disabled()){
+			printk("NR: BUG schedule called with irqs_disabled (%d)\n",
+			       irqs_disabled());
+			BUG();
+		}
+		
+		//local_irq_disable();
+		current->preempt_count_nr = 1;
+		get_cpu();
+
+                //current->hardirqs_enabled = 0;
 		current->hardirqs_enabled_nr = 1;
 		ti = current_thread_info();
 		printk(KERN_ERR "NR: schedule in_atomic(): %d, irqs_disabled(): %d, pid: %d, name: %s\n",
@@ -3213,15 +3229,21 @@ asmlinkage __visible void __sched schedule(void)
 	if(is_in_vmx_nr_mode()){
 		//current->hardirqs_enabled = 1;
 		printk(KERN_ERR "NR: schedule return before irq_enable: \n");
+		printk(KERN_ERR "NR: check locks on return from schedule:\n");
 		asm volatile("xchg %bx, %bx");
+		debug_show_all_locks();
 		printk(KERN_ERR "NR: schedule before (in_atomic(): %d, irqs_disabled(): %d, pid: %d, name: %s)\n",
 		       in_atomic(), irqs_disabled(), current->pid, current->comm);
 		printk(KERN_ERR "NR: schedule before (current->h_irqs_en (%d) current->h_irqs_en_nr (%d))\n",
 		       current->hardirqs_enabled, current->hardirqs_enabled_nr);
-		if(current->hardirqs_enabled_nr == 1){
-			local_irq_enable();
-		}
+		//if(current->hardirqs_enabled_nr == 1){
+		//	local_irq_enable();
+		//}
 		ti = current_thread_info();
+
+		current->preempt_count_nr = 0;
+		put_cpu();
+		//local_irq_enable();
 		
 		printk(KERN_ERR "NR: returning from VMCALL schedule\n");
 		printk(KERN_ERR "NR: schedule return in_atomic(): %d, irqs_disabled(): %d, pid: %d, name: %s\n",
@@ -7584,11 +7606,12 @@ void ___might_sleep(const char *file, int line, int preempt_offset)
 		return;
 	prev_jiffy = jiffies;
 
+#if 0
 	/* Ok at the moment since the original thread holds the preempt lock */
 	if((is_in_vmx_nr_mode()) && (preempt_count()==1) && (!irqs_disabled())){
 		return;
-	}
-	
+	}	
+#endif
 	if(is_in_vmx_nr_mode()){
 		printk(KERN_ERR "NR preempt_count_equals (%d) !irqs_disabled (%d) !idle (%d)\n",
 		       preempt_count_equals(preempt_offset), !irqs_disabled(), !is_idle_task(current));

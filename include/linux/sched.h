@@ -1789,6 +1789,7 @@ struct task_struct {
 	unsigned long okernel_status;
 	/* Replace with pointer to vcpu specific data */
 	int okernel_vcpu;
+	unsigned long preempt_count_nr;
 #endif
 /* CPU-specific state of this task */
 	struct thread_struct thread;

@@ -300,7 +300,8 @@ nr_exit:
 		//current->lockdep_depth = 0;
 		//current->hardirqs_enabled = 1;
 		current->hardirqs_enabled_nr = 1;
-
+		current->preempt_count_nr = 0;
+		put_cpu();
 		local_irq_enable();
 		
 		printk(KERN_ERR "NR: ------------------------------------------------------------------\n");

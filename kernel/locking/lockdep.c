@@ -3526,7 +3526,6 @@ static void check_flags(unsigned long flags)
 			printk("possible reason: unannotated irqs-off.\n");
 		}
 	} else {
-		printk(KERN_ERR "NR: current->hardirqs_enabled (%d)\n", current->hardirqs_enabled);
 		if (DEBUG_LOCKS_WARN_ON(!current->hardirqs_enabled)) {
 			printk("possible reason: unannotated irqs-on.\n");
 		}

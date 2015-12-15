@@ -2096,7 +2096,10 @@ int vmx_launch(void)
 #if 0
 	r_preempt_count = preempt_count();
 	nr_lockdep_depth = current->lockdep_depth;
-#endif	
+#endif
+
+	
+
 	c_rip = cloned_thread.rip;
 
 	HDEBUG(("c_rip: (#%#lx)\n", c_rip));
@@ -2114,6 +2117,9 @@ int vmx_launch(void)
 		goto tmp_finish;
 	}
 
+	nr_ti = vcpu->cloned_thread_info;
+	r_ti = current_thread_info();
+	
 	HDEBUG(("Check for held locks before  entering vmexit() handling loop:\n"));
 	debug_show_all_locks();
 
@@ -2125,9 +2131,13 @@ int vmx_launch(void)
 	printk(KERN_ERR "R: preempt_count (%d) rcu_preempt_depth (%d)\n",
 	       preempt_count(), rcu_preempt_depth());
 
+	current->preempt_count_nr = 1;
+	
 	while (1) {
 
-		vmx_get_cpu(vcpu);
+		if(current->preempt_count_nr == 1){
+			vmx_get_cpu(vcpu);
+		}
 		local_irq_disable();
 
 #if 0
@@ -2135,7 +2145,7 @@ int vmx_launch(void)
 			math_state_restore();
 #endif
 
-#if 1
+#if 0
 		if(schedule_ok){
 			schedule_ok = 0;
 			HDEBUG(("checking if resched needed...\n"));
@@ -2153,7 +2163,7 @@ int vmx_launch(void)
 			}
 		}
 #endif
-#if 1
+#if 0
 		
 		if (signal_pending(current)) {
 			int signr;
@@ -2185,16 +2195,13 @@ int vmx_launch(void)
 #endif
 		}
 #endif
-
+		
 		/*************************** GO FOR IT... ************************/
 		ret = vmx_run_vcpu(vcpu);
                 /*************************** GONE FOR IT *************************/
 
-		//cloned_rflags = vmcs_readl(GUEST_RFLAGS);
-		//if((cloned_rflags & RFLAGS_IF_BIT) ||
-
-
-		if ((current->hardirqs_enabled_nr == 1)){
+		cloned_rflags = vmcs_readl(GUEST_RFLAGS);
+		if((cloned_rflags & RFLAGS_IF_BIT)){
 			local_irq_enable();
 			if(!rcu_scheduler_active){
 				schedule_ok = 1;
@@ -2206,7 +2213,9 @@ int vmx_launch(void)
 			vmx_step_instruction();
 		}
 
-		vmx_put_cpu(vcpu);
+		if(current->preempt_count_nr == 1){
+			vmx_put_cpu(vcpu);
+		}
 	
 
 		/* The cloned thread may still have pre-emption
@@ -2217,9 +2226,12 @@ int vmx_launch(void)
 		if (ret == EXIT_REASON_VMCALL){
 			/* Currently we only use vmcall() in safe
 			 * contexts so can printk here...*/
+
+			/* check for consistenncy */
+			BUG_ON(irqs_disabled());
+			
 			cmd = vcpu->regs[VCPU_REGS_RAX];
-			nr_ti = vcpu->cloned_thread_info;
-			r_ti = current_thread_info();
+			
 			
 			printk(KERN_ERR "R: vmcall in vmexit: (%lu) Rsaved preempt_c (%#x) NR saved (%#x)\n",
 			       cmd, r_ti->saved_preempt_count, nr_ti->saved_preempt_count);
@@ -2228,9 +2240,6 @@ int vmx_launch(void)
 			printk(KERN_ERR "R: preempt_count (%d) rcu_preempt_depth (%d)\n",
 			       preempt_count(), rcu_preempt_depth());
 			printk(KERN_ERR "R: current->lockdep_depth (%d)\n", current->lockdep_depth);
-
-			/* check for consistenncy */
-			BUG_ON(irqs_disabled());
 
 			switch(cmd){
 			case VMCALL_SCHED:
@@ -2265,6 +2274,7 @@ int vmx_launch(void)
 #endif
 			case VMCALL_DOEXIT:
 				printk(KERN_ERR "R: calling do_exit...\n");
+				vmx_put_cpu(vcpu);
 				do_exit(0);
 			default:
 				printk(KERN_ERR "R: unexpected VMCALL argument.\n");

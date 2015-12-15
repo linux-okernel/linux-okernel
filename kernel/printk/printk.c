@@ -2164,7 +2164,7 @@ void console_lock(void)
 {
 #if 0
 	if(is_in_vmx_nr_mode())
-		return;
+
 #endif	
 	might_sleep();
 
@@ -2186,9 +2186,9 @@ EXPORT_SYMBOL(console_lock);
  */
 int console_trylock(void)
 {
-#if 1
+#if 0
 	if(is_in_vmx_nr_mode())
-		return 1;
+
 #endif
 	if (down_trylock_console_sem())
 		return 0;
@@ -2261,7 +2261,7 @@ void console_unlock(void)
 
 #if 0
 	if(is_in_vmx_nr_mode())
-		return;
+
 #endif	
 	if (console_suspended) {
 		up_console_sem();
