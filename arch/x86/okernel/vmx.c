@@ -2234,14 +2234,19 @@ int vmx_launch(void)
 
 			switch(cmd){
 			case VMCALL_SCHED:
-				printk(KERN_ERR "R: calling schedule...\n");
+				printk(KERN_ERR "R: in VMCALL schedule:\n");
 				schedule_ok = 0;
+				/* Re-sync cloned-thread thread_info */
+				printk(KERN_ERR "R: syncing cloned thread_info state (NR->R)...\n");
+				asm volatile("xchg %bx, %bx");
+				memcpy(r_ti, nr_ti, sizeof(struct thread_info));
+				printk(KERN_ERR "R: in calling schedule...\n");
 				asm volatile("xchg %bx, %bx");
 				schedule();
 				/* Re-sync cloned-thread thread_info */
-				//printk(KERN_ERR "R: syncing cloned thread_info state...\n");
-				//asm volatile("xchg %bx, %bx");
-				//memcpy(nr_ti, r_ti, sizeof(struct thread_info));
+				printk(KERN_ERR "R: syncing cloned thread_info state (R->NR)...\n");
+				asm volatile("xchg %bx, %bx");
+				memcpy(nr_ti, r_ti, sizeof(struct thread_info));
 				printk(KERN_ERR "R: returning from schedule.\n");
 				asm volatile("xchg %bx, %bx");
 				continue;
