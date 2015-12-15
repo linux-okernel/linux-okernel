@@ -3231,9 +3231,9 @@ asmlinkage __visible void __sched schedule(void)
 		printk(KERN_ERR "NR: current->lockdep_depth (%d)\n", current->lockdep_depth);
 		//clear_tsk_need_resched(current);
 		//printk(KERN_ERR "NR: cleared TIF_NEED_RESCHEDULE.\n");
-		if(!irqs_disabled()){
-			current->hardirqs_enabled = 1;
-		}
+		//if(!irqs_disabled()){
+		//	current->hardirqs_enabled = 1;
+		//}
 		
 		printk(KERN_ERR "NR: schedule return current->h_irqs_en (%d) current->h_irqs_en_nr (%d)\n",
 		       current->hardirqs_enabled, current->hardirqs_enabled_nr);

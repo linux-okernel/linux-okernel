@@ -297,9 +297,10 @@ nr_exit:
 		//ti->saved_preempt_count = 0;
 		//preempt_count_set(ti->saved_preempt_count);
 
-		current->lockdep_depth = 0;
-		current->hardirqs_enabled = 1;
+		//current->lockdep_depth = 0;
+		//current->hardirqs_enabled = 1;
 		current->hardirqs_enabled_nr = 1;
+
 		local_irq_enable();
 		
 		printk(KERN_ERR "NR: ------------------------------------------------------------------\n");
