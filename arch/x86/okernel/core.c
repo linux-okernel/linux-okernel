@@ -301,6 +301,7 @@ nr_exit:
 		//current->lockdep_depth = 0;
 		//current->hardirqs_enabled = 1;
 		//current->hardirqs_enabled_nr = 1;
+		clear_tsk_need_resched(current);
 		current->lockdep_depth = 0;
 		
 		local_irq_enable();

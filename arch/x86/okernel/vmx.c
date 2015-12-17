@@ -2238,6 +2238,7 @@ int vmx_launch(void)
 				vmx_put_cpu(vcpu);
 				HDEBUG(("cond_resched called.\n"));
 				cond_resched();
+				//clear_tsk_need_resched(current);
 				continue;
 			}
 		}
@@ -2254,7 +2255,7 @@ int vmx_launch(void)
 			if(!rcu_scheduler_active){
 				schedule_ok = 1;
 			}
-			schedule_ok = 1;
+			schedule_ok = 0;
 			local_irq_enable();
 		}
 
