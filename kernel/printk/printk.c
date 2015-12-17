@@ -2162,9 +2162,10 @@ static int console_cpu_notify(struct notifier_block *self,
  */
 void console_lock(void)
 {
-#if 0
-	if(is_in_vmx_nr_mode())
-
+#if 1
+	if(is_in_vmx_nr_mode()){
+		asm volatile("xchg %bx, %bx");
+	}
 #endif	
 	might_sleep();
 
@@ -2186,8 +2187,10 @@ EXPORT_SYMBOL(console_lock);
  */
 int console_trylock(void)
 {
-#if 0
-	if(is_in_vmx_nr_mode())
+#if 1
+	if(is_in_vmx_nr_mode()){
+		asm volatile("xchg %bx, %bx");
+	}
 
 #endif
 	if (down_trylock_console_sem())
@@ -2259,9 +2262,10 @@ void console_unlock(void)
 	bool wake_klogd = false;
 	bool retry;
 
-#if 0
-	if(is_in_vmx_nr_mode())
-
+#if 1
+	if(is_in_vmx_nr_mode()){
+		asm volatile("xchg %bx, %bx");
+	}
 #endif	
 	if (console_suspended) {
 		up_console_sem();

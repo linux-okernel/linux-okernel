@@ -2111,37 +2111,89 @@ static int vmx_handle_nmi_exception(struct vmx_vcpu *vcpu)
 }
 
 
+void vmx_handle_vmcall(struct vmx_vcpu *vcpu)
+{
+
+	unsigned long cmd;
+	struct thread_info *nr_ti;
+	struct thread_info *r_ti;
+
+	nr_ti = vcpu->cloned_thread_info;
+	r_ti = current_thread_info();
+		
+	BUG_ON(irqs_disabled());
+	       	
+	cmd = vcpu->regs[VCPU_REGS_RAX];
+						
+	printk(KERN_ERR "R: vmcall in vmexit: (%lu) Rsaved preempt_c (%#x) NR saved (%#x)\n",
+	       cmd, r_ti->saved_preempt_count, nr_ti->saved_preempt_count);
+	printk(KERN_ERR "R: vmcall in_atomic(): %d, irqs_disabled(): %d, pid: %d, name: %s\n",
+	       in_atomic(), irqs_disabled(), current->pid, current->comm);
+	printk(KERN_ERR "R: preempt_count (%d) rcu_preempt_depth (%d)\n",
+	       preempt_count(), rcu_preempt_depth());
+	printk(KERN_ERR "R: current->lockdep_depth (%d)\n", current->lockdep_depth);
+	
+	switch(cmd){
+	case VMCALL_SCHED:
+		printk(KERN_ERR "R: in VMCALL schedule:\n");
+
+                /* Re-sync cloned-thread thread_info */
+		printk(KERN_ERR "R: syncing cloned thread_info state (NR->R)...\n");
+		asm volatile("xchg %bx, %bx");
+		memcpy(r_ti, nr_ti, sizeof(struct thread_info));
+
+		printk(KERN_ERR "R: in calling schedule...\n");
+		asm volatile("xchg %bx, %bx");
+		schedule();
+		/* Re-sync cloned-thread thread_info */
+		printk(KERN_ERR "R: syncing cloned thread_info state (R->NR)...\n");
+		asm volatile("xchg %bx, %bx");
+		memcpy(nr_ti, r_ti, sizeof(struct thread_info));
+
+		printk(KERN_ERR "R: returning from schedule.\n");
+		printk(KERN_ERR "R: returning from schedule Rsaved prempt_c (%#x) NR saved (%#x)\n",
+		       r_ti->saved_preempt_count, nr_ti->saved_preempt_count);
+		printk(KERN_ERR "R: ret from sched in_atomic(): %d, irqs_disabled(): %d, pid: %d, name: %s\n",
+		       in_atomic(), irqs_disabled(), current->pid, current->comm);
+		printk(KERN_ERR "R: ret from preempt_count (%d) rcu_preempt_depth (%d)\n",
+		       preempt_count(), rcu_preempt_depth());
+		printk(KERN_ERR "R: current->lockdep_depth (%d)\n", current->lockdep_depth);
+		asm volatile("xchg %bx, %bx");
+		return;
+#if 0
+	case VMCALL_PREEMPT_SCHED:
+		schedule_ok = 0;
+		okernel_schedule();
+		return;
+#endif
+	case VMCALL_DOEXIT:
+		printk(KERN_ERR "R: calling do_exit...\n");
+		//local_irq_enable();
+		do_exit(0);
+	default:
+		printk(KERN_ERR "R: unexpected VMCALL argument.\n");
+		BUG();
+	}
+	return;
+}
+
 /**
  * vmx_launch - the main loop for a cloned VMX okernel process (thread)
  */
 int vmx_launch(void)
 {
+	//unsigned long flags;
 	int ret = 0;
-	unsigned long cmd;
-	//int done = 0;
 	unsigned long c_rip;	
 	struct vmx_vcpu *vcpu;
 	int schedule_ok = 0;
 	unsigned long cloned_rflags;
-	struct thread_info *nr_ti;
-	struct thread_info *r_ti;
-	unsigned int nr_irq_enabled;
+	int done = 0;
 
 	//struct task_struct *orig_tsk = current;
 	struct task_struct *cloned_tsk;
+	unsigned long irqs_disabled;
 	
-	
-#ifdef CONFIG_PREEMPT_RCU
-	unsigned long r_rcu_read_lock_nesting;
-#endif	     
-
-#if 0
-	r_preempt_count = preempt_count();
-	nr_lockdep_depth = current->lockdep_depth;
-#endif
-
-	
-
 	c_rip = cloned_thread.rip;
 
 	HDEBUG(("c_rip: (#%#lx)\n", c_rip));
@@ -2156,38 +2208,112 @@ int vmx_launch(void)
 
 	if(!clone_kstack2(vcpu)){
 		printk(KERN_ERR "okernel: clone kstack failed.\n");
-		goto tmp_finish;
+		return 0;
 	}
+#if 0
 	if(!(clone_tsk(vcpu))){
 		printk(KERN_ERR "okernel: clone tsk failed.\n");
-		goto tmp_finish;
+		return 0;
 	}
-	
-	nr_ti = vcpu->cloned_thread_info;
-	r_ti = current_thread_info();
-	cloned_tsk = vcpu->cloned_tsk;
-	
-	HDEBUG(("Check for held locks before  entering vmexit() handling loop:\n"));
-	debug_show_all_locks();
+#endif
 
 	schedule_ok = 0;
-	current->lockdep_depth_nr = 0;
 
 	printk(KERN_ERR "R: Before vmexit handling loop: in_atomic(): %d, irqs_disabled(): %d, pid: %d, name: %s\n",
 	       in_atomic(), irqs_disabled(), current->pid, current->comm);
 	printk(KERN_ERR "R: preempt_count (%d) rcu_preempt_depth (%d)\n",
 	       preempt_count(), rcu_preempt_depth());
-
-	current->preempt_count_nr = 1;
-
-	/* Do properly */
-	cloned_rflags = 0x202;
-	cloned_tsk->hardirqs_enabled = 1;
-
+	
+	
 	while (1) {
-
-		local_irq_disable();
 		vmx_get_cpu(vcpu);
+		
+		local_irq_disable();
+
+		if(schedule_ok){
+			schedule_ok = 0;
+			if (need_resched()) {
+				/* should be safe to use printk here...*/
+				local_irq_enable();
+				vmx_put_cpu(vcpu);
+				HDEBUG(("cond_resched called.\n"));
+				cond_resched();
+				continue;
+			}
+		}
+		
+		/*************************** GO FOR IT... ************************/
+		ret = vmx_run_vcpu(vcpu);
+                /*************************** GONE FOR IT *************************/
+
+		
+		
+		cloned_rflags = vmcs_readl(GUEST_RFLAGS);
+
+		if(cloned_rflags & RFLAGS_IF_BIT){
+			if(!rcu_scheduler_active){
+				schedule_ok = 1;
+			}
+			local_irq_enable();
+		}
+
+#if 0
+		if((ret == EXIT_REASON_EXTERNAL_INTERRUPT) && (irqs_disabled)){
+			vmx_put_cpu(vcpu);
+			continue;
+		}
+#endif
+		
+		//local_irq_enable();
+
+		if (ret == EXIT_REASON_VMCALL ||
+		    ret == EXIT_REASON_CPUID) {
+			vmx_step_instruction();
+		}
+
+		vmx_put_cpu(vcpu);
+
+		if (ret == EXIT_REASON_VMCALL)
+			vmx_handle_vmcall(vcpu);
+		else if (ret == EXIT_REASON_CPUID)
+			vmx_handle_cpuid(vcpu);
+		else if (ret == EXIT_REASON_EPT_VIOLATION)
+			done = 1;
+		else if (ret == EXIT_REASON_EXCEPTION_NMI) {
+			done = 1;
+		} else if (ret != EXIT_REASON_EXTERNAL_INTERRUPT) {
+			printk(KERN_INFO "unhandled exit: reason %d, exit qualification %x\n",
+			       ret, vmcs_read32(EXIT_QUALIFICATION));
+			done = 1;
+		}
+
+		if (done)
+			break;
+	}
+
+	/* (Likely) this may (will) cause a problem if irqs were
+	 * disabled / locks held, etc. in cloned thread on vmexit
+	 * fault - we will have inconsistent kernel state we will need
+	 * to sort out.*/
+	
+	printk(KERN_CRIT "R: leaving vmexit() loop (VPID %d) - ret (%x) - trigger BUG() for now...\n",
+	       vcpu->vpid, ret);
+	BUG();
+	//*ret_code = vcpu->ret_code;
+	//vmx_destroy_vcpu(vcpu);
+	return 0;
+}
+
+	
+/*-------------------------------------------------------------------------------------*/
+/*  end: vmx__launch releated code                                                     */
+/*-------------------------------------------------------------------------------------*/
+
+#if 0
+KEEP
+		//local_irq_disable();
+		
+//		vmx_get_cpu(vcpu);
 
 #if 0
 		if(cloned_rflags & RFLAGS_IF_BIT){
@@ -2196,7 +2322,7 @@ int vmx_launch(void)
 		}
 #endif
 no_preempt_return:
-	      
+	      	
 #if 0
 		if (!__thread_has_fpu(current))
 			math_state_restore();
@@ -2252,132 +2378,7 @@ no_preempt_return:
 #endif
 		}
 #endif
-		
-		/*************************** GO FOR IT... ************************/
-		ret = vmx_run_vcpu(vcpu);
-                /*************************** GONE FOR IT *************************/
-
-		cloned_rflags = vmcs_readl(GUEST_RFLAGS);
-
-		if(!(cloned_rflags & RFLAGS_IF_BIT)){
-			/* need to be careful here, cloned thread has
-			 * disabled interrupts so don't undermine any
-			 * state, and we don't want to be
-			 * pre-empted. Should not be a vmcall()
-			 * exit.
-                         */
-			if (ret != EXIT_REASON_EXTERNAL_INTERRUPT) {
-				BUG();
-				goto tmp_finish;
-			} else {
-				cloned_tsk->hardirqs_enabled = 0;
-				goto no_preempt_return;
-			}
-		}
-
-		cloned_tsk->hardirqs_enabled = 1;
-		local_irq_enable();
-		
-		//if(!rcu_scheduler_active){
-		//	schedule_ok = 1;
-		//}
-	    
-		if (ret == EXIT_REASON_VMCALL ||
-		    ret == EXIT_REASON_CPUID) {
-			vmx_step_instruction();
-		}
-
-		vmx_put_cpu(vcpu);
-		
-		if (ret == EXIT_REASON_VMCALL){
-			/* Currently we only use vmcall() in safe
-			 * contexts so can printk here...*/
-
-			/* check for consistenncy */
-			BUG_ON(irqs_disabled());
-			
-			cmd = vcpu->regs[VCPU_REGS_RAX];
-						
-			printk(KERN_ERR "R: vmcall in vmexit: (%lu) Rsaved preempt_c (%#x) NR saved (%#x)\n",
-			       cmd, r_ti->saved_preempt_count, nr_ti->saved_preempt_count);
-			printk(KERN_ERR "R: vmcall in_atomic(): %d, irqs_disabled(): %d, pid: %d, name: %s\n",
-			       in_atomic(), irqs_disabled(), current->pid, current->comm);
-			printk(KERN_ERR "R: preempt_count (%d) rcu_preempt_depth (%d)\n",
-			       preempt_count(), rcu_preempt_depth());
-			printk(KERN_ERR "R: current->lockdep_depth (%d)\n", current->lockdep_depth);
-
-			switch(cmd){
-			case VMCALL_SCHED:
-				printk(KERN_ERR "R: in VMCALL schedule:\n");
-				schedule_ok = 0;
-				/* Re-sync cloned-thread thread_info */
-				printk(KERN_ERR "R: syncing cloned thread_info state (NR->R)...\n");
-				asm volatile("xchg %bx, %bx");
-				memcpy(r_ti, nr_ti, sizeof(struct thread_info));
-				printk(KERN_ERR "R: in calling schedule...\n");
-				asm volatile("xchg %bx, %bx");
-				schedule();
-				/* Re-sync cloned-thread thread_info */
-				printk(KERN_ERR "R: syncing cloned thread_info state (R->NR)...\n");
-				asm volatile("xchg %bx, %bx");
-				memcpy(nr_ti, r_ti, sizeof(struct thread_info));
-				printk(KERN_ERR "R: returning from schedule.\n");
-				printk(KERN_ERR "R: returning from schedule Rsaved prempt_c (%#x) NR saved (%#x)\n",
-				       r_ti->saved_preempt_count, nr_ti->saved_preempt_count);
-				printk(KERN_ERR "R: ret from sched in_atomic(): %d, irqs_disabled(): %d, pid: %d, name: %s\n",
-				       in_atomic(), irqs_disabled(), current->pid, current->comm);
-				printk(KERN_ERR "R: ret from preempt_count (%d) rcu_preempt_depth (%d)\n",
-				       preempt_count(), rcu_preempt_depth());
-				printk(KERN_ERR "R: current->lockdep_depth (%d)\n", current->lockdep_depth);
-				asm volatile("xchg %bx, %bx");
-				continue;
-#if 0
-			case VMCALL_PREEMPT_SCHED:
-				schedule_ok = 0;
-				okernel_schedule();
-				continue;
 #endif
-			case VMCALL_DOEXIT:
-				printk(KERN_ERR "R: calling do_exit...\n");
-				do_exit(0);
-			default:
-				printk(KERN_ERR "R: unexpected VMCALL argument.\n");
-				BUG();
-			}
-		} else if (ret == EXIT_REASON_CPUID) {
-			vmx_handle_cpuid(vcpu);
-		} else if (ret == EXIT_REASON_EPT_VIOLATION) {
-			goto tmp_finish;
-		} else if (ret == EXIT_REASON_EXCEPTION_NMI) {
-			//if (vmx_handle_nmi_exception(vcpu)){
-			//	goto tmp_finish;
-			//}
-			goto tmp_finish;
-		} else if (ret != EXIT_REASON_EXTERNAL_INTERRUPT) {
-			goto tmp_finish;
-		}
-	}
-
-tmp_finish:
-	/* (Likely) this may (will) cause a problem if irqs were
-	 * disabled / locks held, etc. in cloned thread on vmexit
-	 * fault - we will have inconsistent kernel state we will need
-	 * to sort out.*/
-
-	printk(KERN_CRIT "R: leaving vmexit() loop (VPID %d) - ret (%x) - trigger BUG() for now...\n",
-	       vcpu->vpid, ret);
-	BUG();
-	//*ret_code = vcpu->ret_code;
-	//vmx_destroy_vcpu(vcpu);
-	return 0;
-}
-
-	
-/*-------------------------------------------------------------------------------------*/
-/*  end: vmx__launch releated code                                                     */
-/*-------------------------------------------------------------------------------------*/
-
-
 
 
 
