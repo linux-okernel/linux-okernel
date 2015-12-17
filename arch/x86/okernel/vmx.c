@@ -2217,7 +2217,7 @@ int vmx_launch(void)
 	}
 #endif
 
-	schedule_ok = 0;
+	schedule_ok = 1;
 
 	printk(KERN_ERR "R: Before vmexit handling loop: in_atomic(): %d, irqs_disabled(): %d, pid: %d, name: %s\n",
 	       in_atomic(), irqs_disabled(), current->pid, current->comm);
@@ -2264,8 +2264,6 @@ int vmx_launch(void)
 		}
 #endif
 		
-		//local_irq_enable();
-
 		if (ret == EXIT_REASON_VMCALL ||
 		    ret == EXIT_REASON_CPUID) {
 			vmx_step_instruction();
