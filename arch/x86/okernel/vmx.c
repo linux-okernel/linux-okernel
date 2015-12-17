@@ -2254,6 +2254,7 @@ int vmx_launch(void)
 			if(!rcu_scheduler_active){
 				schedule_ok = 1;
 			}
+			schedule_ok = 1;
 			local_irq_enable();
 		}
 
