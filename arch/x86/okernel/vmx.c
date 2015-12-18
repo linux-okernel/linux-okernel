@@ -2217,7 +2217,7 @@ int vmx_launch(void)
 	}
 #endif
 
-	schedule_ok = 1;
+	schedule_ok = 0;
 
 	printk(KERN_ERR "R: Before vmexit handling loop: in_atomic(): %d, irqs_disabled(): %d, pid: %d, name: %s\n",
 	       in_atomic(), irqs_disabled(), current->pid, current->comm);
@@ -2235,7 +2235,7 @@ int vmx_launch(void)
 			if (need_resched()) {
 				/* should be safe to use printk here...*/
 				local_irq_enable();
-				vmx_put_cpu(vcpu);
+				//vmx_put_cpu(vcpu);
 				HDEBUG(("cond_resched called.\n"));
 				cond_resched();
 				//clear_tsk_need_resched(current);
@@ -2243,9 +2243,9 @@ int vmx_launch(void)
 			}
 		}
 		
-		/*************************** GO FOR IT... ************************/
+		/**************************** GO FOR IT ***************************/
 		ret = vmx_run_vcpu(vcpu);
-                /*************************** GONE FOR IT *************************/
+                /*************************** GONE FOR IT! *************************/
 
 		
 		
