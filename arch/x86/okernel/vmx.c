@@ -2227,9 +2227,9 @@ int vmx_launch(void)
 	
 	while (1) {
 		vmx_get_cpu(vcpu);
-		
 		local_irq_disable();
 
+fast_path:
 		if(schedule_ok){
 			schedule_ok = 0;
 			if (need_resched()) {
@@ -2242,9 +2242,12 @@ int vmx_launch(void)
 				continue;
 			}
 		}
+
 		
 		/**************************** GO FOR IT ***************************/
+		
 		ret = vmx_run_vcpu(vcpu);
+
                 /*************************** GONE FOR IT! *************************/
 
 		
@@ -2257,17 +2260,18 @@ int vmx_launch(void)
 			}
 			schedule_ok = 0;
 			local_irq_enable();
+		} else {
+			/* Need to keep control: cloned thread has
+			 * (most likely) exited due to the timer tick
+			 * but not through an explicit call to
+			 * schedule. */
+			if(ret != EXIT_REASON_EXTERNAL_INTERRUPT){
+				BUG();
+			}
+			goto fast_path;
 		}
-
-#if 0
-		if((ret == EXIT_REASON_EXTERNAL_INTERRUPT) && (irqs_disabled)){
-			vmx_put_cpu(vcpu);
-			continue;
-		}
-#endif
 		
-		if (ret == EXIT_REASON_VMCALL ||
-		    ret == EXIT_REASON_CPUID) {
+		if (ret == EXIT_REASON_VMCALL || ret == EXIT_REASON_CPUID) {
 			vmx_step_instruction();
 		}
 
