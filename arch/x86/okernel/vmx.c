@@ -2235,7 +2235,7 @@ fast_path:
 			if (need_resched()) {
 				/* should be safe to use printk here...*/
 				local_irq_enable();
-				//vmx_put_cpu(vcpu);
+				vmx_put_cpu(vcpu);
 				HDEBUG(("cond_resched called.\n"));
 				cond_resched();
 				//clear_tsk_need_resched(current);
@@ -2258,7 +2258,9 @@ fast_path:
 			if(!rcu_scheduler_active){
 				schedule_ok = 1;
 			}
-			schedule_ok = 0;
+			if(preempt_count() < 2){
+				schedule_ok = 1;
+			}
 			local_irq_enable();
 		} else {
 			/* Need to keep control: cloned thread has
@@ -2268,7 +2270,6 @@ fast_path:
 			if(ret != EXIT_REASON_EXTERNAL_INTERRUPT){
 				BUG();
 			}
-			//printk(KERN_ERR "vmexit: tick (interrupts DISABLED.)\n");
 			goto fast_path;
 		}
 		
@@ -2278,10 +2279,6 @@ fast_path:
 
 		vmx_put_cpu(vcpu);
 
-		if(ret == EXIT_REASON_EXTERNAL_INTERRUPT){
-			printk(KERN_ERR "vmexit: tick (interrupts ENABLED.)\n");
-		}
-		
 		if (ret == EXIT_REASON_VMCALL)
 			vmx_handle_vmcall(vcpu);
 		else if (ret == EXIT_REASON_CPUID)
