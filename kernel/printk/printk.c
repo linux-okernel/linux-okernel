@@ -2164,7 +2164,8 @@ void console_lock(void)
 {
 #if 1
 	if(is_in_vmx_nr_mode()){
-		asm volatile("xchg %bx, %bx");
+		return;
+                //asm volatile("xchg %bx, %bx");
 	}
 #endif	
 	might_sleep();
@@ -2189,7 +2190,8 @@ int console_trylock(void)
 {
 #if 1
 	if(is_in_vmx_nr_mode()){
-		asm volatile("xchg %bx, %bx");
+		return 1;
+		//asm volatile("xchg %bx, %bx");
 	}
 
 #endif
@@ -2264,7 +2266,8 @@ void console_unlock(void)
 
 #if 1
 	if(is_in_vmx_nr_mode()){
-		asm volatile("xchg %bx, %bx");
+		return;
+                //asm volatile("xchg %bx, %bx");
 	}
 #endif	
 	if (console_suspended) {
