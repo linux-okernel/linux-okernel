@@ -3376,8 +3376,11 @@ asmlinkage __visible void __sched notrace preempt_schedule_notrace(void)
 		 */
 		prev_ctx = exception_enter();
 #ifdef CONFIG_OKERNEL
+	
 		okernel_schedule();
+	
 #else
+		
 		__schedule();
 #endif
 		exception_exit(prev_ctx);
@@ -7625,13 +7628,6 @@ void ___might_sleep(const char *file, int line, int preempt_offset)
 		return;
 	prev_jiffy = jiffies;
 
-#if 0
-	/* Ok at the moment since the original thread holds the preempt lock */
-	if((is_in_vmx_nr_mode()) && (preempt_count()==1) && (!irqs_disabled())){
-		return;
-	}	
-#endif
-	
 	if(is_in_vmx_nr_mode()){
 		printk(KERN_ERR "NR preempt_count_equals (%d) !irqs_disabled (%d) !idle (%d)\n",
 		       preempt_count_equals(preempt_offset), !irqs_disabled(), !is_idle_task(current));
