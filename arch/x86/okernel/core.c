@@ -216,6 +216,7 @@ int __noclone okernel_enter(void)
 
 	if(vmx_nr_mode()){
 		asm volatile("xchg %bx, %bx");
+		//put_cpu();
 		printk(KERN_ERR "NR: Returning from okernel_enter.\n");
 		asm volatile("xchg %bx, %bx");
 	}

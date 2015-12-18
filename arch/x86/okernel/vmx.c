@@ -2268,6 +2268,7 @@ fast_path:
 			if(ret != EXIT_REASON_EXTERNAL_INTERRUPT){
 				BUG();
 			}
+			//printk(KERN_ERR "vmexit: tick (interrupts DISABLED.)\n");
 			goto fast_path;
 		}
 		
@@ -2277,6 +2278,10 @@ fast_path:
 
 		vmx_put_cpu(vcpu);
 
+		if(ret == EXIT_REASON_EXTERNAL_INTERRUPT){
+			printk(KERN_ERR "vmexit: tick (interrupts ENABLED.)\n");
+		}
+		
 		if (ret == EXIT_REASON_VMCALL)
 			vmx_handle_vmcall(vcpu);
 		else if (ret == EXIT_REASON_CPUID)
