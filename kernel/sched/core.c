@@ -3185,30 +3185,14 @@ asmlinkage __visible void __sched schedule(void)
 		/* Return control to the original process running in root-mode VMX */
 		/* shouldn't be holding locks at this point? */
 		printk(KERN_ERR "NR: schedule called.\n");
-		//printk(KERN_ERR "NR: Check for held locks before vmcall:\n");
 		asm volatile("xchg %bx, %bx");
-		//debug_show_all_locks();
-		//clear_preempt_need_resched();
-
-#if 0
-		if(preempt_count()){
-			printk("NR: BUG schedule called with preempt_count (%d)\n",
-			       preempt_count());
-			BUG();
-		}
-#endif
+		
 		if(irqs_disabled()){
 			printk("NR: BUG schedule called with irqs_disabled (%d)\n",
 			       irqs_disabled());
 			BUG();
 		}
 		
-		//local_irq_disable();
-		current->preempt_count_nr = 1;
-		//get_cpu();
-
-                //current->hardirqs_enabled = 0;
-		//current->hardirqs_enabled_nr = 1;
 		ti = current_thread_info();
 		printk(KERN_ERR "NR: schedule in_atomic(): %d, irqs_disabled(): %d, pid: %d, name: %s\n",
 		       in_atomic(), irqs_disabled(), current->pid, current->comm);
@@ -3217,7 +3201,7 @@ asmlinkage __visible void __sched schedule(void)
 		printk(KERN_ERR "NR: schedule current->h_irqs_en (%d) current->h_irqs_en_nr (%d)\n",
 		       current->hardirqs_enabled, current->hardirqs_enabled_nr);
 		printk(KERN_ERR "NR: current->lockdep_depth (%d)\n", current->lockdep_depth);
-		//get_cpu();
+		//BUG_ON(current->state == TASK_INTERRUPTIBLE);
 		vmcall(VMCALL_SCHED);
 	} else {
 		sched_submit_work(tsk);
@@ -3232,40 +3216,16 @@ asmlinkage __visible void __sched schedule(void)
 		} while (need_resched());
 	}
 	if(is_in_vmx_nr_mode()){
-		//put_cpu();
-		//current->hardirqs_enabled = 1;
-		printk(KERN_ERR "NR: schedule return before irq_enable: \n");
-		//printk(KERN_ERR "NR: check locks on return from schedule:\n");
-		asm volatile("xchg %bx, %bx");
-		//debug_show_all_locks();
-		printk(KERN_ERR "NR: schedule before (in_atomic(): %d, irqs_disabled(): %d, pid: %d, name: %s)\n",
-		       in_atomic(), irqs_disabled(), current->pid, current->comm);
-		printk(KERN_ERR "NR: schedule before (current->h_irqs_en (%d) current->h_irqs_en_nr (%d))\n",
-		       current->hardirqs_enabled, current->hardirqs_enabled_nr);
-		//if(current->hardirqs_enabled_nr == 1){
-		//	local_irq_enable();
-		//}
 		ti = current_thread_info();
-
-		current->preempt_count_nr = 0;
-		//put_cpu();
-		//local_irq_enable();
-		
 		printk(KERN_ERR "NR: returning from VMCALL schedule\n");
+		asm volatile("xchg %bx, %bx");
 		printk(KERN_ERR "NR: schedule return in_atomic(): %d, irqs_disabled(): %d, pid: %d, name: %s\n",
 		       in_atomic(), irqs_disabled(), current->pid, current->comm);
 		printk(KERN_ERR "NR: schedule return preempt_count (%#x) rcu_preempt_depth (%#x) saved preempt (%#x)\n",
 		       preempt_count(), rcu_preempt_depth(), ti->saved_preempt_count);
 		printk(KERN_ERR "NR: current->lockdep_depth (%d)\n", current->lockdep_depth);
-		//clear_tsk_need_resched(current);
-		//printk(KERN_ERR "NR: cleared TIF_NEED_RESCHEDULE.\n");
-		//if(!irqs_disabled()){
-		//	current->hardirqs_enabled = 1;
-		//}
-		
 		printk(KERN_ERR "NR: schedule return current->h_irqs_en (%d) current->h_irqs_en_nr (%d)\n",
 		       current->hardirqs_enabled, current->hardirqs_enabled_nr);
-		
 		asm volatile("xchg %bx, %bx");
 	}
 }

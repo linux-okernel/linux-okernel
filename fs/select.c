@@ -28,6 +28,7 @@
 #include <linux/hrtimer.h>
 #include <linux/sched/rt.h>
 #include <linux/freezer.h>
+#include <linux/okernel.h>
 #include <net/busy_poll.h>
 
 #include <asm/uaccess.h>
@@ -237,10 +238,20 @@ int poll_schedule_timeout(struct poll_wqueues *pwq, int state,
 	int rc = -EINTR;
 
 	set_current_state(state);
-	if (!pwq->triggered)
+	if(is_in_vmx_nr_mode()){
+		printk(KERN_ERR "NR: poll_schedule_timeout - set state (%u)\n", state);
+	}
+	if (!pwq->triggered){
+		if(is_in_vmx_nr_mode()){
+			printk(KERN_ERR "NR: poll_schedule_time: not triggered yet.\n");
+			printk(KERN_ERR "NR: calling schedule_hrtimeout_range.\n");
+		}
 		rc = schedule_hrtimeout_range(expires, slack, HRTIMER_MODE_ABS);
+	}
 	__set_current_state(TASK_RUNNING);
-
+	if(is_in_vmx_nr_mode()){
+		printk(KERN_ERR "NR: poll_schedule_timeout - set to TASK_RUNNING)\n");
+	}
 	/*
 	 * Prepare for the next iteration.
 	 *
@@ -406,6 +417,9 @@ int do_select(int n, fd_set_bits *fds, struct timespec *end_time)
 	unsigned int busy_flag = net_busy_loop_on() ? POLL_BUSY_LOOP : 0;
 	unsigned long busy_end = 0;
 
+	if(is_in_vmx_nr_mode()){
+		printk(KERN_ERR "NR: do_select() called.\n");
+	}
 	rcu_read_lock();
 	retval = max_select_fd(n, fds);
 	rcu_read_unlock();
@@ -526,6 +540,9 @@ int do_select(int n, fd_set_bits *fds, struct timespec *end_time)
 			to = &expire;
 		}
 
+		if(is_in_vmx_nr_mode()){
+			printk(KERN_ERR "NR: calling poll_schedule_timeout\n");
+		}
 		if (!poll_schedule_timeout(&table, TASK_INTERRUPTIBLE,
 					   to, slack))
 			timed_out = 1;
@@ -555,6 +572,9 @@ int core_sys_select(int n, fd_set __user *inp, fd_set __user *outp,
 	/* Allocate small arguments on the stack to save memory and be faster */
 	long stack_fds[SELECT_STACK_ALLOC/sizeof(long)];
 
+	if(is_in_vmx_nr_mode()){
+		printk(KERN_ERR "NR: core_sys_select called.\n");
+	}
 	ret = -EINVAL;
 	if (n < 0)
 		goto out_nofds;

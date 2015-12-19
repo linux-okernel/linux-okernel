@@ -140,6 +140,24 @@ int vmcall(unsigned int cmd)
 	return 0;
 }
 
+int vmcall3(unsigned int cmd, unsigned long arg1, unsigned long arg2)
+{
+	/* cid: need to guard the use of this call */
+	asm volatile(".byte 0x0F,0x01,0xC1\n" ::"a"(cmd),"b"(arg1),"c"(arg2));
+	return 0;
+}
+
+int vmcall5(unsigned int cmd, unsigned long arg1, unsigned long arg2, unsigned long arg3, unsigned long arg4)
+{
+	/* cid: need to guard the use of this call */
+	register long r10 asm("r10") = arg3;
+	register long r11 asm("r11") = arg4;
+
+	asm volatile(".byte 0x0F,0x01,0xC1\n" ::"a"(cmd),"b"(arg1),"c"(arg2), "r"(r10), "r"(r11));
+	return 0;
+}	
+
+
 
 /* Start: imported code from original BV prototype */
 
@@ -510,7 +528,6 @@ int clone_kstack2(struct vmx_vcpu *vcpu)
 int clone_tsk(struct vmx_vcpu *vcpu)
 {	
 	struct task_struct *orig_tsk = current;
-	u64 orig_tsk_paddr;
 	u64 paddr;
 	void *vaddr;
 	int size, n_pages;
@@ -1158,7 +1175,7 @@ static void vmx_setup_constant_host_state(void)
 	native_store_idt(&dt);
 	vmcs_writel(HOST_IDTR_BASE, dt.address);   /* 22.2.4 */
 
-	asm("mov $.Lkvm_vmx_return, %0" : "=r"(tmpl));
+	asm("mov $.Lokernel_vmx_return, %0" : "=r"(tmpl));
 	vmcs_writel(HOST_RIP, tmpl); /* 22.2.5 */
 
 	rdmsr(MSR_IA32_SYSENTER_CS, low32, high32);
@@ -1990,9 +2007,9 @@ static int __noclone vmx_run_vcpu(struct vmx_vcpu *vcpu)
 		/* Enter guest mode */
 		"jne .Llaunched \n\t"
 		ASM_VMX_VMLAUNCH "\n\t"
-		"jmp .Lkvm_vmx_return \n\t"
+		"jmp .Lokernel_vmx_return \n\t"
 		".Llaunched: " ASM_VMX_VMRESUME "\n\t"
-		".Lkvm_vmx_return: "
+		".Lokernel_vmx_return: "
 		/* Save guest registers, load host registers, keep flags */
 		"mov %0, %c[wordsize](%%"R"sp) \n\t"
 		"pop %0 \n\t"
@@ -2110,6 +2127,7 @@ static int vmx_handle_nmi_exception(struct vmx_vcpu *vcpu)
 	return -EIO;
 }
 
+extern int __sched do_nanosleep(struct hrtimer_sleeper *t, enum hrtimer_mode mode);
 
 void vmx_handle_vmcall(struct vmx_vcpu *vcpu)
 {
@@ -2117,7 +2135,27 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu)
 	unsigned long cmd;
 	struct thread_info *nr_ti;
 	struct thread_info *r_ti;
+	unsigned int cloned_tsk_state;
+	unsigned long arg1;
+	unsigned long arg2;
+	unsigned long arg3;
+	unsigned long arg4;
 
+	struct timespec *rqtp;
+	struct timespec __user *rmtp;
+	enum hrtimer_mode mode;
+	clockid_t clockid;
+
+	struct restart_block *restart;
+	struct hrtimer_sleeper t;
+	int ret = 0;
+	unsigned long slack;
+
+
+        //struct hrtimer_sleeper *t;
+	//enum hrtimer_mode mode;
+	
+	
 	nr_ti = vcpu->cloned_thread_info;
 	r_ti = current_thread_info();
 		
@@ -2134,8 +2172,112 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu)
 	printk(KERN_ERR "R: current->lockdep_depth (%d)\n", current->lockdep_depth);
 	
 	switch(cmd){
+	case VMCALL_DO_NANOSLEEP:
+		printk(KERN_ERR "R: VMCALL_DO_NANOSLEEP emulation...\n");
+
+		arg1 = vcpu->regs[VCPU_REGS_RBX];
+		arg2 = vcpu->regs[VCPU_REGS_RCX];
+		arg3 = vcpu->regs[VCPU_REGS_R10];
+		arg4 = vcpu->regs[VCPU_REGS_R11];
+
+		rqtp = (struct timespec *)arg1;
+		rmtp = (struct timespec __user *)arg2;
+		mode = (enum hrtimer_mode)arg3;
+		clockid = (clockid_t)arg4;
+
+		printk(KERN_ERR "R: do_nanosleep_emul rqtp (%#lx) rmtp (%#lx) mode (%#lx) clockid (%#lx)\n",
+		       (unsigned long)rqtp, (unsigned long)rmtp, (unsigned long)mode, (unsigned long)clockid);
+		
+		slack = current->timer_slack_ns;
+
+#if 0
+		if (dl_task(current) || rt_task(current))
+			slack = 0;
+#endif
+		
+		printk(KERN_ERR "R: do_nanosleep_emul 1\n");
+		
+		hrtimer_init_on_stack(&t.timer, clockid, mode);
+
+		printk(KERN_ERR "R: do_nanosleep_emul 2\n");
+		
+		hrtimer_set_expires_range_ns(&t.timer, timespec_to_ktime(*rqtp), slack);
+
+		printk(KERN_ERR "R: do_nanosleep_emul 3\n");
+
+		if (do_nanosleep(&t, mode)){
+			printk(KERN_ERR "R: do_nanosleep_emul 4\n");
+			goto out;
+		}
+
+		printk(KERN_ERR "R: do_nanosleep_emul 5\n");
+		
+		/* Absolute timers do not update the rmtp value and restart: */
+		if (mode == HRTIMER_MODE_ABS) {
+			ret = -ERESTARTNOHAND;
+			printk(KERN_ERR "R: do_nanosleep_emul 6\n");
+			goto out;
+		}
+
+		printk(KERN_ERR "R: do_nanosleep_emul 7\n");
+		
+#if 0
+		if (rmtp) {
+			ret = update_rmtp(&t.timer, rmtp);
+			if (ret <= 0)
+				printk(KERN_ERR "R: do_nanosleep_emul 8\n");
+				goto out;
+		}
+#endif
+		printk(KERN_ERR "R: do_nanosleep_emul 9\n");
+		
+		restart = &current->restart_block;
+		restart->fn = hrtimer_nanosleep_restart;
+		restart->nanosleep.clockid = t.timer.base->clockid;
+		restart->nanosleep.rmtp = rmtp;
+		restart->nanosleep.expires = hrtimer_get_expires_tv64(&t.timer);
+		
+		ret = -ERESTART_RESTARTBLOCK;
+out:
+		printk(KERN_ERR "R: do_nanosleep_emul 10\n");
+		destroy_hrtimer_on_stack(&t.timer);
+		printk(KERN_ERR "R: done emulating do_nanosleep ret (%d)\n", ret);
+		asm volatile("xchg %bx, %bx");
+		return;
 	case VMCALL_SCHED:
-		printk(KERN_ERR "R: in VMCALL schedule:\n");
+		cloned_tsk_state = vcpu->cloned_tsk->state;
+		
+		printk(KERN_ERR "R: in VMCALL schedule - current state (%lu) cloned state (%u)\n",
+		       current->state, cloned_tsk_state);
+
+		switch(cloned_tsk_state){
+		case TASK_RUNNING:
+			HDEBUG(("cloned_task (TASK_RUNNING)\n"));
+			break;
+		case TASK_INTERRUPTIBLE:
+			HDEBUG(("cloned_task (TASK_INTERRUPTIBLE)\n"));
+			break;
+		case TASK_UNINTERRUPTIBLE:
+			HDEBUG(("cloned_task (TASK_UNINTERRUPTIBLE)\n"));
+			break;
+		default:
+			HDEBUG(("cloned_task (OTHER STATE)\n"));
+		}
+
+		switch(current->state){
+		case TASK_RUNNING:
+			HDEBUG(("current (TASK_RUNNING)\n"));
+			break;
+		case TASK_INTERRUPTIBLE:
+			HDEBUG(("current (TASK_INTERRUPTIBLE)\n"));
+			break;
+		case TASK_UNINTERRUPTIBLE:
+			HDEBUG(("current (TASK_UNINTERRUPTIBLE)\n"));
+			break;
+		default:
+			HDEBUG(("current (OTHER STATE)\n"));
+		}
+		
 
                 /* Re-sync cloned-thread thread_info */
 		printk(KERN_ERR "R: syncing cloned thread_info state (NR->R)...\n");
@@ -2191,9 +2333,8 @@ int vmx_launch(void)
 	int done = 0;
 
 	//struct task_struct *orig_tsk = current;
-	struct task_struct *cloned_tsk;
-	unsigned long irqs_disabled;
-	
+	//struct task_struct *cloned_tsk;
+		
 	c_rip = cloned_thread.rip;
 
 	HDEBUG(("c_rip: (#%#lx)\n", c_rip));
@@ -2210,7 +2351,9 @@ int vmx_launch(void)
 		printk(KERN_ERR "okernel: clone kstack failed.\n");
 		return 0;
 	}
-#if 0
+#if 1
+	vcpu->cloned_tsk = current;
+#else
 	if(!(clone_tsk(vcpu))){
 		printk(KERN_ERR "okernel: clone tsk failed.\n");
 		return 0;

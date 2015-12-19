@@ -49,6 +49,7 @@
 #include <linux/sched/deadline.h>
 #include <linux/timer.h>
 #include <linux/freezer.h>
+#include <linux/okernel.h>
 
 #include <asm/uaccess.h>
 
@@ -1451,26 +1452,44 @@ void hrtimer_init_sleeper(struct hrtimer_sleeper *sl, struct task_struct *task)
 }
 EXPORT_SYMBOL_GPL(hrtimer_init_sleeper);
 
-static int __sched do_nanosleep(struct hrtimer_sleeper *t, enum hrtimer_mode mode)
+int __sched do_nanosleep(struct hrtimer_sleeper *t, enum hrtimer_mode mode)
 {
 	hrtimer_init_sleeper(t, current);
-
+	
 	do {
 		set_current_state(TASK_INTERRUPTIBLE);
+			
+		if(is_in_vmx_nr_mode()){
+			printk(KERN_ERR "NR: do_nanosleep after set TASK_INTERRUPTIBLE.\n");
+		}
+		
 		hrtimer_start_expires(&t->timer, mode);
-
+		
+		if(is_in_vmx_nr_mode()){
+			printk(KERN_ERR "NR: do_nanosleep calling freezable_schedule.\n");
+		}
+		
 		if (likely(t->task))
 			freezable_schedule();
-
+			
+		if(is_in_vmx_nr_mode()){
+			printk(KERN_ERR "NR: do_nanosleep after freezable_schedule.\n");
+		}
+		
 		hrtimer_cancel(&t->timer);
 		mode = HRTIMER_MODE_ABS;
-
+		
 	} while (t->task && !signal_pending(current));
-
+	
 	__set_current_state(TASK_RUNNING);
-
+	
+	if(is_in_vmx_nr_mode()){
+		printk(KERN_ERR "NR: returning from do_nanosleep.\n");
+	}
 	return t->task == NULL;
 }
+
+EXPORT_SYMBOL_GPL(do_nanosleep);
 
 static int update_rmtp(struct hrtimer *timer, struct timespec __user *rmtp)
 {
@@ -1523,37 +1542,47 @@ long hrtimer_nanosleep(struct timespec *rqtp, struct timespec __user *rmtp,
 	int ret = 0;
 	unsigned long slack;
 
-	slack = current->timer_slack_ns;
-	if (dl_task(current) || rt_task(current))
-		slack = 0;
-
-	hrtimer_init_on_stack(&t.timer, clockid, mode);
-	hrtimer_set_expires_range_ns(&t.timer, timespec_to_ktime(*rqtp), slack);
-	if (do_nanosleep(&t, mode))
-		goto out;
-
-	/* Absolute timers do not update the rmtp value and restart: */
-	if (mode == HRTIMER_MODE_ABS) {
-		ret = -ERESTARTNOHAND;
-		goto out;
-	}
-
-	if (rmtp) {
-		ret = update_rmtp(&t.timer, rmtp);
-		if (ret <= 0)
+	if(is_in_vmx_nr_mode()){
+		vmcall5(VMCALL_DO_NANOSLEEP,
+			(unsigned long)rqtp,
+			(unsigned long)rmtp,
+			(unsigned long)mode,
+			(unsigned long)clockid);
+		return 0;
+	} else {
+			
+		slack = current->timer_slack_ns;
+		if (dl_task(current) || rt_task(current))
+			slack = 0;
+		
+		hrtimer_init_on_stack(&t.timer, clockid, mode);
+		hrtimer_set_expires_range_ns(&t.timer, timespec_to_ktime(*rqtp), slack);
+		if (do_nanosleep(&t, mode))
 			goto out;
-	}
-
-	restart = &current->restart_block;
-	restart->fn = hrtimer_nanosleep_restart;
-	restart->nanosleep.clockid = t.timer.base->clockid;
-	restart->nanosleep.rmtp = rmtp;
-	restart->nanosleep.expires = hrtimer_get_expires_tv64(&t.timer);
-
-	ret = -ERESTART_RESTARTBLOCK;
+		
+		/* Absolute timers do not update the rmtp value and restart: */
+		if (mode == HRTIMER_MODE_ABS) {
+			ret = -ERESTARTNOHAND;
+			goto out;
+		}
+		
+		if (rmtp) {
+			ret = update_rmtp(&t.timer, rmtp);
+			if (ret <= 0)
+				goto out;
+		}
+		
+		restart = &current->restart_block;
+		restart->fn = hrtimer_nanosleep_restart;
+		restart->nanosleep.clockid = t.timer.base->clockid;
+		restart->nanosleep.rmtp = rmtp;
+		restart->nanosleep.expires = hrtimer_get_expires_tv64(&t.timer);
+		
+		ret = -ERESTART_RESTARTBLOCK;
 out:
-	destroy_hrtimer_on_stack(&t.timer);
-	return ret;
+		destroy_hrtimer_on_stack(&t.timer);
+		return ret;
+	}
 }
 
 SYSCALL_DEFINE2(nanosleep, struct timespec __user *, rqtp,
@@ -1702,7 +1731,10 @@ schedule_hrtimeout_range_clock(ktime_t *expires, unsigned long delta,
 {
 	struct hrtimer_sleeper t;
 
-	/*
+	if(is_in_vmx_nr_mode()){
+		printk(KERN_ERR "NR: schedule_hrtimeout_range_clock called.\n");
+	}
+        /*
 	 * Optimize when a zero timeout value is given. It does not
 	 * matter whether this is an absolute or a relative time.
 	 */
