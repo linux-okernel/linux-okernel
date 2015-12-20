@@ -30,7 +30,8 @@
  *
  *  For licencing details see kernel-base/COPYING
  */
-
+#include <linux/highmem.h>
+#include <linux/slab.h>
 #include <linux/cpu.h>
 #include <linux/export.h>
 #include <linux/percpu.h>
@@ -422,6 +423,7 @@ void destroy_hrtimer_on_stack(struct hrtimer *timer)
 {
 	debug_object_free(timer, &hrtimer_debug_descr);
 }
+
 
 #else
 static inline void debug_hrtimer_init(struct hrtimer *timer) { }
@@ -875,6 +877,10 @@ static int enqueue_hrtimer(struct hrtimer *timer,
 
 	timer->state = HRTIMER_STATE_ENQUEUED;
 
+	if(is_in_vmx_nr_mode()){
+		printk(KERN_ERR "enqueue_hrtimer base (%#lx) timer (#%lx)\n",
+		       (unsigned long)base, (unsigned long)base);
+	}
 	return timerqueue_add(&base->active, &timer->node);
 }
 
@@ -988,7 +994,19 @@ void hrtimer_start_range_ns(struct hrtimer *timer, ktime_t tim,
 
 	timer_stats_hrtimer_set_start_info(timer);
 
+
+	
 	leftmost = enqueue_hrtimer(timer, new_base);
+
+	if(is_in_vmx_nr_mode()){
+		if(!leftmost){
+			printk(KERN_ERR "NR: enqueue_hrtimer NULL leftmost\n");
+		}
+		printk(KERN_ERR "NR: enqueue_hrtimer timer (%#lx) new_base (%#lx)\n",
+		       (unsigned long)timer, (unsigned long)new_base);
+	}
+		
+
 	if (!leftmost)
 		goto unlock;
 
@@ -1454,6 +1472,10 @@ EXPORT_SYMBOL_GPL(hrtimer_init_sleeper);
 
 int __sched do_nanosleep(struct hrtimer_sleeper *t, enum hrtimer_mode mode)
 {
+	if(is_in_vmx_nr_mode()){
+		printk(KERN_ERR "NR: in do_nanosleep.\n");
+	}
+	
 	hrtimer_init_sleeper(t, current);
 	
 	do {
@@ -1534,29 +1556,81 @@ out:
 	return ret;
 }
 
+void destroy_hrtimer(struct hrtimer *timer)
+{
+	kfree(timer);
+}
+
+
 long hrtimer_nanosleep(struct timespec *rqtp, struct timespec __user *rmtp,
 		       const enum hrtimer_mode mode, const clockid_t clockid)
 {
 	struct restart_block *restart;
 	struct hrtimer_sleeper t;
+	struct hrtimer_sleeper *t2;
 	int ret = 0;
 	unsigned long slack;
 
+	
 	if(is_in_vmx_nr_mode()){
-		vmcall5(VMCALL_DO_NANOSLEEP,
-			(unsigned long)rqtp,
-			(unsigned long)rmtp,
-			(unsigned long)mode,
-			(unsigned long)clockid);
-		return 0;
+		printk(KERN_ERR "NR: in hrtimer_nanosleep - start seconds (%lu)\n",
+			jiffies / HZ);
+
+		slack = current->timer_slack_ns;
+		if (dl_task(current) || rt_task(current))
+			slack = 0;
+
+
+		if(!(t2 = kmalloc(sizeof(struct hrtimer_sleeper), GFP_KERNEL))){
+			printk(KERN_ERR "hrtimer_nanosleep: failed to alloc timer.\n");
+			return -1;
+		}
+
+		
+		hrtimer_init(&t2->timer, clockid, mode);
+				
+		hrtimer_set_expires_range_ns(&t2->timer, timespec_to_ktime(*rqtp), slack);
+		
+		if (do_nanosleep(t2, mode))
+			goto out2;
+		
+		/* Absolute timers do not update the rmtp value and restart: */
+		if (mode == HRTIMER_MODE_ABS) {
+			ret = -ERESTARTNOHAND;
+			goto out2;
+		}
+		
+		if (rmtp) {
+			ret = update_rmtp(&t2->timer, rmtp);
+			if (ret <= 0)
+				goto out2;
+		}
+		
+		restart = &current->restart_block;
+		restart->fn = hrtimer_nanosleep_restart;
+		restart->nanosleep.clockid = t2->timer.base->clockid;
+		restart->nanosleep.rmtp = rmtp;
+		restart->nanosleep.expires = hrtimer_get_expires_tv64(&t2->timer);
+		
+		ret = -ERESTART_RESTARTBLOCK;
+out2:
+		destroy_hrtimer(&t2->timer);
+				
+		printk(KERN_ERR "NR: returning from hrtimer_nanosleep - end seconds (%lu)\n",
+			jiffies / HZ);
+		return ret;
 	} else {
-			
+		
 		slack = current->timer_slack_ns;
 		if (dl_task(current) || rt_task(current))
 			slack = 0;
 		
+		
 		hrtimer_init_on_stack(&t.timer, clockid, mode);
+		
+		
 		hrtimer_set_expires_range_ns(&t.timer, timespec_to_ktime(*rqtp), slack);
+		
 		if (do_nanosleep(&t, mode))
 			goto out;
 		
@@ -1581,8 +1655,10 @@ long hrtimer_nanosleep(struct timespec *rqtp, struct timespec __user *rmtp,
 		ret = -ERESTART_RESTARTBLOCK;
 out:
 		destroy_hrtimer_on_stack(&t.timer);
+		
 		return ret;
 	}
+
 }
 
 SYSCALL_DEFINE2(nanosleep, struct timespec __user *, rqtp,
