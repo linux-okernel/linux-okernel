@@ -2525,8 +2525,8 @@ fast_path:
 					regs.ss = vmcs_readl(GUEST_SS_SELECTOR);
 					vmx_put_cpu(vcpu);
 					regs.orig_ax = err;
-					printk("R: ptregs before do_page_fault_r call: \n");
-					show_regs(&regs);
+					//printk("R: ptregs before do_page_fault_r call: \n");
+					//show_regs(&regs);
 					printk(KERN_ERR "R: calling do_page_fault_r...\n");
 					do_page_fault_r(&regs, err, cr2);
 					printk(KERN_ERR "R: returned from do_page_fault_r.\n");
