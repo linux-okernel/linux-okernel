@@ -1311,6 +1311,25 @@ do_page_fault(struct pt_regs *regs, unsigned long error_code)
 }
 NOKPROBE_SYMBOL(do_page_fault);
 
+dotraplinkage void notrace
+do_page_fault_r(struct pt_regs *regs, unsigned long error_code, unsigned long address)
+{
+	enum ctx_state prev_state;
+
+	/*
+	 * We must have this function tagged with __kprobes, notrace and call
+	 * read_cr2() before calling anything else. To avoid calling any kind
+	 * of tracing machinery before we've observed the CR2 value.
+	 *
+	 * exception_{enter,exit}() contain all sorts of tracepoints.
+	 */
+
+	prev_state = exception_enter();
+	__do_page_fault(regs, error_code, address);
+	exception_exit(prev_state);
+}
+NOKPROBE_SYMBOL(do_page_fault_r);
+
 #ifdef CONFIG_TRACING
 static nokprobe_inline void
 trace_page_fault_entries(unsigned long address, struct pt_regs *regs,

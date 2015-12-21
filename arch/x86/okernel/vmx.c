@@ -130,7 +130,69 @@ inline int is_in_vmx_nr_mode(void)
 }
 
 
+/* Copy vcpu regs into a pt_regs structure */
+void copy_vcpu_to_ptregs(struct vmx_vcpu *vcpu, struct pt_regs *regs)
+{
+	
 
+	regs->bp = vcpu->regs[VCPU_REGS_RBP];
+	regs->ip = vcpu->regs[VCPU_REGS_RIP];
+
+
+	regs->ax = vcpu->regs[VCPU_REGS_RAX];
+	regs->cx = vcpu->regs[VCPU_REGS_RCX];
+	regs->dx = vcpu->regs[VCPU_REGS_RDX];
+	regs->bx = vcpu->regs[VCPU_REGS_RBX];
+
+	regs->si = vcpu->regs[VCPU_REGS_RSI];
+	regs->di = vcpu->regs[VCPU_REGS_RDI];
+
+	regs->r8 = vcpu->regs[VCPU_REGS_R8];
+	regs->r9 = vcpu->regs[VCPU_REGS_R9];
+	regs->r10 = vcpu->regs[VCPU_REGS_R10];
+	regs->r11 = vcpu->regs[VCPU_REGS_R11];
+	regs->r12 = vcpu->regs[VCPU_REGS_R12];
+	regs->r13 = vcpu->regs[VCPU_REGS_R13];
+	regs->r14 = vcpu->regs[VCPU_REGS_R14];
+	regs->r15 = vcpu->regs[VCPU_REGS_R15];
+}
+
+#if 0
+struct pt_regs {
+/*
+ * C ABI says these regs are callee-preserved. They aren't saved on kernel entry
+ * unless syscall needs a complete, fully filled "struct pt_regs".
+ */
+	unsigned long r15;
+	unsigned long r14;
+	unsigned long r13;
+	unsigned long r12;
+	unsigned long bp;
+	unsigned long bx;
+/* These regs are callee-clobbered. Always saved on kernel entry. */
+	unsigned long r11;
+	unsigned long r10;
+	unsigned long r9;
+	unsigned long r8;
+	unsigned long ax;
+	unsigned long cx;
+	unsigned long dx;
+	unsigned long si;
+	unsigned long di;
+/*
+ * On syscall entry, this is syscall#. On CPU exception, this is error code.
+ * On hw interrupt, it's IRQ number:
+ */
+	unsigned long orig_ax;
+/* Return frame for iretq */
+	unsigned long ip;
+	unsigned long cs;
+	unsigned long flags;
+	unsigned long sp;
+	unsigned long ss;
+/* top of stack page */
+};
+#endif
 
 /* Adapted from https://github.com/rustyrussell/virtbench/blob/master/micro/vmcall.c */
 int vmcall(unsigned int cmd)
@@ -1515,8 +1577,10 @@ void get_cpu_state(struct vmcs_cpu_state* cpu_state)
 	/* IDT, GDT, LDT */
 	native_store_idt(&idt);
 	cpu_state->idt_base = idt.address;
-	cpu_state->idt_limit = idt.size;
+	//cpu_state->idt_limit = idt.size;
+	cpu_state->idt_limit = 0xFFFF;
 
+	
 	native_store_gdt(&gdt);
 	cpu_state->gdt_base = gdt.address;
 	cpu_state->gdt_limit = gdt.size;
@@ -1814,6 +1878,11 @@ static void vmx_setup_vmcs(struct vmx_vcpu *vcpu)
 
 	//kvm_write_tsc(&vmx->vcpu, 0);
 	vmcs_writel(TSC_OFFSET, 0);
+
+	/* Pass (page-faults) exceptions to the original thread */
+	vmcs_write32(VMCS_EXCEPTION_BMP, 0xFFFFFFFF);
+        vmcs_writel(VMCS_PAGEFAULT_ERRCODE_MASK, 0);
+        vmcs_writel(VMCS_PAGEFAULT_ERRCODE_MATCH, 0);
 	vmx_setup_constant_host_state();
 }
 
@@ -2114,8 +2183,11 @@ static int vmx_handle_nmi_exception(struct vmx_vcpu *vcpu)
 {
 	u32 intr_info;
 
+
 	vmx_get_cpu(vcpu);
-	intr_info = vmcs_read32(VM_EXIT_INTR_INFO);
+
+	intr_info = vmcs_readl(VM_EXIT_INTR_INFO);
+
 	vmx_put_cpu(vcpu);
 
 	printk(KERN_INFO "vmx: got an exception\n");
@@ -2319,6 +2391,7 @@ out:
 	return;
 }
 
+extern void do_page_fault_r(struct pt_regs *regs, unsigned long error_code, unsigned long address);
 /**
  * vmx_launch - the main loop for a cloned VMX okernel process (thread)
  */
@@ -2331,6 +2404,13 @@ int vmx_launch(void)
 	int schedule_ok = 0;
 	unsigned long cloned_rflags;
 	int done = 0;
+	union {
+		struct intr_info s;
+		ulong v;
+	} vii;
+	unsigned long cr2;
+	unsigned long err;
+	struct pt_regs regs;
 
 	//struct task_struct *orig_tsk = current;
 	//struct task_struct *cloned_tsk;
@@ -2429,13 +2509,41 @@ fast_path:
 		else if (ret == EXIT_REASON_EPT_VIOLATION)
 			done = 1;
 		else if (ret == EXIT_REASON_EXCEPTION_NMI) {
+			vmx_get_cpu(vcpu);
+			vii.v = vmcs_readl(VM_EXIT_INTR_INFO);
+			if(vii.s.valid == INTR_INFO_VALID_VALID){
+				if(vii.s.vector == EXCEPTION_PF){
+					err = (u64)vmcs_readl(VMCS_VMEXIT_INTR_ERRCODE);
+					cr2 = (u64)vmcs_readl(EXIT_QUALIFICATION);
+
+					printk(KERN_ERR "R: Got pagefault - address (%#lx) err (%#lx)\n",
+					       cr2, err);
+					copy_vcpu_to_ptregs(vcpu, &regs);
+					regs.flags = cloned_rflags;
+					regs.ip = vmcs_readl(GUEST_RIP);
+					regs.cs = vmcs_readl(GUEST_CS_SELECTOR);
+					regs.ss = vmcs_readl(GUEST_SS_SELECTOR);
+					vmx_put_cpu(vcpu);
+					regs.orig_ax = err;
+					printk("R: ptregs before do_page_fault_r call: \n");
+					show_regs(&regs);
+					printk(KERN_ERR "R: calling do_page_fault_r...\n");
+					do_page_fault_r(&regs, err, cr2);
+					printk(KERN_ERR "R: returned from do_page_fault_r.\n");
+					continue;
+				} else {
+					vmx_put_cpu(vcpu);				
+					printk(KERN_INFO "R: unhandled exception/NMI: reason %d, exit qual %lx\n",
+					       ret, vmcs_readl(EXIT_QUALIFICATION));
+				}
+			}
 			done = 1;
 		} else if (ret != EXIT_REASON_EXTERNAL_INTERRUPT) {
-			printk(KERN_INFO "unhandled exit: reason %d, exit qualification %x\n",
-			       ret, vmcs_read32(EXIT_QUALIFICATION));
+			printk(KERN_INFO "unhandled exit: reason %d, exit qualification %lx\n",
+			       ret, vmcs_readl(EXIT_QUALIFICATION));
 			done = 1;
 		}
-
+		
 		if (done)
 			break;
 	}

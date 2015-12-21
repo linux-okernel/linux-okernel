@@ -2,6 +2,69 @@
 #define _CORE_CONSTANTS2_H
 #include <linux/smp.h>
 
+/* Execption / NMI vmexit handling */
+
+enum vmmerr {
+	VMMERR_SUCCESS = 0,
+	VMMERR_GUESTSEG_LOAD_FAILED,
+	VMMERR_GUESTSEG_NOT_PRESENT,
+	VMMERR_INVALID_GUESTSEG,
+	VMMERR_PAGE_NOT_PRESENT,
+	VMMERR_PAGE_NOT_ACCESSIBLE,
+	VMMERR_PAGE_NOT_EXECUTABLE,
+	VMMERR_PAGE_BAD_RESERVED_BIT,
+	VMMERR_INSTRUCTION_TOO_LONG,
+	VMMERR_UNIMPLEMENTED_OPCODE,
+	VMMERR_UNSUPPORTED_OPCODE,
+	VMMERR_EXCEPTION_UD,
+	VMMERR_AVOID_COMPILER_WARNING,
+	VMMERR_SW,
+	VMMERR_NOMEM,
+	VMMERR_MSR_FAULT,
+};
+
+#define EXCEPTION_PF			0xE
+
+
+enum intr_info_err {
+        INTR_INFO_ERR_INVALID = 0,
+        INTR_INFO_ERR_VALID = 1,
+};
+
+enum intr_info_type {
+        INTR_INFO_TYPE_EXTERNAL = 0,
+        INTR_INFO_TYPE_NMI = 2,
+        INTR_INFO_TYPE_HARD_EXCEPTION = 3,
+        INTR_INFO_TYPE_SOFT_INTR = 4,
+        INTR_INFO_TYPE_PRIV_SOFT_EXCEPTION = 5,
+        INTR_INFO_TYPE_SOFT_EXCEPTION = 6,
+};
+
+enum intr_info_valid {
+        INTR_INFO_VALID_INVALID = 0,
+        INTR_INFO_VALID_VALID = 1,
+};
+
+struct intr_info {
+        unsigned int vector : 8;
+        enum intr_info_type type : 3;
+        enum intr_info_err err : 1;
+        unsigned int nmi : 1;
+        unsigned int reserved : 18;
+        enum intr_info_valid valid : 1;
+} __attribute__ ((packed));
+
+
+
+
+
+/* 32-Bit Control Fields */
+#define VMCS_EXCEPTION_BMP              0x4004
+#define VMCS_PAGEFAULT_ERRCODE_MASK     0x4006
+#define VMCS_PAGEFAULT_ERRCODE_MATCH    0x4008
+#define VMCS_VMEXIT_INTR_ERRCODE	0x4406
+
+
 /* EPT / VPID capabilities*/
 #define VMCS_EPT_XO     0x1
 #define VMCS_EPT_PW4    0x40
