@@ -2495,7 +2495,7 @@ fast_path:
 			 * but not through an explicit call to
 			 * schedule. */
 			if(ret != EXIT_REASON_EXTERNAL_INTERRUPT){
-				printk(KERN_ERR "R: unexpected fast_path exit (%d)\n", r);
+				printk(KERN_ERR "R: unexpected fast_path exit (%d)\n", ret);
 				BUG();
 			}
 			goto fast_path;
