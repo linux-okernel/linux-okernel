@@ -34,6 +34,8 @@
 #include <linux/memcontrol.h>
 #include <linux/cleancache.h>
 #include <linux/rmap.h>
+#include <linux/wait.h>
+#include <linux/okernel.h>
 #include "internal.h"
 
 #define CREATE_TRACE_POINTS
@@ -832,19 +834,57 @@ EXPORT_SYMBOL_GPL(page_endio);
  */
 void __lock_page(struct page *page)
 {
-	DEFINE_WAIT_BIT(wait, &page->flags, PG_locked);
+	struct wait_bit_queue *wait;
+	wait_queue_t *q;
+	
+	if(is_in_vmx_nr_mode()){
+		printk(KERN_ERR "NR: __lock_page.\n");
+		wait = kmalloc(sizeof(struct wait_bit_queue), GFP_KERNEL);
+		memset(wait, 0, sizeof(struct wait_bit_queue));
+		q = kmalloc(sizeof(wait_queue_t), GFP_KERNEL);
+		memset(q, 0, sizeof(wait_queue_t));
 
-	__wait_on_bit_lock(page_waitqueue(page), &wait, bit_wait_io,
-							TASK_UNINTERRUPTIBLE);
+		init_wait(q);
+		
+		wait->key.flags = &page->flags;
+		wait->key.bit_nr = PG_locked;
+		wait->wait = *q;
+		__wait_on_bit_lock(page_waitqueue(page), wait, bit_wait_io,TASK_UNINTERRUPTIBLE);
+	} else {
+		
+		DEFINE_WAIT_BIT(wait, &page->flags, PG_locked);
+		__wait_on_bit_lock(page_waitqueue(page), &wait, bit_wait_io,TASK_UNINTERRUPTIBLE);
+	}
+
+							
 }
 EXPORT_SYMBOL(__lock_page);
 
 int __lock_page_killable(struct page *page)
 {
-	DEFINE_WAIT_BIT(wait, &page->flags, PG_locked);
+	struct wait_bit_queue *wait;
+	wait_queue_t *q;
+	
+	if(is_in_vmx_nr_mode()){
+		printk(KERN_ERR "NR: __lock_page_killable.\n");
+		wait = kmalloc(sizeof(struct wait_bit_queue), GFP_KERNEL);
+		memset(wait, 0, sizeof(struct wait_bit_queue));
+		q = kmalloc(sizeof(wait_queue_t), GFP_KERNEL);
+		memset(q, 0, sizeof(wait_queue_t));
+		
+		init_wait(q);
+		
+		wait->key.flags = &page->flags;
+		wait->key.bit_nr = PG_locked;
+		wait->wait = *q;
+		return __wait_on_bit_lock(page_waitqueue(page), wait,
+					  bit_wait_io,TASK_KILLABLE);
+	} else {
+		DEFINE_WAIT_BIT(wait, &page->flags, PG_locked);
 
-	return __wait_on_bit_lock(page_waitqueue(page), &wait,
-					bit_wait_io, TASK_KILLABLE);
+		return __wait_on_bit_lock(page_waitqueue(page), &wait,
+					  bit_wait_io, TASK_KILLABLE);
+	}
 }
 EXPORT_SYMBOL_GPL(__lock_page_killable);
 

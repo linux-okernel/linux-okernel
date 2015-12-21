@@ -61,6 +61,7 @@
 #include <linux/percpu.h>
 #include <linux/syscalls.h>
 #include <linux/version.h>
+#include <linux/console.h>
 
 #include <asm/desc.h>
 #include <asm/vmx.h>
@@ -2473,17 +2474,20 @@ fast_path:
 
                 /*************************** GONE FOR IT! *************************/
 
-		
-		
-		cloned_rflags = vmcs_readl(GUEST_RFLAGS);
+   		cloned_rflags = vmcs_readl(GUEST_RFLAGS);
 
 		if(cloned_rflags & RFLAGS_IF_BIT){
+#if 1
 			if(!rcu_scheduler_active){
 				schedule_ok = 1;
 			}
 			if(preempt_count() < 2){
 				schedule_ok = 1;
 			}
+			if(rcu_preempt_depth() !=0 ){
+				schedule_ok = 1;
+			}
+#endif
 			local_irq_enable();
 		} else {
 			/* Need to keep control: cloned thread has
@@ -2491,6 +2495,7 @@ fast_path:
 			 * but not through an explicit call to
 			 * schedule. */
 			if(ret != EXIT_REASON_EXTERNAL_INTERRUPT){
+				printk(KERN_ERR "R: unexpected fast_path exit (%d)\n", r);
 				BUG();
 			}
 			goto fast_path;

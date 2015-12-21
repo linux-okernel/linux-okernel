@@ -3184,9 +3184,14 @@ asmlinkage __visible void __sched schedule(void)
 	if(is_in_vmx_nr_mode()){
 		/* Return control to the original process running in root-mode VMX */
 		/* shouldn't be holding locks at this point? */
+#if 1
+		ti = current_thread_info();
+		
+		//dump_stack();
 		printk(KERN_ERR "NR: schedule called.\n");
 		asm volatile("xchg %bx, %bx");
-		
+
+
 		if(irqs_disabled()){
 			printk("NR: BUG schedule called with irqs_disabled (%d)\n",
 			       irqs_disabled());
@@ -3202,6 +3207,7 @@ asmlinkage __visible void __sched schedule(void)
 		       current->hardirqs_enabled, current->hardirqs_enabled_nr);
 		printk(KERN_ERR "NR: current->lockdep_depth (%d)\n", current->lockdep_depth);
 		//BUG_ON(current->state == TASK_INTERRUPTIBLE);
+#endif
 		vmcall(VMCALL_SCHED);
 	} else {
 		sched_submit_work(tsk);

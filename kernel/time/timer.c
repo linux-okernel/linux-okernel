@@ -42,6 +42,7 @@
 #include <linux/sched/sysctl.h>
 #include <linux/slab.h>
 #include <linux/compat.h>
+#include <linux/okernel.h>
 
 #include <asm/uaccess.h>
 #include <asm/unistd.h>
@@ -1471,7 +1472,22 @@ signed long __sched schedule_timeout(signed long timeout)
 {
 	struct timer_list timer;
 	unsigned long expire;
+	struct thread_info *ti;
+	
+	if(is_in_vmx_nr_mode()){
+		ti = current_thread_info();
+		printk(KERN_ERR "NR: schedule_timeout 0 - current state (%ld)\n", current->state);
 
+		printk(KERN_ERR "NR: schedule_timeout in_atomic(): %d, irqs_disabled(): %d, pid: %d, name: %s\n",
+		       in_atomic(), irqs_disabled(), current->pid, current->comm);
+		printk(KERN_ERR "NR: schedule_timeout preempt_count (%#x) rcu_preempt_depth (%#x) saved preempt (%#x)\n",
+		       preempt_count(), rcu_preempt_depth(), ti->saved_preempt_count);
+		printk(KERN_ERR "NR: schedule_timeout current->h_irqs_en (%d) current->h_irqs_en_nr (%d)\n",
+		       current->hardirqs_enabled, current->hardirqs_enabled_nr);
+		printk(KERN_ERR "NR: schedule_timeout current->lockdep_depth (%d)\n", current->lockdep_depth);
+		asm volatile("xchg %bx, %bx");
+	}
+	
 	switch (timeout)
 	{
 	case MAX_SCHEDULE_TIMEOUT:
@@ -1482,6 +1498,11 @@ signed long __sched schedule_timeout(signed long timeout)
 		 * but I' d like to return a valid offset (>=0) to allow
 		 * the caller to do everything it want with the retval.
 		 */
+			
+		if(is_in_vmx_nr_mode()){
+			printk(KERN_ERR "NR: schedule_timeout 0.5 - max timeout.\n");
+			asm volatile("xchg %bx, %bx");
+		}
 		schedule();
 		goto out;
 	default:
@@ -1492,6 +1513,7 @@ signed long __sched schedule_timeout(signed long timeout)
 		 * should never happens anyway). You just have the printk()
 		 * that will tell you if something is gone wrong and where.
 		 */
+
 		if (timeout < 0) {
 			printk(KERN_ERR "schedule_timeout: wrong timeout "
 				"value %lx\n", timeout);
@@ -1501,19 +1523,54 @@ signed long __sched schedule_timeout(signed long timeout)
 		}
 	}
 
+	if(is_in_vmx_nr_mode()){
+		printk(KERN_ERR "NR: schedule_timeout 1.\n");
+		asm volatile("xchg %bx, %bx");
+	}
 	expire = timeout + jiffies;
 
 	setup_timer_on_stack(&timer, process_timeout, (unsigned long)current);
+
+	if(is_in_vmx_nr_mode()){
+		printk(KERN_ERR "NR: schedule_timeout 2.\n");
+		asm volatile("xchg %bx, %bx");
+	}
+	
 	__mod_timer(&timer, expire, false, TIMER_NOT_PINNED);
+
+	if(is_in_vmx_nr_mode()){
+		printk(KERN_ERR "NR: schedule_timeout 3.\n");
+		asm volatile("xchg %bx, %bx");
+	}
+	
 	schedule();
+
+	if(is_in_vmx_nr_mode()){
+		printk(KERN_ERR "NR: schedule_timeout 4.\n");
+		asm volatile("xchg %bx, %bx");
+	}
+	
 	del_singleshot_timer_sync(&timer);
 
+	if(is_in_vmx_nr_mode()){
+		printk(KERN_ERR "NR: schedule_timeout 5.\n");
+		asm volatile("xchg %bx, %bx");
+	}
 	/* Remove the timer from the object tracker */
 	destroy_timer_on_stack(&timer);
 
+	if(is_in_vmx_nr_mode()){
+		printk(KERN_ERR "NR: schedule_timeout 6.\n");
+		asm volatile("xchg %bx, %bx");
+	}
+	
 	timeout = expire - jiffies;
 
  out:
+	if(is_in_vmx_nr_mode()){
+		printk(KERN_ERR "NR: schedule_timeout 7.\n");
+		asm volatile("xchg %bx, %bx");
+	}
 	return timeout < 0 ? 0 : timeout;
 }
 EXPORT_SYMBOL(schedule_timeout);
