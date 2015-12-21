@@ -10,6 +10,8 @@
 #include <linux/wait.h>
 #include <linux/hash.h>
 #include <linux/kthread.h>
+#include <linux/slab.h>
+#include <linux/okernel.h>
 
 void __init_waitqueue_head(wait_queue_head_t *q, const char *name, struct lock_class_key *key)
 {
@@ -294,6 +296,11 @@ int autoremove_wake_function(wait_queue_t *wait, unsigned mode, int sync, void *
 
 	if (ret)
 		list_del_init(&wait->task_list);
+
+	/* We allocated the wait queue from the heap if in nr mode (for the moment) */
+	if(is_in_vmx_nr_mode()){
+		kfree(wait);
+	}
 	return ret;
 }
 EXPORT_SYMBOL(autoremove_wake_function);
