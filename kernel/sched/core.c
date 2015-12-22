@@ -3198,7 +3198,6 @@ asmlinkage __visible void __sched schedule(void)
 			BUG();
 		}
 		
-		ti = current_thread_info();
 		printk(KERN_ERR "NR: schedule in_atomic(): %d, irqs_disabled(): %d, pid: %d, name: %s\n",
 		       in_atomic(), irqs_disabled(), current->pid, current->comm);
 		printk(KERN_ERR "NR: schedule preempt_count (%#x) rcu_preempt_depth (%#x) saved preempt (%#x)\n",
