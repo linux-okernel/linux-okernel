@@ -569,7 +569,8 @@ int clone_kstack2(struct vmx_vcpu *vcpu)
 	HDEBUG(("kernel thread_info (tsk->stack) vaddr (%#lx) paddr (%#lx) top of stack (%#lx)\n",
 		k_stack, __pa(k_stack), current_top_of_stack()));
 
-	for(i = 0; i < n_pages; i++){
+        //for(i = 0; i < n_pages; i++){
+	for(i = 0; i < 1; i++){
 		paddr = __pa(k_stack + i*PAGESIZE);
 		HDEBUG(("ept page clone on (%#lx)\n", (unsigned long)paddr));
 		/* also need replace_ept_contiguous_region */
@@ -2425,16 +2426,6 @@ static unsigned long k_stack;
 
 int vmx_launch(void)
 {
-	//unsigned long flags;
-
-		
-	
-	//struct thread_info_t *nr_ti;
-	//struct thread_info_t *r_ti;
-
-	//struct task_struct *orig_tsk = current;
-	//struct task_struct *cloned_tsk;
-		
 	c_rip = cloned_thread.rip;
 
 	HDEBUG(("c_rip: (#%#lx)\n", c_rip));
