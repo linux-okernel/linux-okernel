@@ -2400,24 +2400,36 @@ extern void do_page_fault_r(struct pt_regs *regs, unsigned long error_code, unsi
 /**
  * vmx_launch - the main loop for a cloned VMX okernel process (thread)
  */
+
+static unsigned long rsp;
+static unsigned long rbp;
+static unsigned long new_rsp;
+static unsigned long new_rbp;
+static u64 *reserved_stack;
+static u64 *tos;
+static unsigned long in_use;
+static int ret = 0;
+static unsigned long c_rip;	
+static struct vmx_vcpu *vcpu;
+static int schedule_ok = 0;
+static unsigned long cloned_rflags;
+static int done = 0;
+static union {
+	struct intr_info s;
+	ulong v;
+} vii;
+static unsigned long cr2;
+static unsigned long err;
+static struct pt_regs regs;
+static unsigned long k_stack;
+
 int vmx_launch(void)
 {
 	//unsigned long flags;
-	int ret = 0;
-	unsigned long c_rip;	
-	struct vmx_vcpu *vcpu;
-	int schedule_ok = 0;
-	unsigned long cloned_rflags;
-	int done = 0;
-	union {
-		struct intr_info s;
-		ulong v;
-	} vii;
-	unsigned long cr2;
-	unsigned long err;
-	struct pt_regs regs;
 
-	struct thread_info_t *nr_ti;
+		
+	
+	//struct thread_info_t *nr_ti;
 	//struct thread_info_t *r_ti;
 
 	//struct task_struct *orig_tsk = current;
@@ -2435,10 +2447,54 @@ int vmx_launch(void)
 	printk(KERN_ERR "vmx: created VCPU (VPID %d)\n",
 	       vcpu->vpid);
 
+#if 1
 	if(!clone_kstack2(vcpu)){
 		printk(KERN_ERR "okernel: clone kstack failed.\n");
 		return 0;
 	}
+#endif
+	/* Need to take a copy of the orignal stack contents, restore when we leave */
+	in_use = current_top_of_stack() - current_stack_pointer();
+
+	k_stack = (unsigned long)current->stack;
+
+	reserved_stack = (u64 *)(k_stack + 2*PAGE_SIZE);
+
+	HDEBUG(("reset stack to top of middle page for orig thread: in use (%lu) new top (%#lx)\n",
+		in_use, (unsigned long)*reserved_stack));
+	
+	HDEBUG(("kernel thread_info (tsk->stack) vaddr (%#lx) paddr (%#lx) top of stack (%#lx)\n",
+		k_stack, __pa(k_stack), current_top_of_stack()));
+
+
+	asm volatile ("mov %%rbp,%0" : "=rm" (rbp));
+	HDEBUG(("original thread rbp currently  (%#lx)\n", rbp));
+	
+
+	asm volatile ("mov %%rsp,%0" : "=rm" (rsp));
+	HDEBUG(("orginal thread rsp currently  (%#lx)\n", rsp));
+
+	tos = (u64 *)current_top_of_stack();
+
+	memcpy(reserved_stack, tos, in_use);
+
+	//asm volatile ("mov %%rsp,%0" : "=rm" (rsp));
+	new_rsp = rsp - 2*PAGE_SIZE;
+	new_rbp = rbp - 2*PAGE_SIZE;
+
+	HDEBUG(("setting rsp to (%#lx) bsp to (%#lx)\n", new_rsp, new_rbp));
+
+	asm volatile ("mov %0, %%rbp": : "r" (new_rbp));
+	asm volatile ("mov %0, %%rsp": : "r" (new_rsp));
+	
+
+	//asm("mov reserved_stack, %%rsp");
+	
+	// getting sp
+	//unsigned long sp;
+	//asm("mov %%rsp,%0" : "=g" (sp));
+
+
 #if 1
 	vcpu->cloned_tsk = current;
 #else
