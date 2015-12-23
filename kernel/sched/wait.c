@@ -438,7 +438,8 @@ int __sched out_of_line_wait_on_bit(void *word, int bit,
 	wait_queue_t q;
 	
 	if(is_in_vmx_nr_mode()){
-		printk(KERN_ERR "NR: out_of_line_wait_on_bit.\n");
+		printk(KERN_ERR "NR: out_of_line_wait_on_bit (%#lx)\n",
+		       (unsigned long)word);
 		wait = kmalloc(sizeof(struct wait_bit_queue), GFP_KERNEL);
 		memset(wait, 0, sizeof(struct wait_bit_queue));
 		init_wait(&q);

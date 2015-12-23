@@ -3065,7 +3065,13 @@ static int submit_bh_wbc(int rw, struct buffer_head *bh,
 	if (buffer_prio(bh))
 		rw |= REQ_PRIO;
 
+	if(in_vmx_nr_mode()){
+		printk(KERN_ERR "N: submit_bio bh (%#lx)\n", (unsigned long)bio->bi_private);
+	}
 	submit_bio(rw, bio);
+	if(in_vmx_nr_mode()){
+		printk(KERN_ERR "N: submit_bio bh (%#lx) done.\n", (unsigned long)bio->bi_private);
+	}
 	return 0;
 }
 
