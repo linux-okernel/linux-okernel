@@ -423,6 +423,7 @@ extern signed long schedule_timeout_interruptible(signed long timeout);
 extern signed long schedule_timeout_killable(signed long timeout);
 extern signed long schedule_timeout_uninterruptible(signed long timeout);
 asmlinkage void schedule(void);
+asmlinkage void schedule_r_mode(void);
 extern void schedule_preempt_disabled(void);
 
 extern long io_schedule_timeout(long timeout);

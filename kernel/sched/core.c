@@ -3207,6 +3207,9 @@ asmlinkage __visible void __sched schedule(void)
 		printk(KERN_ERR "NR: current->lockdep_depth (%d)\n", current->lockdep_depth);
 		//BUG_ON(current->state == TASK_INTERRUPTIBLE);
 #endif
+		dump_stack();
+		sched_submit_work(tsk);
+		
 		vmcall(VMCALL_SCHED);
 	} else {
 		sched_submit_work(tsk);
@@ -3235,6 +3238,23 @@ asmlinkage __visible void __sched schedule(void)
 	}
 }
 EXPORT_SYMBOL(schedule);
+
+asmlinkage __visible void __sched schedule_r_mode(void)
+{
+	//struct task_struct *tsk = current;
+	
+	do {
+		preempt_disable();
+#ifdef CONFIG_OKERNEL
+		okernel_schedule();
+#else
+		__schedule();
+#endif
+		sched_preempt_enable_no_resched();
+	} while (need_resched());
+}
+EXPORT_SYMBOL(schedule_r_mode);
+
 
 #ifdef CONFIG_CONTEXT_TRACKING
 asmlinkage __visible void __sched schedule_user(void)

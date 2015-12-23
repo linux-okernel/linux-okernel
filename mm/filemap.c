@@ -706,8 +706,13 @@ EXPORT_SYMBOL(page_waitqueue);
 
 void wait_on_page_bit(struct page *page, int bit_nr)
 {
+	
 	DEFINE_WAIT_BIT(wait, &page->flags, bit_nr);
 
+	if(is_in_vmx_nr_mode()){
+		printk(KERN_ERR "NR: wait_on_page_bit called.\n");
+	}
+	
 	if (test_bit(bit_nr, &page->flags))
 		__wait_on_bit(page_waitqueue(page), &wait, bit_wait_io,
 							TASK_UNINTERRUPTIBLE);
@@ -717,7 +722,11 @@ EXPORT_SYMBOL(wait_on_page_bit);
 int wait_on_page_bit_killable(struct page *page, int bit_nr)
 {
 	DEFINE_WAIT_BIT(wait, &page->flags, bit_nr);
-
+	
+	if(is_in_vmx_nr_mode()){
+		printk(KERN_ERR "NR: wait_on_page_bit_killable called.\n");
+	}
+	
 	if (!test_bit(bit_nr, &page->flags))
 		return 0;
 
@@ -730,6 +739,10 @@ int wait_on_page_bit_killable_timeout(struct page *page,
 {
 	DEFINE_WAIT_BIT(wait, &page->flags, bit_nr);
 
+	if(is_in_vmx_nr_mode()){
+		printk(KERN_ERR "NR: wait_on_page_bit_killable_timeout called.\n");
+	}
+	
 	wait.key.timeout = jiffies + timeout;
 	if (!test_bit(bit_nr, &page->flags))
 		return 0;
@@ -841,12 +854,8 @@ void __lock_page(struct page *page)
 		printk(KERN_ERR "NR: __lock_page.\n");
 		wait = kmalloc(sizeof(struct wait_bit_queue), GFP_KERNEL);
 		memset(wait, 0, sizeof(struct wait_bit_queue));
-		//q = kmalloc(sizeof(wait_queue_t), GFP_KERNEL);
-		//memset(q, 0, sizeof(wait_queue_t));
-
 		init_wait(&q);
 		q.func = wake_bit_function;
-		
 		wait->key.flags = &page->flags;
 		wait->key.bit_nr = PG_locked;
 		wait->wait = q;
@@ -870,12 +879,8 @@ int __lock_page_killable(struct page *page)
 		printk(KERN_ERR "NR: __lock_page_killable.\n");
 		wait = kmalloc(sizeof(struct wait_bit_queue), GFP_KERNEL);
 		memset(wait, 0, sizeof(struct wait_bit_queue));
-		//q = kmalloc(sizeof(wait_queue_t), GFP_KERNEL);
-		//memset(q, 0, sizeof(wait_queue_t));
-		
 		init_wait(&q);
 		q.func = wake_bit_function;
-		
 		wait->key.flags = &page->flags;
 		wait->key.bit_nr = PG_locked;
 		wait->wait = q;

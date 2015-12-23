@@ -1073,8 +1073,19 @@ static inline void blk_schedule_flush_plug(struct task_struct *tsk)
 {
 	struct blk_plug *plug = tsk->plug;
 
-	if (plug)
+	if(is_in_vmx_nr_mode()){
+		printk(KERN_ERR "N: blk_schedule_flush_plug 0.\n");
+	}
+	if (plug){
+		if(is_in_vmx_nr_mode()){
+			printk(KERN_ERR "N: blk_schedule_flush_plug - something to do...\n");
+		}
 		blk_flush_plug_list(plug, true);
+	} else {
+		if(is_in_vmx_nr_mode()){
+			printk(KERN_ERR "N: blk_schedule_flush_plug - Nothing to do.\n");
+		}
+	}
 }
 
 static inline bool blk_needs_flush_plug(struct task_struct *tsk)

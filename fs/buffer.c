@@ -3418,6 +3418,12 @@ int bh_submit_read(struct buffer_head *bh)
 {
 	BUG_ON(!buffer_locked(bh));
 
+
+	if(is_in_vmx_nr_mode()){
+		printk(KERN_ERR "bh_submit_read (%#lx)\n",
+		       (unsigned long)bh);
+	}
+	
 	if (buffer_uptodate(bh)) {
 		unlock_buffer(bh);
 		return 0;
@@ -3427,6 +3433,13 @@ int bh_submit_read(struct buffer_head *bh)
 	bh->b_end_io = end_buffer_read_sync;
 	submit_bh(READ, bh);
 	wait_on_buffer(bh);
+
+	if(is_in_vmx_nr_mode()){
+		printk(KERN_ERR "bh_submit_read (%#lx) done.\n",
+		       (unsigned long)bh);
+	}
+
+
 	if (buffer_uptodate(bh))
 		return 0;
 	return -EIO;

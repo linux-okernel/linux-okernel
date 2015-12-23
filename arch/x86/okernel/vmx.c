@@ -2350,7 +2350,11 @@ out:
 		default:
 			HDEBUG(("current (OTHER STATE)\n"));
 		}
-		
+
+		printk(KERN_ERR "R: state=%lx set at [<%p>] %pS\n",
+		       current->state,
+		       (void *)current->task_state_change,
+		       (void *)current->task_state_change);
 
                 /* Re-sync cloned-thread thread_info */
 		printk(KERN_ERR "R: syncing cloned thread_info state (NR->R)...\n");
@@ -2359,7 +2363,7 @@ out:
 
 		printk(KERN_ERR "R: in calling schedule...\n");
 		asm volatile("xchg %bx, %bx");
-		schedule();
+		schedule_r_mode();
 		/* Re-sync cloned-thread thread_info */
 		printk(KERN_ERR "R: syncing cloned thread_info state (R->NR)...\n");
 		asm volatile("xchg %bx, %bx");
@@ -2412,6 +2416,9 @@ int vmx_launch(void)
 	unsigned long cr2;
 	unsigned long err;
 	struct pt_regs regs;
+
+	struct thread_info_t *nr_ti;
+	//struct thread_info_t *r_ti;
 
 	//struct task_struct *orig_tsk = current;
 	//struct task_struct *cloned_tsk;
@@ -2466,7 +2473,6 @@ fast_path:
 				continue;
 			}
 		}
-
 		
 		/**************************** GO FOR IT ***************************/
 		
@@ -2507,8 +2513,11 @@ fast_path:
 
 		vmx_put_cpu(vcpu);
 
-		if (ret == EXIT_REASON_VMCALL)
+		if (ret == EXIT_REASON_VMCALL){
+			schedule_ok = 0;
 			vmx_handle_vmcall(vcpu);
+			schedule_ok = 0;
+		}
 		else if (ret == EXIT_REASON_CPUID)
 			vmx_handle_cpuid(vcpu);
 		else if (ret == EXIT_REASON_EPT_VIOLATION)
