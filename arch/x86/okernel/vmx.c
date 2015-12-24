@@ -2224,7 +2224,9 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu)
 	struct hrtimer_sleeper t;
 	int ret = 0;
 	unsigned long slack;
-
+	unsigned long rbp;
+	unsigned long rsp;
+	
 
         //struct hrtimer_sleeper *t;
 	//enum hrtimer_mode mode;
@@ -2244,7 +2246,12 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu)
 	printk(KERN_ERR "R: preempt_count (%d) rcu_preempt_depth (%d)\n",
 	       preempt_count(), rcu_preempt_depth());
 	printk(KERN_ERR "R: current->lockdep_depth (%d)\n", current->lockdep_depth);
-	
+
+	asm volatile ("mov %%rbp,%0" : "=rm" (rbp));
+	printk(KERN_ERR "R: rbp currently  (%#lx)\n", rbp);
+	asm volatile ("mov %%rsp,%0" : "=rm" (rsp));
+	printk(KERN_ERR "R: rsp currently  (%#lx)\n", rsp);
+		
 	switch(cmd){
 	case VMCALL_DO_NANOSLEEP:
 		printk(KERN_ERR "R: VMCALL_DO_NANOSLEEP emulation...\n");
