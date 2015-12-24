@@ -2,6 +2,7 @@
 #define _LINUX_BLKDEV_H
 
 #include <linux/sched.h>
+#include <linux/okernel.h>
 
 #ifdef CONFIG_BLOCK
 

@@ -1925,109 +1925,52 @@ end_io:
  * means the bio should NOT be touched after the call to ->make_request_fn.
  */
 void generic_make_request(struct bio *bio)
-{	
+{
 	struct bio_list bio_list_on_stack;
-	struct bio_list *bio_list_on_heap;
-	
-	
-	if( is_in_vmx_nr_mode()){
-		printk(KERN_ERR "N: generic_make_request 0\n");
 
-		bio_list_on_heap = kmalloc(sizeof(struct bio_list), GFP_KERNEL);
-		
-		if (!generic_make_request_checks(bio))
-			return;
-		
-		printk(KERN_ERR "N: generic_make_request 2\n");
-		
-		/*
-		 * We only want one ->make_request_fn to be active at a time, else
-		 * stack usage with stacked devices could be a problem.  So use
-		 * current->bio_list to keep a list of requests submited by a
-		 * make_request_fn function.  current->bio_list is also used as a
-		 * flag to say if generic_make_request is currently active in this
-		 * task or not.  If it is NULL, then no make_request is active.  If
-		 * it is non-NULL, then a make_request is active, and new requests
-		 * should be added at the tail
-		 */
-		if (current->bio_list) {
-			bio_list_add(current->bio_list, bio);
-			return;
-		}
-
-		printk(KERN_ERR "N: generic_make_request 3\n");
-		
-		/* following loop may be a bit non-obvious, and so deserves some
-		 * explanation.
-		 * Before entering the loop, bio->bi_next is NULL (as all callers
-		 * ensure that) so we have a list with a single bio.
-		 * We pretend that we have just taken it off a longer list, so
-		 * we assign bio_list to a pointer to the bio_list_on_stack,
-		 * thus initialising the bio_list of new bios to be
-		 * added.  ->make_request() may indeed add some more bios
-		 * through a recursive call to generic_make_request.  If it
-		 * did, we find a non-NULL value in bio_list and re-enter the loop
-		 * from the top.  In this case we really did just take the bio
-		 * of the top of the list (no pretending) and so remove it from
-		 * bio_list, and call into ->make_request() again.
-		 */
-		BUG_ON(bio->bi_next);
-		bio_list_init(bio_list_on_heap);
-		current->bio_list = bio_list_on_heap;
-		do {
-			struct request_queue *q = bdev_get_queue(bio->bi_bdev);
-			
-			q->make_request_fn(q, bio);
-			
-			bio = bio_list_pop(current->bio_list);
-		} while (bio);
-		current->bio_list = NULL; /* deactivate */
-		printk(KERN_ERR "N: generic_make_request 4\n");
-	} else {
-		if (!generic_make_request_checks(bio))
+	if (!generic_make_request_checks(bio))
 		return;
 
-		/*
-		 * We only want one ->make_request_fn to be active at a time, else
-		 * stack usage with stacked devices could be a problem.  So use
-		 * current->bio_list to keep a list of requests submited by a
-		 * make_request_fn function.  current->bio_list is also used as a
-		 * flag to say if generic_make_request is currently active in this
-		 * task or not.  If it is NULL, then no make_request is active.  If
-		 * it is non-NULL, then a make_request is active, and new requests
-		 * should be added at the tail
-		 */
-		if (current->bio_list) {
-			bio_list_add(current->bio_list, bio);
-			return;
-		}
-		
-		/* following loop may be a bit non-obvious, and so deserves some
-		 * explanation.
-		 * Before entering the loop, bio->bi_next is NULL (as all callers
-		 * ensure that) so we have a list with a single bio.
-		 * We pretend that we have just taken it off a longer list, so
-		 * we assign bio_list to a pointer to the bio_list_on_stack,
-		 * thus initialising the bio_list of new bios to be
-		 * added.  ->make_request() may indeed add some more bios
-		 * through a recursive call to generic_make_request.  If it
-		 * did, we find a non-NULL value in bio_list and re-enter the loop
-		 * from the top.  In this case we really did just take the bio
-		 * of the top of the list (no pretending) and so remove it from
-		 * bio_list, and call into ->make_request() again.
-		 */
-		BUG_ON(bio->bi_next);
-		bio_list_init(&bio_list_on_stack);
-		current->bio_list = &bio_list_on_stack;
-		do {
-			struct request_queue *q = bdev_get_queue(bio->bi_bdev);
-			
-			q->make_request_fn(q, bio);
-			
-			bio = bio_list_pop(current->bio_list);
-		} while (bio);
-		current->bio_list = NULL; /* deactivate */
+	/*
+	 * We only want one ->make_request_fn to be active at a time, else
+	 * stack usage with stacked devices could be a problem.  So use
+	 * current->bio_list to keep a list of requests submited by a
+	 * make_request_fn function.  current->bio_list is also used as a
+	 * flag to say if generic_make_request is currently active in this
+	 * task or not.  If it is NULL, then no make_request is active.  If
+	 * it is non-NULL, then a make_request is active, and new requests
+	 * should be added at the tail
+	 */
+	if (current->bio_list) {
+		bio_list_add(current->bio_list, bio);
+		return;
 	}
+
+	/* following loop may be a bit non-obvious, and so deserves some
+	 * explanation.
+	 * Before entering the loop, bio->bi_next is NULL (as all callers
+	 * ensure that) so we have a list with a single bio.
+	 * We pretend that we have just taken it off a longer list, so
+	 * we assign bio_list to a pointer to the bio_list_on_stack,
+	 * thus initialising the bio_list of new bios to be
+	 * added.  ->make_request() may indeed add some more bios
+	 * through a recursive call to generic_make_request.  If it
+	 * did, we find a non-NULL value in bio_list and re-enter the loop
+	 * from the top.  In this case we really did just take the bio
+	 * of the top of the list (no pretending) and so remove it from
+	 * bio_list, and call into ->make_request() again.
+	 */
+	BUG_ON(bio->bi_next);
+	bio_list_init(&bio_list_on_stack);
+	current->bio_list = &bio_list_on_stack;
+	do {
+		struct request_queue *q = bdev_get_queue(bio->bi_bdev);
+
+		q->make_request_fn(q, bio);
+
+		bio = bio_list_pop(current->bio_list);
+	} while (bio);
+	current->bio_list = NULL; /* deactivate */
 }
 EXPORT_SYMBOL(generic_make_request);
 

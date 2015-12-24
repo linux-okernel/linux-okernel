@@ -10,8 +10,6 @@
 #include <linux/wait.h>
 #include <linux/hash.h>
 #include <linux/kthread.h>
-#include <linux/slab.h>
-#include <linux/okernel.h>
 
 void __init_waitqueue_head(wait_queue_head_t *q, const char *name, struct lock_class_key *key)
 {
@@ -296,13 +294,6 @@ int autoremove_wake_function(wait_queue_t *wait, unsigned mode, int sync, void *
 
 	if (ret)
 		list_del_init(&wait->task_list);
-
-	/* We allocated the wait queue from the heap if in nr mode (for the moment) */
-	if(is_in_vmx_nr_mode()){
-		printk(KERN_ERR "NR: removing wake function for addr (%#lx)\n",
-		       (unsigned long)key);
-		kfree(wait);
-	}
 	return ret;
 }
 EXPORT_SYMBOL(autoremove_wake_function);
@@ -378,18 +369,12 @@ int wake_bit_function(wait_queue_t *wait, unsigned mode, int sync, void *arg)
 	struct wait_bit_queue *wait_bit
 		= container_of(wait, struct wait_bit_queue, wait);
 
-	if(is_in_vmx_nr_mode()){
-		printk(KERN_ERR "NR: wake_bit_function called.\n");
-	}
 	if (wait_bit->key.flags != key->flags ||
 			wait_bit->key.bit_nr != key->bit_nr ||
-	    test_bit(key->bit_nr, key->flags)){
-		//printk(KERN_ERR "NR: wake_bit_function return 0.\n");
+			test_bit(key->bit_nr, key->flags))
 		return 0;
-	} else {
-		//printk(KERN_ERR "NR: wake_bit_function return autoremove.\n");
+	else
 		return autoremove_wake_function(wait, mode, sync, key);
-	}
 }
 EXPORT_SYMBOL(wake_bit_function);
 
@@ -403,28 +388,12 @@ __wait_on_bit(wait_queue_head_t *wq, struct wait_bit_queue *q,
 	      wait_bit_action_f *action, unsigned mode)
 {
 	int ret = 0;
-	
+
 	do {
-		if(is_in_vmx_nr_mode()){
-			printk(KERN_ERR "NR: __wait_on_bit (prepare_to_wait) called - addr (%#lx)\n",
-			       (unsigned long)q->key.flags);
-		}
 		prepare_to_wait(wq, &q->wait, mode);
-		if (test_bit(q->key.bit_nr, q->key.flags)){
-			if(is_in_vmx_nr_mode()){
-				printk(KERN_ERR "NR: __wait_on_bit (action fired) - addr (%#lx)\n",
-				       (unsigned long)q->key.flags);
-			}
+		if (test_bit(q->key.bit_nr, q->key.flags))
 			ret = (*action)(&q->key);
-		}
-		if(is_in_vmx_nr_mode()){
-			printk(KERN_ERR "NR: __wait_on_bit after action called - addr (%#lx)\n",
-			       (unsigned long)q->key.flags);
-		}
 	} while (test_bit(q->key.bit_nr, q->key.flags) && !ret);
-	if(is_in_vmx_nr_mode()){
-		printk(KERN_ERR "NR: __wait_on_bit finishing wait.\n");
-	}
 	finish_wait(wq, &q->wait);
 	return ret;
 }
@@ -434,26 +403,10 @@ int __sched out_of_line_wait_on_bit(void *word, int bit,
 				    wait_bit_action_f *action, unsigned mode)
 {
 	wait_queue_head_t *wq = bit_waitqueue(word, bit);
-	struct wait_bit_queue *wait;
-	wait_queue_t q;
-	
-	if(is_in_vmx_nr_mode()){
-		printk(KERN_ERR "NR: out_of_line_wait_on_bit (%#lx)\n",
-		       (unsigned long)word);
-		wait = kmalloc(sizeof(struct wait_bit_queue), GFP_KERNEL);
-		memset(wait, 0, sizeof(struct wait_bit_queue));
-		init_wait(&q);
-		q.func = wake_bit_function;
-		wait->key.flags = word;
-		wait->key.bit_nr = bit;
-		wait->wait = q;
-		return __wait_on_bit(wq, wait, action, mode);
-	} else {
-		DEFINE_WAIT_BIT(wait, word, bit);
-		return __wait_on_bit(wq, &wait, action, mode);
-	}
-}
+	DEFINE_WAIT_BIT(wait, word, bit);
 
+	return __wait_on_bit(wq, &wait, action, mode);
+}
 EXPORT_SYMBOL(out_of_line_wait_on_bit);
 
 int __sched out_of_line_wait_on_bit_timeout(
@@ -472,54 +425,19 @@ int __sched
 __wait_on_bit_lock(wait_queue_head_t *wq, struct wait_bit_queue *q,
 			wait_bit_action_f *action, unsigned mode)
 {
-	if(is_in_vmx_nr_mode()){
-		printk(KERN_ERR "__wait_on_bit_lock 0.\n");
-	}
 	do {
 		int ret;
 
 		prepare_to_wait_exclusive(wq, &q->wait, mode);
-
-		if(is_in_vmx_nr_mode()){
-			printk(KERN_ERR "__wait_on_bit_lock 0.\n");
-		}
-
 		if (!test_bit(q->key.bit_nr, q->key.flags))
 			continue;
-
-		if(is_in_vmx_nr_mode()){
-			printk(KERN_ERR "__wait_on_bit_lock 1.\n");
-		}
-		
 		ret = action(&q->key);
-
-		if(is_in_vmx_nr_mode()){
-			printk(KERN_ERR "__wait_on_bit_lock 2.\n");
-		}
-		
 		if (!ret)
 			continue;
-
-		if(is_in_vmx_nr_mode()){
-			printk(KERN_ERR "__wait_on_bit_lock 3.\n");
-		}
 		abort_exclusive_wait(wq, &q->wait, mode, &q->key);
-
-		if(is_in_vmx_nr_mode()){
-			printk(KERN_ERR "__wait_on_bit_lock 4.\n");
-		}
 		return ret;
 	} while (test_and_set_bit(q->key.bit_nr, q->key.flags));
-
-	if(is_in_vmx_nr_mode()){
-		printk(KERN_ERR "__wait_on_bit_lock 5.\n");
-	}
-
 	finish_wait(wq, &q->wait);
-	
-	if(is_in_vmx_nr_mode()){
-		printk(KERN_ERR "__wait_on_bit_lock done.\n");
-}
 	return 0;
 }
 EXPORT_SYMBOL(__wait_on_bit_lock);
@@ -537,9 +455,6 @@ EXPORT_SYMBOL(out_of_line_wait_on_bit_lock);
 void __wake_up_bit(wait_queue_head_t *wq, void *word, int bit)
 {
 	struct wait_bit_key key = __WAIT_BIT_KEY_INITIALIZER(word, bit);
-
-	//printk(KERN_ERR "NR(%d) __wake_up_bit addr (%#lx)\n",
-	//       is_in_vmx_nr_mode(), (unsigned long)key.flags);
 	if (waitqueue_active(wq))
 		__wake_up(wq, TASK_NORMAL, 1, &key);
 }
@@ -668,10 +583,6 @@ EXPORT_SYMBOL(wake_up_atomic_t);
 
 __sched int bit_wait(struct wait_bit_key *word)
 {
-	if(is_in_vmx_nr_mode()){
-		printk(KERN_ERR "NR: bit_wait called.\n");
-		dump_stack();
-	}
 	if (signal_pending_state(current->state, current))
 		return 1;
 	schedule();
@@ -681,10 +592,6 @@ EXPORT_SYMBOL(bit_wait);
 
 __sched int bit_wait_io(struct wait_bit_key *word)
 {
-	//printk(KERN_ERR "NR(%d) bit_wait_io called - addr (%#lx)\n",
-	//       is_in_vmx_nr_mode(), (unsigned long)word->flags);
-	//dump_stack();
-
 	if (signal_pending_state(current->state, current))
 		return 1;
 	io_schedule();
@@ -695,11 +602,6 @@ EXPORT_SYMBOL(bit_wait_io);
 __sched int bit_wait_timeout(struct wait_bit_key *word)
 {
 	unsigned long now = READ_ONCE(jiffies);
-
-	if(is_in_vmx_nr_mode()){
-		printk(KERN_ERR "NR: bit_wait_timeout called.\n");
-	}
-
 	if (signal_pending_state(current->state, current))
 		return 1;
 	if (time_after_eq(now, word->timeout))
@@ -712,11 +614,6 @@ EXPORT_SYMBOL_GPL(bit_wait_timeout);
 __sched int bit_wait_io_timeout(struct wait_bit_key *word)
 {
 	unsigned long now = READ_ONCE(jiffies);
-
-	if(is_in_vmx_nr_mode()){
-		printk(KERN_ERR "NR: bit_wait_io_timeout called.\n");
-	}
-
 	if (signal_pending_state(current->state, current))
 		return 1;
 	if (time_after_eq(now, word->timeout))

@@ -6,7 +6,6 @@
 #include <linux/list.h>
 #include <linux/stddef.h>
 #include <linux/spinlock.h>
-#include <linux/okernel.h>
 #include <asm/current.h>
 #include <uapi/linux/wait.h>
 
@@ -1010,23 +1009,9 @@ wait_on_bit(unsigned long *word, int bit, unsigned mode)
 static inline int
 wait_on_bit_io(unsigned long *word, int bit, unsigned mode)
 {
-	//if(is_in_vmx_nr_mode()){
-	//	printk(KERN_ERR "NR: wait_on_bit_io 0.\n");
-	//}
 	might_sleep();
-#if 0
-	if(is_in_vmx_nr_mode()){
-		printk(KERN_ERR "NR: try to force wait in wait_on_bit_io...\n");
-		if (!test_bit(bit, word)){
-			printk(KERN_ERR "NR: even though condition true.\n");
-		} else {
-			printk(KERN_ERR "NR: condition not true yet.\n");
-		}
-	} else {
-#endif		
-        if (!test_bit(bit, word))
-	       return 0;
-	
+	if (!test_bit(bit, word))
+		return 0;
 	return out_of_line_wait_on_bit(word, bit,
 				       bit_wait_io,
 				       mode);
