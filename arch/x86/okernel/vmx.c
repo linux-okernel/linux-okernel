@@ -2201,7 +2201,7 @@ static int vmx_handle_nmi_exception(struct vmx_vcpu *vcpu)
 	return -EIO;
 }
 
-extern int __sched do_nanosleep(struct hrtimer_sleeper *t, enum hrtimer_mode mode);
+
 
 void vmx_handle_vmcall(struct vmx_vcpu *vcpu)
 {
@@ -2210,20 +2210,6 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu)
 	struct thread_info *nr_ti;
 	struct thread_info *r_ti;
 	unsigned int cloned_tsk_state;
-	unsigned long arg1;
-	unsigned long arg2;
-	unsigned long arg3;
-	unsigned long arg4;
-
-	struct timespec *rqtp;
-	struct timespec __user *rmtp;
-	enum hrtimer_mode mode;
-	clockid_t clockid;
-
-	struct restart_block *restart;
-	struct hrtimer_sleeper t;
-	int ret = 0;
-	unsigned long slack;
 	unsigned long rbp;
 	unsigned long rsp;
 	
@@ -2253,78 +2239,7 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu)
 	printk(KERN_ERR "R: rsp currently  (%#lx)\n", rsp);
 		
 	switch(cmd){
-	case VMCALL_DO_NANOSLEEP:
-		printk(KERN_ERR "R: VMCALL_DO_NANOSLEEP emulation...\n");
-
-		arg1 = vcpu->regs[VCPU_REGS_RBX];
-		arg2 = vcpu->regs[VCPU_REGS_RCX];
-		arg3 = vcpu->regs[VCPU_REGS_R10];
-		arg4 = vcpu->regs[VCPU_REGS_R11];
-
-		rqtp = (struct timespec *)arg1;
-		rmtp = (struct timespec __user *)arg2;
-		mode = (enum hrtimer_mode)arg3;
-		clockid = (clockid_t)arg4;
-
-		printk(KERN_ERR "R: do_nanosleep_emul rqtp (%#lx) rmtp (%#lx) mode (%#lx) clockid (%#lx)\n",
-		       (unsigned long)rqtp, (unsigned long)rmtp, (unsigned long)mode, (unsigned long)clockid);
-		
-		slack = current->timer_slack_ns;
-
-#if 0
-		if (dl_task(current) || rt_task(current))
-			slack = 0;
-#endif
-		
-		printk(KERN_ERR "R: do_nanosleep_emul 1\n");
-		
-		hrtimer_init_on_stack(&t.timer, clockid, mode);
-
-		printk(KERN_ERR "R: do_nanosleep_emul 2\n");
-		
-		hrtimer_set_expires_range_ns(&t.timer, timespec_to_ktime(*rqtp), slack);
-
-		printk(KERN_ERR "R: do_nanosleep_emul 3\n");
-
-		if (do_nanosleep(&t, mode)){
-			printk(KERN_ERR "R: do_nanosleep_emul 4\n");
-			goto out;
-		}
-
-		printk(KERN_ERR "R: do_nanosleep_emul 5\n");
-		
-		/* Absolute timers do not update the rmtp value and restart: */
-		if (mode == HRTIMER_MODE_ABS) {
-			ret = -ERESTARTNOHAND;
-			printk(KERN_ERR "R: do_nanosleep_emul 6\n");
-			goto out;
-		}
-
-		printk(KERN_ERR "R: do_nanosleep_emul 7\n");
-		
-#if 0
-		if (rmtp) {
-			ret = update_rmtp(&t.timer, rmtp);
-			if (ret <= 0)
-				printk(KERN_ERR "R: do_nanosleep_emul 8\n");
-				goto out;
-		}
-#endif
-		printk(KERN_ERR "R: do_nanosleep_emul 9\n");
-		
-		restart = &current->restart_block;
-		restart->fn = hrtimer_nanosleep_restart;
-		restart->nanosleep.clockid = t.timer.base->clockid;
-		restart->nanosleep.rmtp = rmtp;
-		restart->nanosleep.expires = hrtimer_get_expires_tv64(&t.timer);
-		
-		ret = -ERESTART_RESTARTBLOCK;
-out:
-		printk(KERN_ERR "R: do_nanosleep_emul 10\n");
-		destroy_hrtimer_on_stack(&t.timer);
-		printk(KERN_ERR "R: done emulating do_nanosleep ret (%d)\n", ret);
-		asm volatile("xchg %bx, %bx");
-		return;
+	
 	case VMCALL_SCHED:
 		cloned_tsk_state = vcpu->cloned_tsk->state;
 		
@@ -2464,6 +2379,7 @@ int vmx_launch(void)
 	HDEBUG(("kernel thread_info (tsk->stack) vaddr (%#lx) paddr (%#lx) top of stack (%#lx)\n",
 		k_stack, __pa(k_stack), current_top_of_stack()));
 
+	HDEBUG(("sizeof(struct thread_info) (%lu)\n", sizeof(struct thread_info)));
 
 	asm volatile ("mov %%rbp,%0" : "=rm" (rbp));
 	HDEBUG(("original thread rbp currently  (%#lx)\n", rbp));
