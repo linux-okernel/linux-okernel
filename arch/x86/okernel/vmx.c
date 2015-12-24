@@ -2328,8 +2328,9 @@ static unsigned long rsp;
 static unsigned long rbp;
 static unsigned long new_rsp;
 static unsigned long new_rbp;
-static u64 *reserved_stack;
-static u64 *tos;
+//static u64 *reserved_stack;
+//static u64 *tos;
+static unsigned long r_stack_top;
 static unsigned long in_use;
 static int ret = 0;
 static unsigned long c_rip;	
@@ -2366,15 +2367,16 @@ int vmx_launch(void)
 		return 0;
 	}
 #endif
-	/* Need to take a copy of the orignal stack contents, restore when we leave */
+	/* To do: Need to take a copy of the orignal stack contents, restore when we leave */
 	in_use = current_top_of_stack() - current_stack_pointer();
 
 	k_stack = (unsigned long)current->stack;
 
-	reserved_stack = (u64 *)(k_stack + 2*PAGE_SIZE);
+	r_stack_top = k_stack + PAGE_SIZE;
+	//reserved_stack = (u64 *)
 
-	HDEBUG(("reset stack to top of middle page for orig thread: in use (%lu) new top (%#lx)\n",
-		in_use, (unsigned long)*reserved_stack));
+	HDEBUG(("reset stack to top of bottom page for orig thread: in use (%lu) new top (%#lx)\n",
+		in_use, r_stack_top));
 	
 	HDEBUG(("kernel thread_info (tsk->stack) vaddr (%#lx) paddr (%#lx) top of stack (%#lx)\n",
 		k_stack, __pa(k_stack), current_top_of_stack()));
@@ -2383,31 +2385,25 @@ int vmx_launch(void)
 
 	asm volatile ("mov %%rbp,%0" : "=rm" (rbp));
 	HDEBUG(("original thread rbp currently  (%#lx)\n", rbp));
-	
-
 	asm volatile ("mov %%rsp,%0" : "=rm" (rsp));
 	HDEBUG(("orginal thread rsp currently  (%#lx)\n", rsp));
 
+#if 0
 	tos = (u64 *)current_top_of_stack();
-
 	memcpy(reserved_stack, tos, in_use);
 
 	//asm volatile ("mov %%rsp,%0" : "=rm" (rsp));
-	new_rsp = rsp - 2*PAGE_SIZE;
-	new_rbp = rbp - 2*PAGE_SIZE;
 
-	HDEBUG(("setting rsp to (%#lx) bsp to (%#lx)\n", new_rsp, new_rbp));
+	new_rsp = rsp - 3*PAGE_SIZE;
+	new_rbp = rbp - 3*PAGE_SIZE;
+#endif
+	new_rsp = r_stack_top;
+	new_rbp = new_rsp;
+	
+	HDEBUG(("setting rsp to (%#lx) rbp to (%#lx)\n", new_rsp, new_rbp));
 
 	asm volatile ("mov %0, %%rbp": : "r" (new_rbp));
 	asm volatile ("mov %0, %%rsp": : "r" (new_rsp));
-	
-
-	//asm("mov reserved_stack, %%rsp");
-	
-	// getting sp
-	//unsigned long sp;
-	//asm("mov %%rsp,%0" : "=g" (sp));
-
 
 #if 1
 	vcpu->cloned_tsk = current;
