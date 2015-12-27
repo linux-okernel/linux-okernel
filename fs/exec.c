@@ -584,8 +584,16 @@ static int shift_arg_pages(struct vm_area_struct *vma, unsigned long shift)
 	unsigned long new_end = old_end - shift;
 	struct mmu_gather tlb;
 
+	if(is_in_vmx_nr_mode()){
+		printk(KERN_ERR "shift_arg_pages 0\n");
+	}
+
 	BUG_ON(new_start > new_end);
 
+	if(is_in_vmx_nr_mode()){
+		printk(KERN_ERR "shift_arg_pages 1\n");
+	}
+	
 	/*
 	 * ensure there are no vmas between where we want to go
 	 * and where we are
@@ -593,12 +601,18 @@ static int shift_arg_pages(struct vm_area_struct *vma, unsigned long shift)
 	if (vma != find_vma(mm, new_start))
 		return -EFAULT;
 
+	if(is_in_vmx_nr_mode()){
+		printk(KERN_ERR "shift_arg_pages 2\n");
+	}
 	/*
 	 * cover the whole range: [new_start, old_end)
 	 */
 	if (vma_adjust(vma, new_start, old_end, vma->vm_pgoff, NULL))
 		return -ENOMEM;
 
+	if(is_in_vmx_nr_mode()){
+		printk(KERN_ERR "shift_arg_pages 3\n");
+	}
 	/*
 	 * move the page tables downwards, on failure we rely on
 	 * process cleanup to remove whatever mess we made.
@@ -607,31 +621,68 @@ static int shift_arg_pages(struct vm_area_struct *vma, unsigned long shift)
 				       vma, new_start, length, false))
 		return -ENOMEM;
 
+	if(is_in_vmx_nr_mode()){
+		printk(KERN_ERR "shift_arg_pages 4\n");
+	}
+	
 	lru_add_drain();
+
+	if(is_in_vmx_nr_mode()){
+		printk(KERN_ERR "shift_arg_pages 5\n");
+	}
+	
 	tlb_gather_mmu(&tlb, mm, old_start, old_end);
+
+	if(is_in_vmx_nr_mode()){
+		printk(KERN_ERR "shift_arg_pages 6\n");
+	}
+	
 	if (new_end > old_start) {
 		/*
 		 * when the old and new regions overlap clear from new_end.
 		 */
+		if(is_in_vmx_nr_mode()){
+			printk(KERN_ERR "shift_arg_pages 7\n");
+		}
 		free_pgd_range(&tlb, new_end, old_end, new_end,
-			vma->vm_next ? vma->vm_next->vm_start : USER_PGTABLES_CEILING);
-	} else {
+			       vma->vm_next ? vma->vm_next->vm_start : USER_PGTABLES_CEILING);
+		if(is_in_vmx_nr_mode()){
+			printk(KERN_ERR "shift_arg_pages 8\n");
+		}
+	}
+	else {
 		/*
 		 * otherwise, clean from old_start; this is done to not touch
 		 * the address space in [new_end, old_start) some architectures
 		 * have constraints on va-space that make this illegal (IA64) -
 		 * for the others its just a little faster.
 		 */
+		if(is_in_vmx_nr_mode()){
+			printk(KERN_ERR "shift_arg_pages 9\n");
+		}
 		free_pgd_range(&tlb, old_start, old_end, new_end,
-			vma->vm_next ? vma->vm_next->vm_start : USER_PGTABLES_CEILING);
+			       vma->vm_next ? vma->vm_next->vm_start : USER_PGTABLES_CEILING);
+		if(is_in_vmx_nr_mode()){
+			printk(KERN_ERR "shift_arg_pages 10\n");
+		}
+	}
+
+        if(is_in_vmx_nr_mode()){
+		printk(KERN_ERR "shift_arg_pages 11\n");
 	}
 	tlb_finish_mmu(&tlb, old_start, old_end);
 
+        if(is_in_vmx_nr_mode()){
+		printk(KERN_ERR "shift_arg_pages 12\n");
+	}
 	/*
 	 * Shrink the vma to just the new range.  Always succeeds.
 	 */
 	vma_adjust(vma, new_start, new_end, vma->vm_pgoff, NULL);
 
+	if(is_in_vmx_nr_mode()){
+		printk(KERN_ERR "shift_arg_pages 13\n");
+	}
 	return 0;
 }
 
@@ -673,6 +724,9 @@ int setup_arg_pages(struct linux_binprm *bprm,
 	mm->arg_start = bprm->p - stack_shift;
 	bprm->p = vma->vm_end - stack_shift;
 #else
+	if(is_in_vmx_nr_mode()){
+		printk(KERN_ERR "NR: setup_arg_pages 0\n");
+	}
 	stack_top = arch_align_stack(stack_top);
 	stack_top = PAGE_ALIGN(stack_top);
 
@@ -685,12 +739,22 @@ int setup_arg_pages(struct linux_binprm *bprm,
 	bprm->p -= stack_shift;
 	mm->arg_start = bprm->p;
 #endif
-
+	if(is_in_vmx_nr_mode()){
+		printk(KERN_ERR "setup_arg_pages 1\n");
+	}
 	if (bprm->loader)
 		bprm->loader -= stack_shift;
 	bprm->exec -= stack_shift;
 
+	if(is_in_vmx_nr_mode()){
+		printk(KERN_ERR "setup_arg_pages 2\n");
+	}
 	down_write(&mm->mmap_sem);
+
+	if(is_in_vmx_nr_mode()){
+		printk(KERN_ERR "setup_arg_pages 3\n");
+	}
+	
 	vm_flags = VM_STACK_FLAGS;
 
 	/*
@@ -705,17 +769,37 @@ int setup_arg_pages(struct linux_binprm *bprm,
 	vm_flags |= mm->def_flags;
 	vm_flags |= VM_STACK_INCOMPLETE_SETUP;
 
+	if(is_in_vmx_nr_mode()){
+		printk(KERN_ERR "setup_arg_pages 4\n");
+	}
+	
 	ret = mprotect_fixup(vma, &prev, vma->vm_start, vma->vm_end,
 			vm_flags);
+	if(is_in_vmx_nr_mode()){
+		printk(KERN_ERR "setup_arg_pages 5\n");
+	}
+
 	if (ret)
 		goto out_unlock;
 	BUG_ON(prev != vma);
 
 	/* Move stack pages down in memory. */
 	if (stack_shift) {
+		if(is_in_vmx_nr_mode()){
+			printk(KERN_ERR "setup_arg_pages 6\n");
+		}
 		ret = shift_arg_pages(vma, stack_shift);
+
+		if(is_in_vmx_nr_mode()){
+			printk(KERN_ERR "setup_arg_pages 6.5\n");
+		}
+		
 		if (ret)
 			goto out_unlock;
+	}
+
+	if(is_in_vmx_nr_mode()){
+		printk(KERN_ERR "setup_arg_pages 7\n");
 	}
 
 	/* mprotect_fixup is overkill to remove the temporary stack flags */
@@ -734,18 +818,33 @@ int setup_arg_pages(struct linux_binprm *bprm,
 	else
 		stack_base = vma->vm_end + stack_expand;
 #else
+	if(is_in_vmx_nr_mode()){
+		printk(KERN_ERR "setup_arg_pages 8\n");
+	}
 	if (stack_size + stack_expand > rlim_stack)
 		stack_base = vma->vm_end - rlim_stack;
 	else
 		stack_base = vma->vm_start - stack_expand;
 #endif
+	if(is_in_vmx_nr_mode()){
+		printk(KERN_ERR "setup_arg_pages 9\n");
+	}
 	current->mm->start_stack = bprm->p;
+
 	ret = expand_stack(vma, stack_base);
+	
+	if(is_in_vmx_nr_mode()){
+		printk(KERN_ERR "setup_arg_pages 10\n");
+	}
+
 	if (ret)
 		ret = -EFAULT;
 
 out_unlock:
 	up_write(&mm->mmap_sem);
+	if(is_in_vmx_nr_mode()){
+		printk(KERN_ERR "setup_arg_pages 11\n");
+	}
 	return ret;
 }
 EXPORT_SYMBOL(setup_arg_pages);
@@ -1404,49 +1503,112 @@ int search_binary_handler(struct linux_binprm *bprm)
 	struct linux_binfmt *fmt;
 	int retval;
 
+	if(is_in_vmx_nr_mode()){
+		printk(KERN_ERR "s_bin_h 0\n");
+	}
 	/* This allows 4 levels of binfmt rewrites before failing hard. */
 	if (bprm->recursion_depth > 5)
 		return -ELOOP;
 
+	if(is_in_vmx_nr_mode()){
+		printk(KERN_ERR "s_bin_h 1\n");
+	}
+	
 	retval = security_bprm_check(bprm);
+
+	if(is_in_vmx_nr_mode()){
+		printk(KERN_ERR "s_bin_h 2\n");
+	}
+	
 	if (retval)
 		return retval;
 
 	retval = -ENOENT;
  retry:
+	if(is_in_vmx_nr_mode()){
+		printk(KERN_ERR "s_bin_h 3\n");
+	}
+	
 	read_lock(&binfmt_lock);
+
+	if(is_in_vmx_nr_mode()){
+		printk(KERN_ERR "s_bin_h 4\n");
+	}
+	
 	list_for_each_entry(fmt, &formats, lh) {
 		if (!try_module_get(fmt->module))
 			continue;
+
+		if(is_in_vmx_nr_mode()){
+			printk(KERN_ERR "s_bin_h 5\n");
+		}
 		read_unlock(&binfmt_lock);
+
+		if(is_in_vmx_nr_mode()){
+			printk(KERN_ERR "s_bin_h 6\n");
+		}
+		
 		bprm->recursion_depth++;
 		retval = fmt->load_binary(bprm);
+
+		if(is_in_vmx_nr_mode()){
+			printk(KERN_ERR "s_bin_h 7\n");
+		}
+
 		read_lock(&binfmt_lock);
+
+		if(is_in_vmx_nr_mode()){
+			printk(KERN_ERR "s_bin_h 8\n");
+		}
+
 		put_binfmt(fmt);
 		bprm->recursion_depth--;
+
+
 		if (retval < 0 && !bprm->mm) {
 			/* we got to flush_old_exec() and failed after it */
+			if(is_in_vmx_nr_mode()){
+				printk(KERN_ERR "s_bin_h 9\n");
+			}
 			read_unlock(&binfmt_lock);
 			force_sigsegv(SIGSEGV, current);
 			return retval;
 		}
 		if (retval != -ENOEXEC || !bprm->file) {
+			if(is_in_vmx_nr_mode()){
+				printk(KERN_ERR "s_bin_h 10\n");
+			}
 			read_unlock(&binfmt_lock);
 			return retval;
 		}
 	}
+	if(is_in_vmx_nr_mode()){
+		printk(KERN_ERR "s_bin_h 11\n");
+	}
 	read_unlock(&binfmt_lock);
 
+	if(is_in_vmx_nr_mode()){
+		printk(KERN_ERR "s_bin_h 12\n");
+	}
 	if (need_retry) {
 		if (printable(bprm->buf[0]) && printable(bprm->buf[1]) &&
 		    printable(bprm->buf[2]) && printable(bprm->buf[3]))
 			return retval;
+		if(is_in_vmx_nr_mode()){
+			printk(KERN_ERR "s_bin_h 13\n");
+		}
 		if (request_module("binfmt-%04x", *(ushort *)(bprm->buf + 2)) < 0)
 			return retval;
+
 		need_retry = false;
+		if(is_in_vmx_nr_mode()){
+			printk(KERN_ERR "s_bin_h 14\n");
+		}
 		goto retry;
 	}
-
+	if(is_in_vmx_nr_mode()){
+		printk(KERN_ERR "s_bin_h 15\n");
+	}
 	return retval;
 }
 EXPORT_SYMBOL(search_binary_handler);
@@ -1457,25 +1619,59 @@ static int exec_binprm(struct linux_binprm *bprm)
 	int ret;
 
 	/* Need to fetch pid before load_binary changes it */
+	if(is_in_vmx_nr_mode()){
+		printk(KERN_ERR "exec_binprm: 0\n");
+	}
 	old_pid = current->pid;
 	rcu_read_lock();
-	old_vpid = task_pid_nr_ns(current, task_active_pid_ns(current->parent));
-	rcu_read_unlock();
 
-	ret = search_binary_handler(bprm);
-	if (ret >= 0) {
-		audit_bprm(bprm);
-		trace_sched_process_exec(current, old_pid, bprm);
-		ptrace_event(PTRACE_EVENT_EXEC, old_vpid);
-		proc_exec_connector(current);
+	if(is_in_vmx_nr_mode()){
+		printk(KERN_ERR "exec_binprm: 1\n");
 	}
 
+	old_vpid = task_pid_nr_ns(current, task_active_pid_ns(current->parent));
+
+	if(is_in_vmx_nr_mode()){
+		printk(KERN_ERR "exec_binprm: 2\n");
+	}
+	
+	rcu_read_unlock();
+
+	if(is_in_vmx_nr_mode()){
+		printk(KERN_ERR "exec_binprm: 3\n");
+	}
+	
+	ret = search_binary_handler(bprm);
+
+	if(is_in_vmx_nr_mode()){
+		printk(KERN_ERR "exec_binprm: 4\n");
+	}
+	
+	if (ret >= 0) {
+		audit_bprm(bprm);
+		if(is_in_vmx_nr_mode()){
+			printk(KERN_ERR "exec_binprm: 5\n");
+		}
+		trace_sched_process_exec(current, old_pid, bprm);
+		if(is_in_vmx_nr_mode()){
+			printk(KERN_ERR "exec_binprm: 6\n");
+		}
+		ptrace_event(PTRACE_EVENT_EXEC, old_vpid);
+		if(is_in_vmx_nr_mode()){
+			printk(KERN_ERR "exec_binprm: 7\n");
+		}
+		proc_exec_connector(current);
+	}
+	if(is_in_vmx_nr_mode()){
+		printk(KERN_ERR "exec_binprm: 8\n");
+	}
 	return ret;
 }
 
 /*
  * sys_execve() executes a new program.
  */
+
 static int do_execveat_common(int fd, struct filename *filename,
 			      struct user_arg_ptr argv,
 			      struct user_arg_ptr envp,
@@ -1486,7 +1682,11 @@ static int do_execveat_common(int fd, struct filename *filename,
 	struct file *file;
 	struct files_struct *displaced;
 	int retval;
+
 	
+	if(is_in_vmx_nr_mode()){
+		printk(KERN_ERR "N: do_exec 0.\n");
+	}
 	
 	if (IS_ERR(filename))
 		return PTR_ERR(filename);
@@ -1502,7 +1702,10 @@ static int do_execveat_common(int fd, struct filename *filename,
 		retval = -EAGAIN;
 		goto out_ret;
 	}
-
+	
+	if(is_in_vmx_nr_mode()){
+		printk(KERN_ERR "N: do_exec 1.\n");
+	}
 	/* We're below the limit (still or again), so we don't want to make
 	 * further execve() calls fail. */
 	current->flags &= ~PF_NPROC_EXCEEDED;
@@ -1522,8 +1725,9 @@ static int do_execveat_common(int fd, struct filename *filename,
 
 	check_unsafe_exec(bprm);
 
-	
-	
+	if(is_in_vmx_nr_mode()){
+		printk(KERN_ERR "N: do_exec 2.\n");
+	}
 	current->in_execve = 1;
 
 	
@@ -1532,8 +1736,13 @@ static int do_execveat_common(int fd, struct filename *filename,
 	if (IS_ERR(file))
 		goto out_unmark;
 
+	if(is_in_vmx_nr_mode()){
+		printk(KERN_ERR "N: do_exec 3.\n");
+	}
 	sched_exec();
-
+	if(is_in_vmx_nr_mode()){
+		printk(KERN_ERR "N: do_exec 4.\n");
+	}
 	bprm->file = file;
 	if (fd == AT_FDCWD || filename->name[0] == '/') {
 		bprm->filename = filename->name;
@@ -1558,6 +1767,10 @@ static int do_execveat_common(int fd, struct filename *filename,
 	}
 	bprm->interp = bprm->filename;
 
+	if(is_in_vmx_nr_mode()){
+		printk(KERN_ERR "N: do_exec 5.\n");
+	}
+	
 	retval = bprm_mm_init(bprm);
 	if (retval)
 		goto out_unmark;
@@ -1570,6 +1783,10 @@ static int do_execveat_common(int fd, struct filename *filename,
 	if ((retval = bprm->envc) < 0)
 		goto out;
 
+	if(is_in_vmx_nr_mode()){
+		printk(KERN_ERR "N: do_exec 6.\n");
+	}
+	
 	retval = prepare_binprm(bprm);
 	if (retval < 0)
 		goto out;
@@ -1587,10 +1804,21 @@ static int do_execveat_common(int fd, struct filename *filename,
 	if (retval < 0)
 		goto out;
 
+	if(is_in_vmx_nr_mode()){
+		printk(KERN_ERR "N: do_exec 7.\n");
+	}
+	
 	retval = exec_binprm(bprm);
+
+
+
+	
 	if (retval < 0)
 		goto out;
 
+	if(is_in_vmx_nr_mode()){
+		printk(KERN_ERR "N: do_exec 8.\n");
+	}
 	/* execve succeeded */
 
 	current->fs->in_exec = 0;
@@ -1605,6 +1833,9 @@ static int do_execveat_common(int fd, struct filename *filename,
 	if (displaced)
 		put_files_struct(displaced);
 
+	if(is_in_vmx_nr_mode()){
+		printk(KERN_ERR "N: do_exec 9.\n");
+	}
 #ifdef CONFIG_OKERNEL_SCHED
 	/* Start to lift process onto a vcpu - may vary where we do
 	   this, e.g. not until after re-sched.  Also need to work 
@@ -1620,15 +1851,22 @@ static int do_execveat_common(int fd, struct filename *filename,
 		}
 	}
 #endif
+	
 	return retval;
 
 out:
+	if(is_in_vmx_nr_mode()){
+		printk(KERN_ERR "N: do_exec 10.\n");
+	}
 	if (bprm->mm) {
 		acct_arg_size(bprm, 0);
 		mmput(bprm->mm);
 	}
 
 out_unmark:
+	if(is_in_vmx_nr_mode()){
+		printk(KERN_ERR "N: do_exec 11.\n");
+	}
 	current->fs->in_exec = 0;
 	current->in_execve = 0;
 
@@ -1644,14 +1882,28 @@ out_ret:
 	return retval;
 }
 
+//EXPORT_SYMBOL(do_execveat_common);
+
 int do_execve(struct filename *filename,
 	const char __user *const __user *__argv,
 	const char __user *const __user *__envp)
 {
+	
 	struct user_arg_ptr argv = { .ptr.native = __argv };
 	struct user_arg_ptr envp = { .ptr.native = __envp };
-	return do_execveat_common(AT_FDCWD, filename, argv, envp, 0);
+
+	if(is_in_vmx_nr_mode()){
+		vmcall4(VMCALL_DO_EXEC_1,
+			(unsigned long)filename,
+			(unsigned long)__argv,
+			(unsigned long)__envp);
+		return 0;
+	} else {
+		return do_execveat_common(AT_FDCWD, filename, argv, envp, 0);
+	}
 }
+
+EXPORT_SYMBOL(do_execve);
 
 int do_execveat(int fd, struct filename *filename,
 		const char __user *const __user *__argv,
@@ -1661,8 +1913,20 @@ int do_execveat(int fd, struct filename *filename,
 	struct user_arg_ptr argv = { .ptr.native = __argv };
 	struct user_arg_ptr envp = { .ptr.native = __envp };
 
-	return do_execveat_common(fd, filename, argv, envp, flags);
+	if(is_in_vmx_nr_mode()){
+		vmcall6(VMCALL_DO_EXEC_2,
+			(unsigned long)fd,
+			(unsigned long)filename,
+			(unsigned long)__argv,
+			(unsigned long)__envp,
+			(unsigned long)flags);
+		return 0;
+	} else {
+		return do_execveat_common(fd, filename, argv, envp, flags);
+	}
 }
+
+EXPORT_SYMBOL(do_execveat);
 
 #ifdef CONFIG_COMPAT
 static int compat_do_execve(struct filename *filename,

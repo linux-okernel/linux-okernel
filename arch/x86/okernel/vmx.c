@@ -62,6 +62,7 @@
 #include <linux/syscalls.h>
 #include <linux/version.h>
 #include <linux/console.h>
+#include <linux/compat.h>
 
 #include <asm/desc.h>
 #include <asm/vmx.h>
@@ -210,6 +211,14 @@ int vmcall3(unsigned int cmd, unsigned long arg1, unsigned long arg2)
 	return 0;
 }
 
+int vmcall4(unsigned int cmd, unsigned long arg1, unsigned long arg2, unsigned long arg3)
+{
+	/* cid: need to guard the use of this call */
+	register long r10 asm("r10") = arg3;
+	asm volatile(".byte 0x0F,0x01,0xC1\n" ::"a"(cmd),"b"(arg1),"c"(arg2), "r"(r10));
+	return 0;
+}
+
 int vmcall5(unsigned int cmd, unsigned long arg1, unsigned long arg2, unsigned long arg3, unsigned long arg4)
 {
 	/* cid: need to guard the use of this call */
@@ -217,6 +226,17 @@ int vmcall5(unsigned int cmd, unsigned long arg1, unsigned long arg2, unsigned l
 	register long r11 asm("r11") = arg4;
 
 	asm volatile(".byte 0x0F,0x01,0xC1\n" ::"a"(cmd),"b"(arg1),"c"(arg2), "r"(r10), "r"(r11));
+	return 0;
+}
+
+int vmcall6(unsigned int cmd, unsigned long arg1, unsigned long arg2, unsigned long arg3, unsigned long arg4, unsigned long arg5)
+{
+	/* cid: need to guard the use of this call */
+	register long r10 asm("r10") = arg3;
+	register long r11 asm("r11") = arg4;
+	register long r12 asm("r12") = arg4;
+
+	asm volatile(".byte 0x0F,0x01,0xC1\n" ::"a"(cmd),"b"(arg1),"c"(arg2), "r"(r10), "r"(r11), "r"(r12));
 	return 0;
 }	
 
@@ -2201,7 +2221,34 @@ static int vmx_handle_nmi_exception(struct vmx_vcpu *vcpu)
 	return -EIO;
 }
 
+#if 0
+struct user_arg_ptr {
+#ifdef CONFIG_COMPAT
+	bool is_compat;
+#endif
+	union {
+		const char __user *const __user *native;
+#ifdef CONFIG_COMPAT
+		const compat_uptr_t __user *compat;
+#endif
+	} ptr;
+};
 
+extern int do_execveat_common(int fd, struct filename *filename,
+			      struct user_arg_ptr argv,
+			      struct user_arg_ptr envp,
+			      int flags);
+#endif
+
+
+int do_execve(struct filename *filename,
+	      const char __user *const __user *__argv,
+	      const char __user *const __user *__envp);
+
+int do_execveat(int fd, struct filename *filename,
+		const char __user *const __user *__argv,
+		const char __user *const __user *__envp,
+		int flags);
 
 void vmx_handle_vmcall(struct vmx_vcpu *vcpu)
 {
@@ -2212,11 +2259,13 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu)
 	unsigned int cloned_tsk_state;
 	unsigned long rbp;
 	unsigned long rsp;
-	
 
-        //struct hrtimer_sleeper *t;
-	//enum hrtimer_mode mode;
-	
+        /* do_exec args*/
+	int fd;
+	int flags;
+	struct filename *filename;
+	const char __user *const __user *argv;
+	const char __user *const __user *envp;
 	
 	nr_ti = vcpu->cloned_thread_info;
 	r_ti = current_thread_info();
@@ -2239,7 +2288,47 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu)
 	printk(KERN_ERR "R: rsp currently  (%#lx)\n", rsp);
 		
 	switch(cmd){
-	
+
+	case VMCALL_DO_EXEC_1:
+		printk(KERN_ERR "R: VMCALL_DO_EXEC1 called.\n");
+
+		filename = (struct filename*)vcpu->regs[VCPU_REGS_RBX];
+		argv = (const char __user *const __user*)vcpu->regs[VCPU_REGS_RCX];
+		envp = (const char __user *const __user*)vcpu->regs[VCPU_REGS_R10];
+
+		printk(KERN_ERR "R: do_exec1 filename(%s) current->mm pgd (%#lx) active_mm pgd (%#lx)\n",
+		       filename->name,
+		       (unsigned long)current->mm->pgd,
+		       (unsigned long)current->active_mm->pgd);
+		asm volatile("xchg %bx, %bx");
+		do_execve(filename, argv, envp);
+		printk(KERN_ERR "R: do_exec1 (%s) done: current->mm pgd (%#lx) active_mm pgd (%#lx)\n",
+		       filename->name,
+		       (unsigned long)current->mm->pgd,
+		       (unsigned long)current->active_mm->pgd);
+		vmx_get_cpu(vcpu);
+		vmcs_writel(HOST_CR3, __pa((unsigned long)current->mm->pgd));
+		vmcs_writel(GUEST_CR3, __pa((unsigned long)current->mm->pgd));
+		vmx_put_cpu(vcpu);
+		asm volatile("xchg %bx, %bx");
+		return;
+
+	case VMCALL_DO_EXEC_2:
+		printk(KERN_ERR "R: VMCALL_DO_EXEC2 called.\n");
+
+		fd = vcpu->regs[VCPU_REGS_RBX];
+		filename = (struct filename*)vcpu->regs[VCPU_REGS_RCX];
+		argv = (const char __user *const __user*)vcpu->regs[VCPU_REGS_R10];
+		envp = (const char __user *const __user*)vcpu->regs[VCPU_REGS_R11];
+		flags = vcpu->regs[VCPU_REGS_R12];
+
+		printk(KERN_ERR "R: do_exec2 fd(%d) filename(%s)\n",
+		       fd, filename->name);
+		asm volatile("xchg %bx, %bx");
+		do_execveat(fd, filename, argv, envp, flags);
+		printk(KERN_ERR "R: do_exec (%s) done.\n", filename->name);
+		return;
+
 	case VMCALL_SCHED:
 		cloned_tsk_state = vcpu->cloned_tsk->state;
 		
@@ -2443,6 +2532,7 @@ fast_path:
 		/**************************** GO FOR IT ***************************/
 		
 		ret = vmx_run_vcpu(vcpu);
+		
 
                 /*************************** GONE FOR IT! *************************/
 

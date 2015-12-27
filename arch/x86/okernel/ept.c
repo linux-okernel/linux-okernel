@@ -87,6 +87,7 @@ enum {
 #define EPTE_ADDR	(~(PAGE_SIZE - 1))
 #define EPTE_FLAGS	(PAGE_SIZE - 1)
 
+
 static inline uintptr_t epte_addr(epte_t epte)
 {
 	return (epte & EPTE_ADDR);
@@ -116,6 +117,7 @@ static inline int epte_big(epte_t epte)
 
 #endif
 
+#if 0
 static unsigned long hva_to_gpa(struct vmx_vcpu *vcpu,
 				struct mm_struct *mm,
 				unsigned long hva)
@@ -166,6 +168,7 @@ static unsigned long gpa_to_hva(struct vmx_vcpu *vcpu,
 
 #define ADDR_TO_IDX(la, n) \
 	((((unsigned long) (la)) >> (12 + 9 * (n))) & ((1 << 9) - 1))
+
 
 static int
 ept_lookup_gpa(struct vmx_vcpu *vcpu, void *gpa, int level,
@@ -601,7 +604,9 @@ static int ept_check_page_accessed(struct vmx_vcpu *vcpu,
 
 	return accessed;
 }
+#endif
 
+#if 0
 static inline struct vmx_vcpu *mmu_notifier_to_vmx(struct mmu_notifier *mn)
 {
 	return container_of(mn, struct vmx_vcpu, mmu_notifier);
@@ -617,6 +622,7 @@ static void ept_mmu_notifier_invalidate_page(struct mmu_notifier *mn,
 
 	ept_invalidate_page(vcpu, mm, address);
 }
+
 
 static void ept_mmu_notifier_invalidate_range_start(struct mmu_notifier *mn,
 						    struct mm_struct *mm,
@@ -714,6 +720,7 @@ static const struct mmu_notifier_ops ept_mmu_notifier_ops = {
 	.change_pte		= ept_mmu_notifier_change_pte,
 	.release		= ept_mmu_notifier_release,
 };
+#endif
 
 int vmx_init_ept(struct vmx_vcpu *vcpu)
 {
@@ -730,23 +737,10 @@ int vmx_init_ept(struct vmx_vcpu *vcpu)
 
 int vmx_create_ept(struct vmx_vcpu *vcpu)
 {
-	int ret;
-
-	//vcpu->mmu_notifier.ops = &ept_mmu_notifier_ops;
-	//ret = mmu_notifier_register(&vcpu->mmu_notifier, current->mm);
-	//if (ret)
-	//	goto fail;
-
 	return 0;
-
-fail:
-	vmx_free_ept(vcpu->ept_root);
-
-	return ret;
 }
 
 void vmx_destroy_ept(struct vmx_vcpu *vcpu)
 {
-	//mmu_notifier_unregister(&vcpu->mmu_notifier, current->mm);
-	vmx_free_ept(vcpu->ept_root);
+	return;
 }
