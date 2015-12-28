@@ -3210,7 +3210,7 @@ asmlinkage __visible void __sched schedule(void)
 		//dump_stack();
 		sched_submit_work(tsk);
 		
-		vmcall(VMCALL_SCHED);
+		(void)vmcall(VMCALL_SCHED);
 	} else {
 		sched_submit_work(tsk);
 		do {

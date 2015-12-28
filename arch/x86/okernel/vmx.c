@@ -2490,6 +2490,7 @@ fast_path:
 					do_page_fault_r(&regs, err, cr2);
 					//memcpy(nr_ti, current_thread_info(), sizeof(struct thread_info));
 					printk(KERN_ERR "R: returned from do_page_fault_r.\n");
+					schedule_ok = 0;
 					continue;
 				} else {
 					vmx_put_cpu(vcpu);				
