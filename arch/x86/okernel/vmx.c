@@ -2409,6 +2409,7 @@ int vmx_launch(void)
 	nr_ti = vcpu->cloned_thread_info;
 	
 	while (1) {
+		schedule_ok = 0;
 		vmx_get_cpu(vcpu);
 		local_irq_disable();
 
@@ -2430,13 +2431,12 @@ fast_path:
 		
 		ret = vmx_run_vcpu(vcpu);
 		
-
                 /*************************** GONE FOR IT! *************************/
 
    		cloned_rflags = vmcs_readl(GUEST_RFLAGS);
 
 		if(cloned_rflags & RFLAGS_IF_BIT){
-			if(preempt_count() < 2){
+			if((preempt_count() < 2) && (rcu_preempt_depth() !=0 )){
 				schedule_ok = 1;
 			}
 			local_irq_enable();
@@ -2460,6 +2460,7 @@ fast_path:
 
 		if (ret == EXIT_REASON_VMCALL){
 			vmx_handle_vmcall(vcpu);
+			schedule_ok = 0;
 		}
 		else if (ret == EXIT_REASON_CPUID)
 			vmx_handle_cpuid(vcpu);
@@ -2527,74 +2528,10 @@ fast_path:
 
 #if 0
 KEEP
-		//local_irq_disable();
-		
-//		vmx_get_cpu(vcpu);
-
-#if 0
-		if(cloned_rflags & RFLAGS_IF_BIT){
-			/* Really need to duplicate this state */
-			current->hardirqs_enabled = 1;
-		}
-#endif
-no_preempt_return:
-	      	
-#if 0
 		if (!__thread_has_fpu(current))
 			math_state_restore();
 #endif
 
-#if 0
-		if(schedule_ok){
-			schedule_ok = 0;
-			HDEBUG(("checking if resched needed...\n"));
-			if (need_resched()) {
-				/* should be safe to use printk here...*/
-				local_irq_enable();
-				vmx_put_cpu(vcpu);
-				HDEBUG(("cond_resched called.\n"));
-				cond_resched();
-				local_irq_disable();
-				vmx_get_cpu(vcpu);
-				continue;
-			} else {
-				HDEBUG(("no resched needed.\n"));
-			}
-		}
-#endif
-#if 0
-		
-		if (signal_pending(current)) {
-			int signr;
-			siginfo_t info;
-
-			//HDEBUG(("signal pending...\n"));
-			local_irq_enable();
-
-			vmx_put_cpu(vcpu);
-
-			spin_lock_irq(&current->sighand->siglock);
-			signr = dequeue_signal(current, &current->blocked,
-					       &info);
-			spin_unlock_irq(&current->sighand->siglock);
-			if (!signr)
-				continue;
-
-			if (signr == SIGKILL) {
-				printk(KERN_INFO "vmx: got sigkill, dying");
-				vcpu->ret_code = ((ENOSYS) << 8);
-				break;
-			}
-
-#if 0
-			x  = DUNE_SIGNAL_INTR_BASE + signr;
-			x |= INTR_INFO_VALID_MASK;
-			vmcs_write32(VM_ENTRY_INTR_INFO_FIELD, x);
-			continue;
-#endif
-		}
-#endif
-#endif
 
 
 
