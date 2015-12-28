@@ -159,90 +159,60 @@ void copy_vcpu_to_ptregs(struct vmx_vcpu *vcpu, struct pt_regs *regs)
 	regs->r15 = vcpu->regs[VCPU_REGS_R15];
 }
 
-#if 0
-struct pt_regs {
-/*
- * C ABI says these regs are callee-preserved. They aren't saved on kernel entry
- * unless syscall needs a complete, fully filled "struct pt_regs".
- */
-	unsigned long r15;
-	unsigned long r14;
-	unsigned long r13;
-	unsigned long r12;
-	unsigned long bp;
-	unsigned long bx;
-/* These regs are callee-clobbered. Always saved on kernel entry. */
-	unsigned long r11;
-	unsigned long r10;
-	unsigned long r9;
-	unsigned long r8;
-	unsigned long ax;
-	unsigned long cx;
-	unsigned long dx;
-	unsigned long si;
-	unsigned long di;
-/*
- * On syscall entry, this is syscall#. On CPU exception, this is error code.
- * On hw interrupt, it's IRQ number:
- */
-	unsigned long orig_ax;
-/* Return frame for iretq */
-	unsigned long ip;
-	unsigned long cs;
-	unsigned long flags;
-	unsigned long sp;
-	unsigned long ss;
-/* top of stack page */
-};
-#endif
 
-/* Adapted from https://github.com/rustyrussell/virtbench/blob/master/micro/vmcall.c */
+/* Started from https://github.com/rustyrussell/virtbench/blob/master/micro/vmcall.c */
+/* Added multiple register arg passing and return val. Need to guard the use of this call */
 int vmcall(unsigned int cmd)
 {
-	/* cid: need to guard the use of this call */
+	unsigned long rax;
+
 	asm volatile(".byte 0x0F,0x01,0xC1\n" ::"a"(cmd));
-	return 0;
+	asm volatile ("mov %%rax,%0" : "=rm" (rax));
+	return (int)rax;
 }
 
 int vmcall3(unsigned int cmd, unsigned long arg1, unsigned long arg2)
 {
-	/* cid: need to guard the use of this call */
+	unsigned long rax;
+	
 	asm volatile(".byte 0x0F,0x01,0xC1\n" ::"a"(cmd),"b"(arg1),"c"(arg2));
-	return 0;
+	asm volatile ("mov %%rax,%0" : "=rm" (rax));
+	return (int)rax;
 }
 
 int vmcall4(unsigned int cmd, unsigned long arg1, unsigned long arg2, unsigned long arg3)
 {
-	/* cid: need to guard the use of this call */
+	unsigned long rax;
 	register long r10 asm("r10") = arg3;
+
 	asm volatile(".byte 0x0F,0x01,0xC1\n" ::"a"(cmd),"b"(arg1),"c"(arg2), "r"(r10));
-	return 0;
+	asm volatile ("mov %%rax,%0" : "=rm" (rax));
+	return (int)rax;
 }
 
 int vmcall5(unsigned int cmd, unsigned long arg1, unsigned long arg2, unsigned long arg3, unsigned long arg4)
 {
-	/* cid: need to guard the use of this call */
+	unsigned long rax;
 	register long r10 asm("r10") = arg3;
 	register long r11 asm("r11") = arg4;
 
 	asm volatile(".byte 0x0F,0x01,0xC1\n" ::"a"(cmd),"b"(arg1),"c"(arg2), "r"(r10), "r"(r11));
-	return 0;
+	asm volatile ("mov %%rax,%0" : "=rm" (rax));
+	return (int)rax;
 }
 
 int vmcall6(unsigned int cmd, unsigned long arg1, unsigned long arg2, unsigned long arg3, unsigned long arg4, unsigned long arg5)
 {
-	/* cid: need to guard the use of this call */
+	unsigned long rax;
 	register long r10 asm("r10") = arg3;
 	register long r11 asm("r11") = arg4;
 	register long r12 asm("r12") = arg4;
 
 	asm volatile(".byte 0x0F,0x01,0xC1\n" ::"a"(cmd),"b"(arg1),"c"(arg2), "r"(r10), "r"(r11), "r"(r12));
-	return 0;
+	asm volatile ("mov %%rax,%0" : "=rm" (rax));
+	return (int)rax;
 }	
 
-
-
-/* Start: imported code from original BV prototype */
 
 /* Need to fix this...adjust dynamically based on real physical regions */
 #define END_PHYSICAL 0x3FFEFFFFF /* with 1GB physical memory */
@@ -1776,61 +1746,6 @@ static void vmx_setup_initial_guest_state(struct vmx_vcpu *vcpu)
 }
 
 
-static void __vmx_disable_intercept_for_msr(unsigned long *msr_bitmap, u32 msr)
-{
-	int f = sizeof(unsigned long);
-	/*
-	 * See Intel PRM Vol. 3, 20.6.9 (MSR-Bitmap Address). Early manuals
-	 * have the write-low and read-high bitmap offsets the wrong way round.
-	 * We can control MSRs 0x00000000-0x00001fff and 0xc0000000-0xc0001fff.
-	 */
-	if (msr <= 0x1fff) {
-		__clear_bit(msr, msr_bitmap + 0x000 / f); /* read-low */
-		__clear_bit(msr, msr_bitmap + 0x800 / f); /* write-low */
-	} else if ((msr >= 0xc0000000) && (msr <= 0xc0001fff)) {
-		msr &= 0x1fff;
-		__clear_bit(msr, msr_bitmap + 0x400 / f); /* read-high */
-		__clear_bit(msr, msr_bitmap + 0xc00 / f); /* write-high */
-	}
-}
-
-static void setup_msr(struct vmx_vcpu *vcpu)
-{
-	int set[] = { MSR_LSTAR };
-	struct vmx_msr_entry *e;
-	int sz = sizeof(set) / sizeof(*set);
-	int i;
-
-	sz = 0;
-
-	BUILD_BUG_ON(sz > NR_AUTOLOAD_MSRS);
-
-	vcpu->msr_autoload.nr = sz;
-
-	/* XXX enable only MSRs in set */
-	vmcs_write64(MSR_BITMAP, __pa(msr_bitmap));
-
-	vmcs_write32(VM_EXIT_MSR_STORE_COUNT, vcpu->msr_autoload.nr);
-	vmcs_write32(VM_EXIT_MSR_LOAD_COUNT, vcpu->msr_autoload.nr);
-	vmcs_write32(VM_ENTRY_MSR_LOAD_COUNT, vcpu->msr_autoload.nr);
-
-	vmcs_write64(VM_EXIT_MSR_LOAD_ADDR, __pa(vcpu->msr_autoload.host));
-	vmcs_write64(VM_EXIT_MSR_STORE_ADDR, __pa(vcpu->msr_autoload.guest));
-	vmcs_write64(VM_ENTRY_MSR_LOAD_ADDR, __pa(vcpu->msr_autoload.guest));
-
-	for (i = 0; i < sz; i++) {
-		uint64_t val;
-
-		e = &vcpu->msr_autoload.host[i];
-		e->index = set[i];
-		rdmsrl(e->index, val);
-		e->value = val;
-
-		e = &vcpu->msr_autoload.guest[i];
-		e->index = set[i];
-	}
-}
-
 
 /**
  *  vmx_setup_vmcs - configures the vmcs with starting parameters
@@ -1991,13 +1906,10 @@ static struct vmx_vcpu * vmx_create_vcpu(void)
 		printk(KERN_INFO "vmx: enabled EPT A/D bits");
 	}
 
-	if (vmx_create_ept(vcpu))
-		goto fail_ept;
-
 	return vcpu;
-
 fail_ept:
 	vmx_free_vpid(vcpu);
+	
 fail_vpid:
 	vmx_free_vmcs(vcpu->vmcs);
 fail_vmcs:
@@ -2184,7 +2096,7 @@ static void vmx_handle_cpuid(struct vmx_vcpu *vcpu)
 
 void vmx_handle_vmcall(struct vmx_vcpu *vcpu)
 {
-
+	int ret = 0;
 	unsigned long cmd;
 	struct thread_info *nr_ti;
 	struct thread_info *r_ti;
@@ -2230,19 +2142,20 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu)
 		       (unsigned long)current->mm->pgd,
 		       (unsigned long)current->active_mm->pgd);
 		asm volatile("xchg %bx, %bx");
-		do_execve(filename, argv, envp);
-		printk(KERN_ERR "R: do_exec1 (%s) done: current->mm pgd (%#lx) active_mm pgd (%#lx)\n",
+		ret = do_execve(filename, argv, envp);
+		printk(KERN_ERR "R: do_exec1 (%s) done: current->mm pgd (%#lx) active_mm pgd (%#lx) ret (%d)\n",
 		       filename->name,
 		       (unsigned long)current->mm->pgd,
-		       (unsigned long)current->active_mm->pgd);
+		       (unsigned long)current->active_mm->pgd,
+			ret);
 		local_irq_disable();
 		vmx_get_cpu(vcpu);
 		vmcs_writel(HOST_CR3, __pa((unsigned long)current->mm->pgd));
 		vmcs_writel(GUEST_CR3, __pa((unsigned long)current->mm->pgd));
 		local_irq_enable();
 		vmx_put_cpu(vcpu);
+		ret = 16;
 		asm volatile("xchg %bx, %bx");
-		return;
 	} else if(cmd == VMCALL_DO_EXEC_2){
 		printk(KERN_ERR "R: VMCALL_DO_EXEC2 called.\n");
 
@@ -2256,10 +2169,18 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu)
 		       fd, filename->name);
 		asm volatile("xchg %bx, %bx");
 	      
-		do_execveat(fd, filename, argv, envp, flags);
-		printk(KERN_ERR "R: do_exec2 (%s) done.\n", filename->name);
-		return;
-	
+		ret = do_execveat(fd, filename, argv, envp, flags);
+
+		local_irq_disable();
+		vmx_get_cpu(vcpu);
+		vmcs_writel(HOST_CR3, __pa((unsigned long)current->mm->pgd));
+		vmcs_writel(GUEST_CR3, __pa((unsigned long)current->mm->pgd));
+		local_irq_enable();
+		vmx_put_cpu(vcpu);
+		printk(KERN_ERR "R: do_exec2 (%s) done - ret(%d)\n",
+		       filename->name, ret);
+		asm volatile("xchg %bx, %bx");
+			
 #ifdef CONFIG_COMPAT
 	} else if(cmd == VMCALL_DO_EXEC_3){
 		printk(KERN_ERR "R: VMCALL_DO_EXEC_3 called.\n");
@@ -2273,10 +2194,11 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu)
 		       (unsigned long)current->active_mm->pgd);
 		asm volatile("xchg %bx, %bx");
 		compat_do_execve(filename, argv, envp);
-		printk(KERN_ERR "R: do_exec3 (%s) done: current->mm pgd (%#lx) active_mm pgd (%#lx)\n",
+		printk(KERN_ERR "R: do_exec3 (%s) done: current->mm pgd (%#lx) active_mm pgd (%#lx) ret (%d)\n",
 		       filename->name,
 		       (unsigned long)current->mm->pgd,
-		       (unsigned long)current->active_mm->pgd);
+		       (unsigned long)current->active_mm->pgd,
+			ret);
 		local_irq_disable();
 		vmx_get_cpu(vcpu);
 		vmcs_writel(HOST_CR3, __pa((unsigned long)current->mm->pgd));
@@ -2284,7 +2206,6 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu)
 		local_irq_enable();
 		vmx_put_cpu(vcpu);
 		asm volatile("xchg %bx, %bx");
-		return;
 	} else if(cmd == VMCALL_DO_EXEC_4){
 		printk(KERN_ERR "R: VMCALL_DO_EXEC_4 called.\n");
 
@@ -2299,9 +2220,13 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu)
 		asm volatile("xchg %bx, %bx");
 	      
 		compat_do_execveat(fd, filename, argv, envp, flags);
-		printk(KERN_ERR "R: do_exec4 (%s) done.\n", filename->name);
-		return;
-	
+		local_irq_disable();
+		vmx_get_cpu(vcpu);
+		vmcs_writel(HOST_CR3, __pa((unsigned long)current->mm->pgd));
+		vmcs_writel(GUEST_CR3, __pa((unsigned long)current->mm->pgd));
+		local_irq_enable();
+		vmx_put_cpu(vcpu);
+		printk(KERN_ERR "R: do_exec4 (%s) done - ret (%d)\n", filename->name, ret);
 #endif
 	} else if (cmd == VMCALL_SCHED){
 		cloned_tsk_state = vcpu->cloned_tsk->state;
@@ -2364,15 +2289,17 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu)
 		       preempt_count(), rcu_preempt_depth());
 		printk(KERN_ERR "R: current->lockdep_depth (%d)\n", current->lockdep_depth);
 		asm volatile("xchg %bx, %bx");
-		return;
 	} else if(cmd == VMCALL_DOEXIT){
 		printk(KERN_ERR "R: calling do_exit...\n");
 		do_exit(0);
 	} else {
 		printk(KERN_ERR "R: unexpected VMCALL argument.\n");
 		BUG();
-		return;
+		ret = -1;
 	}
+	/* This is what vmcall() sees as the retun value */
+	vcpu->regs[VCPU_REGS_RAX] = ret;
+	return;
 }
 
 

@@ -661,7 +661,7 @@ void do_exit(long code)
 	if(is_in_vmx_nr_mode()){
 		printk(KERN_ERR "NR: do_exit called.\n");
 		asm volatile("xchg %bx, %bx");
-		vmcall(VMCALL_DOEXIT);
+		(void)vmcall(VMCALL_DOEXIT);
 	}
 #endif
 	profile_task_exit(tsk);

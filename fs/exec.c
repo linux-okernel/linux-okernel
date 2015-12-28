@@ -1651,11 +1651,16 @@ int do_execve(struct filename *filename,
 	struct user_arg_ptr argv = { .ptr.native = __argv };
 	struct user_arg_ptr envp = { .ptr.native = __envp };
 
+	int ret;
+	
 	if(is_in_vmx_nr_mode()){
-		vmcall4(VMCALL_DO_EXEC_1,
+		printk(KERN_ERR "NR: VMCALL do_execve (VMCALL_DO_EXEC_1)\n");
+		ret = vmcall4(VMCALL_DO_EXEC_1,
 			(unsigned long)filename,
 			(unsigned long)__argv,
 			(unsigned long)__envp);
+		printk(KERN_ERR "NR: VMCALL do_execve (VMCALL_DO_EXEC_1) returned (%d)\n",
+		       ret);
 		return 0;
 	} else {
 		return do_execveat_common(AT_FDCWD, filename, argv, envp, 0);
@@ -1669,14 +1674,18 @@ int do_execveat(int fd, struct filename *filename,
 {
 	struct user_arg_ptr argv = { .ptr.native = __argv };
 	struct user_arg_ptr envp = { .ptr.native = __envp };
+	int ret;
 
 	if(is_in_vmx_nr_mode()){
-		vmcall6(VMCALL_DO_EXEC_2,
+		printk(KERN_ERR "NR: VMCALL do_execve (VMCALL_DO_EXEC_2)\n");
+		ret = vmcall6(VMCALL_DO_EXEC_2,
 			(unsigned long)fd,
 			(unsigned long)filename,
 			(unsigned long)__argv,
 			(unsigned long)__envp,
 			(unsigned long)flags);
+		printk(KERN_ERR "NR: VMCALL do_execve (VMCALL_DO_EXEC_2) returned (%d)\n",
+		       ret);
 		return 0;
 	} else {
 		return do_execveat_common(fd, filename, argv, envp, flags);
@@ -1696,12 +1705,16 @@ int compat_do_execve(struct filename *filename,
 		.is_compat = true,
 		.ptr.compat = __envp,
 	};
-
+	int ret;
+	
 	if(is_in_vmx_nr_mode()){
-		vmcall4(VMCALL_DO_EXEC_1,
+		printk(KERN_ERR "NR: VMCALL do_execve (VMCALL_DO_EXEC_3)\n");
+		ret = vmcall4(VMCALL_DO_EXEC_1,
 			(unsigned long)filename,
 			(unsigned long)__argv,
 			(unsigned long)__envp);
+		printk(KERN_ERR "NR: VMCALL do_execve (VMCALL_DO_EXEC_3) returned (%d)\n",
+		       ret);
 		return 0;
 	} else {
 		return do_execveat_common(AT_FDCWD, filename, argv, envp, 0);
@@ -1721,14 +1734,18 @@ int compat_do_execveat(int fd, struct filename *filename,
 		.is_compat = true,
 		.ptr.compat = __envp,
 	};
+	int ret;
 
 	if(is_in_vmx_nr_mode()){
-		vmcall6(VMCALL_DO_EXEC_2,
+		printk(KERN_ERR "NR: VMCALL do_execve (VMCALL_DO_EXEC_4)\n");
+		ret = vmcall6(VMCALL_DO_EXEC_2,
 			(unsigned long)fd,
 			(unsigned long)filename,
 			(unsigned long)__argv,
 			(unsigned long)__envp,
 			(unsigned long)flags);
+		printk(KERN_ERR "NR: VMCALL do_execve (VMCALL_DO_EXEC_4) returned (%d)\n",
+		       ret);
 		return 0;
 	} else {
 		return do_execveat_common(fd, filename, argv, envp, flags);
