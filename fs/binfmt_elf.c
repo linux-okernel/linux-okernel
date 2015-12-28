@@ -35,7 +35,6 @@
 #include <linux/utsname.h>
 #include <linux/coredump.h>
 #include <linux/sched.h>
-#include <linux/okernel.h>
 #include <asm/uaccess.h>
 #include <asm/param.h>
 #include <asm/page.h>
@@ -684,35 +683,20 @@ static int load_elf_binary(struct linux_binprm *bprm)
 	} *loc;
 	struct arch_elf_state arch_state = INIT_ARCH_ELF_STATE;
 
-
-	if(is_in_vmx_nr_mode()){
-		printk(KERN_ERR "NR: load_elf_bin 0\n");
-	}
 	loc = kmalloc(sizeof(*loc), GFP_KERNEL);
 	if (!loc) {
 		retval = -ENOMEM;
-		if(is_in_vmx_nr_mode()){
-			printk(KERN_ERR "NR: load_elf_bin 1\n");
-		}
 		goto out_ret;
 	}
 	
 	/* Get the exec-header */
 	loc->elf_ex = *((struct elfhdr *)bprm->buf);
 
-	if(is_in_vmx_nr_mode()){
-		printk(KERN_ERR "NR: load_elf_bin 2\n");
-	}
-	
 	retval = -ENOEXEC;
 	/* First of all, some simple consistency checks */
 	if (memcmp(loc->elf_ex.e_ident, ELFMAG, SELFMAG) != 0)
 		goto out;
 
-	if(is_in_vmx_nr_mode()){
-		printk(KERN_ERR "NR: load_elf_bin 3\n");
-	}
-	
 	if (loc->elf_ex.e_type != ET_EXEC && loc->elf_ex.e_type != ET_DYN)
 		goto out;
 	if (!elf_check_arch(&loc->elf_ex))
@@ -721,11 +705,6 @@ static int load_elf_binary(struct linux_binprm *bprm)
 		goto out;
 
 	elf_phdata = load_elf_phdrs(&loc->elf_ex, bprm->file);
-
-	if(is_in_vmx_nr_mode()){
-		printk(KERN_ERR "NR: load_elf_bin 4\n");
-	}
-	
 	if (!elf_phdata)
 		goto out;
 
@@ -738,19 +717,12 @@ static int load_elf_binary(struct linux_binprm *bprm)
 	start_data = 0;
 	end_data = 0;
 
-	if(is_in_vmx_nr_mode()){
-		printk(KERN_ERR "NR: load_elf_bin 5\n");
-	}
-	
 	for (i = 0; i < loc->elf_ex.e_phnum; i++) {
 		if (elf_ppnt->p_type == PT_INTERP) {
 			/* This is the program interpreter used for
 			 * shared libraries - for now assume that this
 			 * is an a.out format binary
 			 */
-			if(is_in_vmx_nr_mode()){
-				printk(KERN_ERR "NR: load_elf_bin 6\n");
-			}
 			retval = -ENOEXEC;
 			if (elf_ppnt->p_filesz > PATH_MAX || 
 			    elf_ppnt->p_filesz < 2)
@@ -762,18 +734,9 @@ static int load_elf_binary(struct linux_binprm *bprm)
 			if (!elf_interpreter)
 				goto out_free_ph;
 
-			if(is_in_vmx_nr_mode()){
-				printk(KERN_ERR "NR: load_elf_bin 7\n");
-			}
-			
 			retval = kernel_read(bprm->file, elf_ppnt->p_offset,
 					     elf_interpreter,
 					     elf_ppnt->p_filesz);
-
-			if(is_in_vmx_nr_mode()){
-				printk(KERN_ERR "NR: load_elf_bin 8\n");
-			}
-
 			if (retval != elf_ppnt->p_filesz) {
 				if (retval >= 0)
 					retval = -EIO;
@@ -784,14 +747,7 @@ static int load_elf_binary(struct linux_binprm *bprm)
 			if (elf_interpreter[elf_ppnt->p_filesz - 1] != '\0')
 				goto out_free_interp;
 
-			if(is_in_vmx_nr_mode()){
-				printk(KERN_ERR "NR: load_elf_bin 9\n");
-			}
 			interpreter = open_exec(elf_interpreter);
-
-			if(is_in_vmx_nr_mode()){
-				printk(KERN_ERR "NR: load_elf_bin 10\n");
-			}
 			retval = PTR_ERR(interpreter);
 			if (IS_ERR(interpreter))
 				goto out_free_interp;
@@ -813,18 +769,11 @@ static int load_elf_binary(struct linux_binprm *bprm)
 
 			/* Get the exec headers */
 			loc->interp_elf_ex = *((struct elfhdr *)bprm->buf);
-			if(is_in_vmx_nr_mode()){
-				printk(KERN_ERR "NR: load_elf_bin 11\n");
-			}
 			break;
 		}
 		elf_ppnt++;
 	}
 
-	if(is_in_vmx_nr_mode()){
-		printk(KERN_ERR "NR: load_elf_bin 12\n");
-	}
-	
 	elf_ppnt = elf_phdata;
 	for (i = 0; i < loc->elf_ex.e_phnum; i++, elf_ppnt++)
 		switch (elf_ppnt->p_type) {
@@ -839,9 +788,6 @@ static int load_elf_binary(struct linux_binprm *bprm)
 			retval = arch_elf_pt_proc(&loc->elf_ex, elf_ppnt,
 						  bprm->file, false,
 						  &arch_state);
-			if(is_in_vmx_nr_mode()){
-				printk(KERN_ERR "NR: load_elf_bin 13\n");
-			}
 			if (retval)
 				goto out_free_dentry;
 			break;
@@ -849,9 +795,6 @@ static int load_elf_binary(struct linux_binprm *bprm)
 
 	/* Some simple consistency checks for the interpreter */
 	if (elf_interpreter) {
-		if(is_in_vmx_nr_mode()){
-			printk(KERN_ERR "NR: load_elf_bin 14\n");
-		}
 		retval = -ELIBBAD;
 		/* Not an ELF interpreter */
 		if (memcmp(loc->interp_elf_ex.e_ident, ELFMAG, SELFMAG) != 0)
@@ -879,10 +822,7 @@ static int load_elf_binary(struct linux_binprm *bprm)
 				break;
 			}
 	}
-	if(is_in_vmx_nr_mode()){
-		printk(KERN_ERR "NR: load_elf_bin 15\n");
-	}
-	
+
 	/*
 	 * Allow arch code to reject the ELF at this point, whilst it's
 	 * still possible to return an error to the code that invoked
@@ -894,11 +834,6 @@ static int load_elf_binary(struct linux_binprm *bprm)
 
 	/* Flush all traces of the currently running executable */
 	retval = flush_old_exec(bprm);
-
-	if(is_in_vmx_nr_mode()){
-		printk(KERN_ERR "NR: load_elf_bin 16\n");
-	}
-	
 	if (retval)
 		goto out_free_dentry;
 
@@ -911,29 +846,17 @@ static int load_elf_binary(struct linux_binprm *bprm)
 	if (!(current->personality & ADDR_NO_RANDOMIZE) && randomize_va_space)
 		current->flags |= PF_RANDOMIZE;
 
-	if(is_in_vmx_nr_mode()){
-		printk(KERN_ERR "NR: load_elf_bin 17\n");
-	}
 	setup_new_exec(bprm);
 
-	if(is_in_vmx_nr_mode()){
-		printk(KERN_ERR "NR: load_elf_bin 18\n");
-	}
 	/* Do this so that we can load the interpreter, if need be.  We will
 	   change some of these later */
 	retval = setup_arg_pages(bprm, randomize_stack_top(STACK_TOP),
 				 executable_stack);
-
-	if(is_in_vmx_nr_mode()){
-		printk(KERN_ERR "NR: load_elf_bin 19\n");
-	}
-
 	if (retval < 0)
 		goto out_free_dentry;
 	
 	current->mm->start_stack = bprm->p;
 
-	
 	/* Now we do a little grungy work by mmapping the ELF image into
 	   the correct location in memory. */
 	for(i = 0, elf_ppnt = elf_phdata;
@@ -1050,9 +973,6 @@ static int load_elf_binary(struct linux_binprm *bprm)
 			elf_brk = k;
 	}
 
-	if(is_in_vmx_nr_mode()){
-		printk(KERN_ERR "NR: load_elf_bin 20\n");
-	}
 	loc->elf_ex.e_entry += load_bias;
 	elf_bss += load_bias;
 	elf_brk += load_bias;
@@ -1067,10 +987,6 @@ static int load_elf_binary(struct linux_binprm *bprm)
 	 * up getting placed where the bss needs to go.
 	 */
 	retval = set_brk(elf_bss, elf_brk);
-
-	if(is_in_vmx_nr_mode()){
-		printk(KERN_ERR "NR: load_elf_bin 21\n");
-	}
 	if (retval)
 		goto out_free_dentry;
 	if (likely(elf_bss != elf_brk) && unlikely(padzero(elf_bss))) {
@@ -1115,9 +1031,7 @@ static int load_elf_binary(struct linux_binprm *bprm)
 	kfree(elf_phdata);
 
 	set_binfmt(&elf_format);
-	if(is_in_vmx_nr_mode()){
-		printk(KERN_ERR "NR: load_elf_bin 22\n");
-	}
+
 #ifdef ARCH_HAS_SETUP_ADDITIONAL_PAGES
 	retval = arch_setup_additional_pages(bprm, !!elf_interpreter);
 	if (retval < 0)
@@ -1143,9 +1057,7 @@ static int load_elf_binary(struct linux_binprm *bprm)
 		current->brk_randomized = 1;
 #endif
 	}
-	if(is_in_vmx_nr_mode()){
-		printk(KERN_ERR "NR: load_elf_bin 23\n");
-	}
+
 	if (current->personality & MMAP_PAGE_ZERO) {
 		/* Why this, you ask???  Well SVr4 maps page 0 as read-only,
 		   and some applications "depend" upon this behavior.
@@ -1168,20 +1080,12 @@ static int load_elf_binary(struct linux_binprm *bprm)
 	 */
 	ELF_PLAT_INIT(regs, reloc_func_desc);
 #endif
-	if(is_in_vmx_nr_mode()){
-		printk(KERN_ERR "NR: load_elf_bin 24\n");
-	}
+
 	start_thread(regs, elf_entry, bprm->p);
-	if(is_in_vmx_nr_mode()){
-		printk(KERN_ERR "NR: load_elf_bin 25\n");
-	}
 	retval = 0;
 out:
 	kfree(loc);
 out_ret:
-	if(is_in_vmx_nr_mode()){
-		printk(KERN_ERR "NR: load_elf_bin 26\n");
-	}
 	return retval;
 
 	/* error cleanup */

@@ -14,6 +14,7 @@
 
 #ifndef _LINUX_OKERNEL_H
 #define _LINUX_OKERNEL_H
+#include <linux/compat.h>
 #include <asm/special_insns.h>
 
 /* 
@@ -42,14 +43,42 @@
 #define VMCALL_PREEMPT_SCHED 2
 #define VMCALL_DOEXIT 3
 #define VMCALL_DO_NANOSLEEP 4
-#define VMCALL_DO_EXEC_1 5
-#define VMCALL_DO_EXEC_2 6
+#define VMCALL_DO_EXEC_1 5 /* execve */
+#define VMCALL_DO_EXEC_2 6 /* execveat */
+#ifdef CONFIG_COMPAT
+#define VMCALL_DO_EXEC_3 5 /* compat_execve */
+#define VMCALL_DO_EXEC_4 6 /* compat_execveat */
+#endif
 
 int vmcall(unsigned int cmd);
 int vmcall3(unsigned int cmd, unsigned long arg1, unsigned long arg2);
 int vmcall4(unsigned int cmd, unsigned long arg1, unsigned long arg2, unsigned long arg3);
 int vmcall5(unsigned int cmd, unsigned long arg1, unsigned long arg2, unsigned long arg3, unsigned long arg4);
 int vmcall6(unsigned int cmd, unsigned long arg1, unsigned long arg2, unsigned long arg3, unsigned long arg4, unsigned long arg5);
+
+/* Keep these in here for now so that our dependencies are tracked until we find a better place */
+void do_page_fault_r(struct pt_regs *regs, unsigned long error_code, unsigned long address);
+
+int do_execve(struct filename *filename,
+	      const char __user *const __user *__argv,
+	      const char __user *const __user *__envp);
+
+int do_execveat(int fd, struct filename *filename,
+		const char __user *const __user *__argv,
+		const char __user *const __user *__envp,
+		int flags);
+
+#ifdef CONFIG_COMPAT
+int compat_do_execve(struct filename *filename,
+		     const compat_uptr_t __user *__argv,
+		     const compat_uptr_t __user *__envp);
+
+int compat_do_execveat(int fd, struct filename *filename,
+		       const compat_uptr_t __user *__argv,
+		       const compat_uptr_t __user *__envp,
+		       int flags);
+#endif
+
 
 static inline bool vmx_nr_mode(void)
 {

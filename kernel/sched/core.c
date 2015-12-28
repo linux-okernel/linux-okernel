@@ -3207,7 +3207,7 @@ asmlinkage __visible void __sched schedule(void)
 		printk(KERN_ERR "NR: current->lockdep_depth (%d)\n", current->lockdep_depth);
 		//BUG_ON(current->state == TASK_INTERRUPTIBLE);
 #endif
-		dump_stack();
+		//dump_stack();
 		sched_submit_work(tsk);
 		
 		vmcall(VMCALL_SCHED);

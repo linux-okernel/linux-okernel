@@ -1954,73 +1954,53 @@ static struct vmx_vcpu * vmx_create_vcpu(void)
 {
 	struct vmx_vcpu *vcpu = kmalloc(sizeof(struct vmx_vcpu), GFP_KERNEL);
 
-	HDEBUG(("0\n"));
 	if (!vcpu)
 		return NULL;
 
-	HDEBUG(("1\n"));
 	memset(vcpu, 0, sizeof(*vcpu));
 
 	vcpu->vmcs = vmx_alloc_vmcs();
 
-	HDEBUG(("2\n"));
-	
 	if (!vcpu->vmcs)
 		goto fail_vmcs;
 
 	if (vmx_allocate_vpid(vcpu))
 		goto fail_vpid;
 
-	HDEBUG(("3\n"));
 	vcpu->cpu = -1;
-	//vcpu->syscall_tbl = (void *) &dune_syscall_tbl;
-
 
 	spin_lock_init(&vcpu->ept_lock);
-	//if (vmx_init_ept(vcpu))
-	//	goto fail_ept;
 
 	vcpu->ept_root = vt_ept_2M_init();
 
 	if(vcpu->ept_root == 0)
 		goto fail_ept;
 	
-	HDEBUG(("4\n"));
 	vcpu->eptp = construct_eptp(vcpu->ept_root);
 
-	HDEBUG(("5\n"));
-
 	vmx_get_cpu(vcpu);
-	HDEBUG(("6\n"));
+
 	vmx_setup_vmcs(vcpu);
-	
-	HDEBUG(("7\n"));
 	
 	vmx_setup_initial_guest_state(vcpu);
 
-	HDEBUG(("8\n"));	
 	vmx_put_cpu(vcpu);
-	HDEBUG(("9\n"));
 	
 	if (cpu_has_vmx_ept_ad_bits()) {
 		vcpu->ept_ad_enabled = true;
 		printk(KERN_INFO "vmx: enabled EPT A/D bits");
 	}
-	HDEBUG(("10\n"));
+
 	if (vmx_create_ept(vcpu))
 		goto fail_ept;
 
-	HDEBUG(("11\n"));
 	return vcpu;
 
 fail_ept:
-	HDEBUG(("12\n"));
 	vmx_free_vpid(vcpu);
 fail_vpid:
-	HDEBUG(("13\n"));
 	vmx_free_vmcs(vcpu->vmcs);
 fail_vmcs:
-	HDEBUG(("14\n"));
 	kfree(vcpu);
 	return NULL;
 }
@@ -2201,54 +2181,6 @@ static void vmx_handle_cpuid(struct vmx_vcpu *vcpu)
 	vcpu->regs[VCPU_REGS_RDX] = edx;
 }
 
-static int vmx_handle_nmi_exception(struct vmx_vcpu *vcpu)
-{
-	u32 intr_info;
-
-
-	vmx_get_cpu(vcpu);
-
-	intr_info = vmcs_readl(VM_EXIT_INTR_INFO);
-
-	vmx_put_cpu(vcpu);
-
-	printk(KERN_INFO "vmx: got an exception\n");
-	if ((intr_info & INTR_INFO_INTR_TYPE_MASK) == INTR_TYPE_NMI_INTR)
-		return 0;
-
-	printk(KERN_ERR "vmx: unhandled nmi, intr_info %x\n", intr_info);
-	vcpu->ret_code = ((EFAULT) << 8);
-	return -EIO;
-}
-
-#if 0
-struct user_arg_ptr {
-#ifdef CONFIG_COMPAT
-	bool is_compat;
-#endif
-	union {
-		const char __user *const __user *native;
-#ifdef CONFIG_COMPAT
-		const compat_uptr_t __user *compat;
-#endif
-	} ptr;
-};
-
-extern int do_execveat_common(int fd, struct filename *filename,
-			      struct user_arg_ptr argv,
-			      struct user_arg_ptr envp,
-			      int flags);
-#endif
-
-
-int do_execve(struct filename *filename,
-	      const char __user *const __user *__argv,
-	      const char __user *const __user *__envp);
-
-int do_execveat(int fd, struct filename *filename,
-		const char __user *const __user *__argv,
-		const char __user *const __user *__envp,
-		int flags);
 
 void vmx_handle_vmcall(struct vmx_vcpu *vcpu)
 {
@@ -2264,8 +2196,8 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu)
 	int fd;
 	int flags;
 	struct filename *filename;
-	const char __user *const __user *argv;
-	const char __user *const __user *envp;
+	const void *argv;
+	const void *envp;
 	
 	nr_ti = vcpu->cloned_thread_info;
 	r_ti = current_thread_info();
@@ -2286,12 +2218,9 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu)
 	printk(KERN_ERR "R: rbp currently  (%#lx)\n", rbp);
 	asm volatile ("mov %%rsp,%0" : "=rm" (rsp));
 	printk(KERN_ERR "R: rsp currently  (%#lx)\n", rsp);
-		
-	switch(cmd){
 
-	case VMCALL_DO_EXEC_1:
-		printk(KERN_ERR "R: VMCALL_DO_EXEC1 called.\n");
-
+	if(cmd == VMCALL_DO_EXEC_1){
+		printk(KERN_ERR "R: VMCALL_DO_EXEC_1 called.\n");
 		filename = (struct filename*)vcpu->regs[VCPU_REGS_RBX];
 		argv = (const char __user *const __user*)vcpu->regs[VCPU_REGS_RCX];
 		envp = (const char __user *const __user*)vcpu->regs[VCPU_REGS_R10];
@@ -2306,14 +2235,15 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu)
 		       filename->name,
 		       (unsigned long)current->mm->pgd,
 		       (unsigned long)current->active_mm->pgd);
+		local_irq_disable();
 		vmx_get_cpu(vcpu);
 		vmcs_writel(HOST_CR3, __pa((unsigned long)current->mm->pgd));
 		vmcs_writel(GUEST_CR3, __pa((unsigned long)current->mm->pgd));
+		local_irq_enable();
 		vmx_put_cpu(vcpu);
 		asm volatile("xchg %bx, %bx");
 		return;
-
-	case VMCALL_DO_EXEC_2:
+	} else if(cmd == VMCALL_DO_EXEC_2){
 		printk(KERN_ERR "R: VMCALL_DO_EXEC2 called.\n");
 
 		fd = vcpu->regs[VCPU_REGS_RBX];
@@ -2325,11 +2255,55 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu)
 		printk(KERN_ERR "R: do_exec2 fd(%d) filename(%s)\n",
 		       fd, filename->name);
 		asm volatile("xchg %bx, %bx");
+	      
 		do_execveat(fd, filename, argv, envp, flags);
-		printk(KERN_ERR "R: do_exec (%s) done.\n", filename->name);
+		printk(KERN_ERR "R: do_exec2 (%s) done.\n", filename->name);
 		return;
+	
+#ifdef CONFIG_COMPAT
+	} else if(cmd == VMCALL_DO_EXEC_3){
+		printk(KERN_ERR "R: VMCALL_DO_EXEC_3 called.\n");
+		filename = (struct filename*)vcpu->regs[VCPU_REGS_RBX];
+		argv = (const compat_uptr_t __user*)vcpu->regs[VCPU_REGS_RCX];
+		envp = (const compat_uptr_t __user*)vcpu->regs[VCPU_REGS_R10];
 
-	case VMCALL_SCHED:
+		printk(KERN_ERR "R: do_exec3 filename(%s) current->mm pgd (%#lx) active_mm pgd (%#lx)\n",
+		       filename->name,
+		       (unsigned long)current->mm->pgd,
+		       (unsigned long)current->active_mm->pgd);
+		asm volatile("xchg %bx, %bx");
+		compat_do_execve(filename, argv, envp);
+		printk(KERN_ERR "R: do_exec3 (%s) done: current->mm pgd (%#lx) active_mm pgd (%#lx)\n",
+		       filename->name,
+		       (unsigned long)current->mm->pgd,
+		       (unsigned long)current->active_mm->pgd);
+		local_irq_disable();
+		vmx_get_cpu(vcpu);
+		vmcs_writel(HOST_CR3, __pa((unsigned long)current->mm->pgd));
+		vmcs_writel(GUEST_CR3, __pa((unsigned long)current->mm->pgd));
+		local_irq_enable();
+		vmx_put_cpu(vcpu);
+		asm volatile("xchg %bx, %bx");
+		return;
+	} else if(cmd == VMCALL_DO_EXEC_4){
+		printk(KERN_ERR "R: VMCALL_DO_EXEC_4 called.\n");
+
+		fd = vcpu->regs[VCPU_REGS_RBX];
+		filename = (struct filename*)vcpu->regs[VCPU_REGS_RCX];
+		argv = (const compat_uptr_t __user*)vcpu->regs[VCPU_REGS_R10];
+		envp = (const compat_uptr_t __user*)vcpu->regs[VCPU_REGS_R11];
+		flags = vcpu->regs[VCPU_REGS_R12];
+
+		printk(KERN_ERR "R: do_exec4 fd(%d) filename(%s)\n",
+		       fd, filename->name);
+		asm volatile("xchg %bx, %bx");
+	      
+		compat_do_execveat(fd, filename, argv, envp, flags);
+		printk(KERN_ERR "R: do_exec4 (%s) done.\n", filename->name);
+		return;
+	
+#endif
+	} else if (cmd == VMCALL_SCHED){
 		cloned_tsk_state = vcpu->cloned_tsk->state;
 		
 		printk(KERN_ERR "R: in VMCALL schedule - current state (%lu) cloned state (%u)\n",
@@ -2391,28 +2365,21 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu)
 		printk(KERN_ERR "R: current->lockdep_depth (%d)\n", current->lockdep_depth);
 		asm volatile("xchg %bx, %bx");
 		return;
-#if 0
-	case VMCALL_PREEMPT_SCHED:
-		schedule_ok = 0;
-		okernel_schedule();
-		return;
-#endif
-	case VMCALL_DOEXIT:
+	} else if(cmd == VMCALL_DOEXIT){
 		printk(KERN_ERR "R: calling do_exit...\n");
-		//local_irq_enable();
 		do_exit(0);
-	default:
+	} else {
 		printk(KERN_ERR "R: unexpected VMCALL argument.\n");
 		BUG();
+		return;
 	}
-	return;
 }
 
-extern void do_page_fault_r(struct pt_regs *regs, unsigned long error_code, unsigned long address);
-/**
+
+/*
  * vmx_launch - the main loop for a cloned VMX okernel process (thread)
  */
-
+/* These are declared here since we change the stack pointer in this function */
 static unsigned long rsp;
 static unsigned long rbp;
 static unsigned long new_rsp;
@@ -2435,6 +2402,8 @@ static unsigned long cr2;
 static unsigned long err;
 static struct pt_regs regs;
 static unsigned long k_stack;
+struct thread_info *nr_ti;
+
 
 int vmx_launch(void)
 {
@@ -2510,6 +2479,7 @@ int vmx_launch(void)
 	printk(KERN_ERR "R: preempt_count (%d) rcu_preempt_depth (%d)\n",
 	       preempt_count(), rcu_preempt_depth());
 	
+	nr_ti = vcpu->cloned_thread_info;
 	
 	while (1) {
 		vmx_get_cpu(vcpu);
@@ -2539,17 +2509,9 @@ fast_path:
    		cloned_rflags = vmcs_readl(GUEST_RFLAGS);
 
 		if(cloned_rflags & RFLAGS_IF_BIT){
-#if 1
-			if(!rcu_scheduler_active){
-				schedule_ok = 1;
-			}
 			if(preempt_count() < 2){
 				schedule_ok = 1;
 			}
-			if(rcu_preempt_depth() !=0 ){
-				schedule_ok = 1;
-			}
-#endif
 			local_irq_enable();
 		} else {
 			/* Need to keep control: cloned thread has
@@ -2570,9 +2532,7 @@ fast_path:
 		vmx_put_cpu(vcpu);
 
 		if (ret == EXIT_REASON_VMCALL){
-			schedule_ok = 0;
 			vmx_handle_vmcall(vcpu);
-			schedule_ok = 0;
 		}
 		else if (ret == EXIT_REASON_CPUID)
 			vmx_handle_cpuid(vcpu);
@@ -2583,6 +2543,7 @@ fast_path:
 			vii.v = vmcs_readl(VM_EXIT_INTR_INFO);
 			if(vii.s.valid == INTR_INFO_VALID_VALID){
 				if(vii.s.vector == EXCEPTION_PF){
+					//memcpy(current_thread_info(), nr_ti, sizeof(struct thread_info));
 					err = (u64)vmcs_readl(VMCS_VMEXIT_INTR_ERRCODE);
 					cr2 = (u64)vmcs_readl(EXIT_QUALIFICATION);
 
@@ -2599,6 +2560,7 @@ fast_path:
 					//show_regs(&regs);
 					printk(KERN_ERR "R: calling do_page_fault_r...\n");
 					do_page_fault_r(&regs, err, cr2);
+					//memcpy(nr_ti, current_thread_info(), sizeof(struct thread_info));
 					printk(KERN_ERR "R: returned from do_page_fault_r.\n");
 					continue;
 				} else {
