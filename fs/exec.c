@@ -1661,7 +1661,7 @@ int do_execve(struct filename *filename,
 			(unsigned long)__envp);
 		printk(KERN_ERR "NR: VMCALL do_execve (VMCALL_DO_EXEC_1) returned (%d)\n",
 		       ret);
-		return 0;
+		return ret;
 	} else {
 		return do_execveat_common(AT_FDCWD, filename, argv, envp, 0);
 	}
@@ -1686,7 +1686,7 @@ int do_execveat(int fd, struct filename *filename,
 			(unsigned long)flags);
 		printk(KERN_ERR "NR: VMCALL do_execve (VMCALL_DO_EXEC_2) returned (%d)\n",
 		       ret);
-		return 0;
+		return ret;
 	} else {
 		return do_execveat_common(fd, filename, argv, envp, flags);
 	}
@@ -1715,7 +1715,7 @@ int compat_do_execve(struct filename *filename,
 			(unsigned long)__envp);
 		printk(KERN_ERR "NR: VMCALL do_execve (VMCALL_DO_EXEC_3) returned (%d)\n",
 		       ret);
-		return 0;
+		return ret;
 	} else {
 		return do_execveat_common(AT_FDCWD, filename, argv, envp, 0);
 	}
@@ -1746,7 +1746,7 @@ int compat_do_execveat(int fd, struct filename *filename,
 			(unsigned long)flags);
 		printk(KERN_ERR "NR: VMCALL do_execve (VMCALL_DO_EXEC_4) returned (%d)\n",
 		       ret);
-		return 0;
+		return ret;
 	} else {
 		return do_execveat_common(fd, filename, argv, envp, flags);
 	}
