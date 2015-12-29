@@ -1,9 +1,10 @@
 /*
- * vmx.c - The Intel VT-x driver for intra-kernel protection
- * using vt-x features. This file is derived from 
- * the dune code base which itself is dervied from the kvm
- * code base (with the hope that we can possibly at some point 
- * share code).
+ * vmx.c - The Intel VT-x driver for intra-kernel protection using
+ * vt-x features. The vmx setup code of this file is derived from the
+ * dune code base which itself is dervied from the kvm code base (with
+ * the hope that we can possibly at some point share code).  The EPT
+ * code is not dune/kvm based and was developed original for
+ * microvisor use.
  *
  * This is still very much a (limited) research prototype.
  *
@@ -1537,7 +1538,7 @@ void show_cpu_state(struct vmcs_cpu_state state)
 	return;
 }
 
-void get_cpu_state(struct vmcs_cpu_state* cpu_state)
+void get_cpu_state(struct vmx_vcpu *vcpu, struct vmcs_cpu_state* cpu_state)
 {
 	u32 low32, high32;
 	struct desc_ptr idt;
@@ -1545,12 +1546,14 @@ void get_cpu_state(struct vmcs_cpu_state* cpu_state)
 	//struct desc_ptr ldt;
 	unsigned long tr;
 	unsigned long tmpl;
+	struct nr_cloned_state *cloned_thread;
 
-	
+
+	cloned_thread = vcpu->cloned_thread;
 	/* Start with control regs / flags */
-	cpu_state->rsp = cloned_thread.rsp;
-	cpu_state->rflags = cloned_thread.rflags;
-	cpu_state->rbp = cloned_thread.rbp;
+	cpu_state->rsp = cloned_thread->rsp;
+	cpu_state->rflags = cloned_thread->rflags;
+	cpu_state->rbp = cloned_thread->rbp;
 
 	cpu_state->cr0 = read_cr0();
 	cpu_state->cr3 = read_cr3();
@@ -1632,32 +1635,35 @@ static void vmx_setup_initial_guest_state(struct vmx_vcpu *vcpu)
 	unsigned long cr4_mask = X86_CR4_VMXE;
 	unsigned long cr4_shadow; 
 	unsigned long cr4;
-
+	struct nr_cloned_state *cloned_thread;
+	
 	struct vmcs_cpu_state current_cpu_state;
 	struct pt_regs *regs;
 
 	regs = task_pt_regs(current);
 	
-	get_cpu_state(&current_cpu_state);
+	get_cpu_state(vcpu, &current_cpu_state);
 	show_cpu_state(current_cpu_state);
 
+	cloned_thread = vcpu->cloned_thread;
+
 	//vcpu->regs[VCPU_REGS_RSP] = cloned_thread.rsp;
-	vcpu->regs[VCPU_REGS_RBP] = cloned_thread.rbp;
-	vcpu->regs[VCPU_REGS_RAX] = cloned_thread.rax;
-	vcpu->regs[VCPU_REGS_RCX] = cloned_thread.rcx;
-	vcpu->regs[VCPU_REGS_RDX] = cloned_thread.rdx;
-	vcpu->regs[VCPU_REGS_RBX] = cloned_thread.rbx;
-	vcpu->regs[VCPU_REGS_RSI] = cloned_thread.rsi;
-	vcpu->regs[VCPU_REGS_RDI] = cloned_thread.rdi;
-	vcpu->regs[VCPU_REGS_R8] = cloned_thread.r8;
-	vcpu->regs[VCPU_REGS_R9] = cloned_thread.r9;
-	vcpu->regs[VCPU_REGS_R10] = cloned_thread.r10;
-	vcpu->regs[VCPU_REGS_R11] = cloned_thread.r11;
-	vcpu->regs[VCPU_REGS_R12] = cloned_thread.r12;
-	vcpu->regs[VCPU_REGS_R13] = cloned_thread.r13;
-	vcpu->regs[VCPU_REGS_R14] = cloned_thread.r14;
-	vcpu->regs[VCPU_REGS_R15] = cloned_thread.r15;
-	vcpu->cr2 = cloned_thread.cr2;
+	vcpu->regs[VCPU_REGS_RBP] = cloned_thread->rbp;
+	vcpu->regs[VCPU_REGS_RAX] = cloned_thread->rax;
+	vcpu->regs[VCPU_REGS_RCX] = cloned_thread->rcx;
+	vcpu->regs[VCPU_REGS_RDX] = cloned_thread->rdx;
+	vcpu->regs[VCPU_REGS_RBX] = cloned_thread->rbx;
+	vcpu->regs[VCPU_REGS_RSI] = cloned_thread->rsi;
+	vcpu->regs[VCPU_REGS_RDI] = cloned_thread->rdi;
+	vcpu->regs[VCPU_REGS_R8] = cloned_thread->r8;
+	vcpu->regs[VCPU_REGS_R9] = cloned_thread->r9;
+	vcpu->regs[VCPU_REGS_R10] = cloned_thread->r10;
+	vcpu->regs[VCPU_REGS_R11] = cloned_thread->r11;
+	vcpu->regs[VCPU_REGS_R12] = cloned_thread->r12;
+	vcpu->regs[VCPU_REGS_R13] = cloned_thread->r13;
+	vcpu->regs[VCPU_REGS_R14] = cloned_thread->r14;
+	vcpu->regs[VCPU_REGS_R15] = cloned_thread->r15;
+	vcpu->cr2 = cloned_thread->cr2;
 	
 
 #if 0
@@ -1682,10 +1688,10 @@ static void vmx_setup_initial_guest_state(struct vmx_vcpu *vcpu)
 	   sure we clone the kernel stack pages in the EPT mapping.
 	*/
 
-	vmcs_writel(GUEST_RIP, cloned_thread.rip);
+	vmcs_writel(GUEST_RIP, cloned_thread->rip);
 	//vmcs_writel(GUEST_RSP, current_cpu_state.rsp);
-	vmcs_writel(GUEST_RSP, cloned_thread.rsp);
-	vmcs_writel(GUEST_RFLAGS, cloned_thread.rflags);
+	vmcs_writel(GUEST_RSP, cloned_thread->rsp);
+	vmcs_writel(GUEST_RFLAGS, cloned_thread->rflags);
 	//vmcs_writel(GUEST_RFLAGS, 0x2);
 	vmcs_writel(GUEST_IA32_EFER, current_cpu_state.efer);
 
@@ -1876,12 +1882,19 @@ static void vmx_free_vpid(struct vmx_vcpu *vmx)
  *
  * Returns: A new VCPU structure
  */
-static struct vmx_vcpu * vmx_create_vcpu(void)
+static struct vmx_vcpu * vmx_create_vcpu(struct nr_cloned_state* cloned_thread)
 {
 	struct vmx_vcpu *vcpu = kmalloc(sizeof(struct vmx_vcpu), GFP_KERNEL);
 
-	if (!vcpu)
+	if (!vcpu){
+		printk(KERN_ERR "vmx_create_vcpu: failed to kmalloc vcpu.\n");
 		return NULL;
+	}
+
+	if(!cloned_thread){
+		printk(KERN_ERR "vmx_create_vcpu: passed NULL cloned_thread_state.\n");
+		return NULL;
+	}
 
 	memset(vcpu, 0, sizeof(*vcpu));
 
@@ -1907,6 +1920,8 @@ static struct vmx_vcpu * vmx_create_vcpu(void)
 	vmx_get_cpu(vcpu);
 
 	vmx_setup_vmcs(vcpu);
+
+	vcpu->cloned_thread = cloned_thread;
 	
 	vmx_setup_initial_guest_state(vcpu);
 
@@ -2326,7 +2341,7 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu)
  * vmx_launch - the main loop for a cloned VMX okernel process (thread)
  */
 
-int vmx_launch(void)
+int vmx_launch(struct nr_cloned_state *cloned_thread)
 {
 	unsigned long rsp;
 	unsigned long rbp;
@@ -2351,12 +2366,14 @@ int vmx_launch(void)
 	struct pt_regs regs;
 	unsigned long k_stack;
 
+	if(!cloned_thread)
+		return -EINVAL;
 	
-	c_rip = cloned_thread.rip;
+	c_rip = cloned_thread->rip;
 
 	HDEBUG(("c_rip: (#%#lx)\n", c_rip));
 
-	vcpu = vmx_create_vcpu();
+	vcpu = vmx_create_vcpu(cloned_thread);
 	
 	if (!vcpu)
 		return -ENOMEM;
@@ -2367,7 +2384,7 @@ int vmx_launch(void)
 #if 1
 	if(!clone_kstack2(vcpu)){
 		printk(KERN_ERR "okernel: clone kstack failed.\n");
-		return 0;
+		return -ENOMEM;
 	}
 #endif
 	/* To do: Need to take a copy of the orignal stack contents, restore when/if we leave */

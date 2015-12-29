@@ -33,13 +33,11 @@ struct nr_cloned_state {
 	unsigned long cr2;
 };
 
+/* Need to make these non-global */
 /* Initial cloned thread state */
-extern struct nr_cloned_state cloned_thread;
-extern int r_preempt_count;
-extern int nr_preempt_count;
 
-extern unsigned long r_lockdep_depth;
-extern unsigned long nr_lockdep_depth;
+//extern struct nr_cloned_state cloned_thread;
+
 
 
 #define GPA_STACK_SIZE  ((unsigned long) 1 << 28) /* 256 megabytes */
@@ -174,13 +172,14 @@ struct vmx_vcpu {
 	struct vmcs *vmcs;
 	struct thread_info *cloned_thread_info;
 	struct task_struct *cloned_tsk;
+	struct nr_cloned_state *cloned_thread;
 	void *syscall_tbl;
 
 };
 
 extern __init int vmx_init(void);
 extern void vmx_exit(void);
-extern int vmx_launch(void);
+extern int vmx_launch(struct nr_cloned_state *cloned_thread);
 extern int vmx_init_ept(struct vmx_vcpu *vcpu);
 extern int vmx_create_ept(struct vmx_vcpu *vcpu);
 extern void vmx_destroy_ept(struct vmx_vcpu *vcpu);
