@@ -50,6 +50,9 @@ static struct class *okernel_dev_class;
 static int major_no;
 
 int okernel_enabled;
+
+/* These need to be non-global */
+
 struct nr_cloned_state cloned_thread;
 unsigned long r_lockdep_depth;
 unsigned long nr_lockdep_depth;

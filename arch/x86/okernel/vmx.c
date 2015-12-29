@@ -2351,6 +2351,9 @@ struct thread_info *nr_ti;
 
 int vmx_launch(void)
 {
+	unsigned long current_frame_len;
+	unsigned long fred = 7;
+	
 	c_rip = cloned_thread.rip;
 
 	HDEBUG(("c_rip: (#%#lx)\n", c_rip));
@@ -2390,6 +2393,27 @@ int vmx_launch(void)
 	asm volatile ("mov %%rsp,%0" : "=rm" (rsp));
 	HDEBUG(("orginal thread rsp currently  (%#lx)\n", rsp));
 
+	/* 
+	 * Ok we want to clone the stack contents from
+	 * old rsp->old rbp so the local variables are still available
+	 * to us 
+	 */
+	current_frame_len = rbp - rsp;
+	HDEBUG(("current stack from in use (%lu)\n", current_frame_len));
+	new_rbp = r_stack_top;
+	new_rsp = new_rbp - current_frame_len;
+	memcpy((u64 *)new_rsp, (u64 *)rsp, current_frame_len);
+	
+	HDEBUG(("setting rsp to (%#lx) rbp to (%#lx)\n", new_rsp, new_rbp));
+	asm volatile ("mov %0, %%rbp": : "r" (new_rbp));
+	asm volatile ("mov %0, %%rsp": : "r" (new_rsp));
+
+	asm volatile("xchg %bx, %bx");
+	/* can we still access fred? */
+	printk(KERN_ERR "R: fred (%lu)\n", fred);
+	asm volatile("xchg %bx, %bx");
+	
+	
 #if 0
 	tos = (u64 *)current_top_of_stack();
 	memcpy(reserved_stack, tos, in_use);
@@ -2398,7 +2422,7 @@ int vmx_launch(void)
 
 	new_rsp = rsp - 3*PAGE_SIZE;
 	new_rbp = rbp - 3*PAGE_SIZE;
-#endif
+
 	new_rsp = r_stack_top;
 	new_rbp = new_rsp;
 	
@@ -2406,6 +2430,8 @@ int vmx_launch(void)
 
 	asm volatile ("mov %0, %%rbp": : "r" (new_rbp));
 	asm volatile ("mov %0, %%rsp": : "r" (new_rsp));
+#endif
+       
 
 #if 1
 	vcpu->cloned_tsk = current;
