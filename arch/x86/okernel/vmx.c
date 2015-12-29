@@ -551,6 +551,7 @@ void* replace_ept_page(struct vmx_vcpu *vcpu, u64 paddr)
 }
 
 
+/* We just clone the bottom page of the stack for now */
 int clone_kstack2(struct vmx_vcpu *vcpu)
 {
 	int n_pages;
@@ -569,6 +570,7 @@ int clone_kstack2(struct vmx_vcpu *vcpu)
 		k_stack, __pa(k_stack), current_top_of_stack()));
 
         //for(i = 0; i < n_pages; i++){
+
 	for(i = 0; i < 1; i++){
 		paddr = __pa(k_stack + i*PAGESIZE);
 		HDEBUG(("ept page clone on (%#lx)\n", (unsigned long)paddr));
@@ -2323,36 +2325,32 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu)
 /*
  * vmx_launch - the main loop for a cloned VMX okernel process (thread)
  */
-/* These are declared here since we change the stack pointer in this function */
-static unsigned long rsp;
-static unsigned long rbp;
-static unsigned long new_rsp;
-static unsigned long new_rbp;
-//static u64 *reserved_stack;
-//static u64 *tos;
-static unsigned long r_stack_top;
-static unsigned long in_use;
-static int ret = 0;
-static unsigned long c_rip;	
-static struct vmx_vcpu *vcpu;
-static int schedule_ok = 0;
-static unsigned long cloned_rflags;
-static int done = 0;
-static union {
-	struct intr_info s;
-	ulong v;
-} vii;
-static unsigned long cr2;
-static unsigned long err;
-static struct pt_regs regs;
-static unsigned long k_stack;
-struct thread_info *nr_ti;
-
 
 int vmx_launch(void)
 {
+	unsigned long rsp;
+	unsigned long rbp;
+	unsigned long new_rsp;
+	unsigned long new_rbp;
 	unsigned long current_frame_len;
 	unsigned long fred = 7;
+	unsigned long r_stack_top;
+	unsigned long in_use;
+	int ret = 0;
+	unsigned long c_rip;	
+	struct vmx_vcpu *vcpu;
+	int schedule_ok = 0;
+	unsigned long cloned_rflags;
+	int done = 0;
+	union {
+		struct intr_info s;
+		ulong v;
+	} vii;
+	unsigned long cr2;
+	unsigned long err;
+	struct pt_regs regs;
+	unsigned long k_stack;
+
 	
 	c_rip = cloned_thread.rip;
 
@@ -2372,14 +2370,13 @@ int vmx_launch(void)
 		return 0;
 	}
 #endif
-	/* To do: Need to take a copy of the orignal stack contents, restore when we leave */
+	/* To do: Need to take a copy of the orignal stack contents, restore when/if we leave */
 	in_use = current_top_of_stack() - current_stack_pointer();
 
 	k_stack = (unsigned long)current->stack;
 
 	r_stack_top = k_stack + PAGE_SIZE;
-	//reserved_stack = (u64 *)
-
+	
 	HDEBUG(("reset stack to top of bottom page for orig thread: in use (%lu) new top (%#lx)\n",
 		in_use, r_stack_top));
 	
@@ -2410,29 +2407,9 @@ int vmx_launch(void)
 
 	asm volatile("xchg %bx, %bx");
 	/* can we still access fred? */
-	printk(KERN_ERR "R: fred (%lu)\n", fred);
+	printk(KERN_ERR "R: fred (%lu) address of fred (%#lx)\n", fred, (unsigned long)&fred);
 	asm volatile("xchg %bx, %bx");
 	
-	
-#if 0
-	tos = (u64 *)current_top_of_stack();
-	memcpy(reserved_stack, tos, in_use);
-
-	//asm volatile ("mov %%rsp,%0" : "=rm" (rsp));
-
-	new_rsp = rsp - 3*PAGE_SIZE;
-	new_rbp = rbp - 3*PAGE_SIZE;
-
-	new_rsp = r_stack_top;
-	new_rbp = new_rsp;
-	
-	HDEBUG(("setting rsp to (%#lx) rbp to (%#lx)\n", new_rsp, new_rbp));
-
-	asm volatile ("mov %0, %%rbp": : "r" (new_rbp));
-	asm volatile ("mov %0, %%rsp": : "r" (new_rsp));
-#endif
-       
-
 #if 1
 	vcpu->cloned_tsk = current;
 #else
@@ -2448,8 +2425,6 @@ int vmx_launch(void)
 	       in_atomic(), irqs_disabled(), current->pid, current->comm);
 	printk(KERN_ERR "R: preempt_count (%d) rcu_preempt_depth (%d)\n",
 	       preempt_count(), rcu_preempt_depth());
-	
-	nr_ti = vcpu->cloned_thread_info;
 	
 	while (1) {
 		schedule_ok = 0;
@@ -2514,7 +2489,6 @@ fast_path:
 			vii.v = vmcs_readl(VM_EXIT_INTR_INFO);
 			if(vii.s.valid == INTR_INFO_VALID_VALID){
 				if(vii.s.vector == EXCEPTION_PF){
-					//memcpy(current_thread_info(), nr_ti, sizeof(struct thread_info));
 					err = (u64)vmcs_readl(VMCS_VMEXIT_INTR_ERRCODE);
 					cr2 = (u64)vmcs_readl(EXIT_QUALIFICATION);
 
@@ -2531,7 +2505,6 @@ fast_path:
 					//show_regs(&regs);
 					printk(KERN_ERR "R: calling do_page_fault_r...\n");
 					do_page_fault_r(&regs, err, cr2);
-					//memcpy(nr_ti, current_thread_info(), sizeof(struct thread_info));
 					printk(KERN_ERR "R: returned from do_page_fault_r.\n");
 					schedule_ok = 0;
 					continue;
