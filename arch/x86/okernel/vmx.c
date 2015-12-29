@@ -2154,7 +2154,6 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu)
 		vmcs_writel(GUEST_CR3, __pa((unsigned long)current->mm->pgd));
 		local_irq_enable();
 		vmx_put_cpu(vcpu);
-		ret = 16;
 		asm volatile("xchg %bx, %bx");
 	} else if(cmd == VMCALL_DO_EXEC_2){
 		printk(KERN_ERR "R: VMCALL_DO_EXEC2 called.\n");
