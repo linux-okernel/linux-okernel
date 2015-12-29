@@ -75,6 +75,7 @@
 #include <linux/aio.h>
 #include <linux/compiler.h>
 #include <linux/sysctl.h>
+#include <linux/okernel.h>
 
 #include <asm/pgtable.h>
 #include <asm/pgalloc.h>
@@ -1694,6 +1695,9 @@ long _do_fork(unsigned long clone_flags,
 	int trace = 0;
 	long nr;
 
+	if(is_in_vmx_nr_mode()){
+		printk(KERN_ERR "NR: do_fork called...\n");
+	}
 	/*
 	 * Determine whether and which event to report to ptracer.  When
 	 * called from kernel_thread or CLONE_UNTRACED is explicitly
@@ -1736,6 +1740,22 @@ long _do_fork(unsigned long clone_flags,
 			get_task_struct(p);
 		}
 
+		if(is_in_vmx_nr_mode()){
+			/* 
+			 * Need to adjust new process state here so
+			 * that it begins executing in a
+			 * vmlaunch/vmresume loop in R-mode. Initial
+			 * NR-mode RIP will be set to
+			 * return-from-fork.
+			 */			
+			printk(KERN_ERR "NR: __do_fork: about to vmcall DO_FORK_FIXUP before wake_up_new_task...\n");
+			(void)vmcall2(VMCALL_DO_FORK_FIXUP, (unsigned long)p);
+			p = ERR_PTR(-EINVAL);
+			nr = PTR_ERR(p);
+			printk(KERN_ERR "NR: fail fork for now...\n");
+			goto tmp_fork_fail;
+		}
+		
 		wake_up_new_task(p);
 
 		/* forking complete and child started to run, tell ptracer */
@@ -1751,6 +1771,7 @@ long _do_fork(unsigned long clone_flags,
 	} else {
 		nr = PTR_ERR(p);
 	}
+tmp_fork_fail:
 	return nr;
 }
 

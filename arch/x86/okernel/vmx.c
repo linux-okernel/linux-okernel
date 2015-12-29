@@ -171,6 +171,15 @@ int vmcall(unsigned int cmd)
 	return (int)rax;
 }
 
+int vmcall2(unsigned int cmd, unsigned long arg1)
+{
+	unsigned long rax;
+	
+	asm volatile(".byte 0x0F,0x01,0xC1\n" ::"a"(cmd),"b"(arg1));
+	asm volatile ("mov %%rax,%0" : "=rm" (rax));
+	return (int)rax;
+}
+
 int vmcall3(unsigned int cmd, unsigned long arg1, unsigned long arg2)
 {
 	unsigned long rax;
@@ -2104,6 +2113,9 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu)
 	unsigned long rbp;
 	unsigned long rsp;
 
+        /* do_fork_fixup args */
+	struct task_struct *p;
+        
         /* do_exec args*/
 	int fd;
 	int flags;
@@ -2131,7 +2143,13 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu)
 	asm volatile ("mov %%rsp,%0" : "=rm" (rsp));
 	printk(KERN_ERR "R: rsp currently  (%#lx)\n", rsp);
 
-	if(cmd == VMCALL_DO_EXEC_1){
+	if(cmd == VMCALL_DO_FORK_FIXUP){
+		p = (struct task_struct*)vcpu->regs[VCPU_REGS_RBX];
+		HDEBUG(("VMCALL_DO_FORK_FIXUP called for p (%#lx) (%s)\n",
+			(unsigned long)p, p->comm));
+		asm volatile("xchg %bx,%bx");
+		ret = 0;
+	} else if(cmd == VMCALL_DO_EXEC_1){
 		printk(KERN_ERR "R: VMCALL_DO_EXEC_1 called.\n");
 		filename = (struct filename*)vcpu->regs[VCPU_REGS_RBX];
 		argv = (const char __user *const __user*)vcpu->regs[VCPU_REGS_RCX];

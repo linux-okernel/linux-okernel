@@ -42,7 +42,7 @@
 #define VMCALL_SCHED 1
 #define VMCALL_PREEMPT_SCHED 2
 #define VMCALL_DOEXIT 3
-#define VMCALL_DO_NANOSLEEP 4
+#define VMCALL_DO_FORK_FIXUP 4
 #define VMCALL_DO_EXEC_1 5 /* execve */
 #define VMCALL_DO_EXEC_2 6 /* execveat */
 #ifdef CONFIG_COMPAT
@@ -51,6 +51,7 @@
 #endif
 
 int vmcall(unsigned int cmd);
+int vmcall2(unsigned int cmd, unsigned long arg1);
 int vmcall3(unsigned int cmd, unsigned long arg1, unsigned long arg2);
 int vmcall4(unsigned int cmd, unsigned long arg1, unsigned long arg2, unsigned long arg3);
 int vmcall5(unsigned int cmd, unsigned long arg1, unsigned long arg2, unsigned long arg3, unsigned long arg4);
