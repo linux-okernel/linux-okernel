@@ -43,10 +43,7 @@
 #include <asm/virtext.h>
 #include <asm/percpu.h>
 #include <asm/preempt.h>
-//#include <asm/paravirt.h>
-
 #include <asm/tlbflush.h>
-
 
 #include "vmx.h"
 
@@ -93,8 +90,6 @@ unsigned long okernel_stack_use(void)
 	return  (current_top_of_stack() - current_stack_pointer());
 }
 
-
-
 void okernel_dump_stack_info(void)
 {
 	unsigned long sp, sp0, end_stack;
@@ -118,7 +113,6 @@ void __noclone okernel_enter_test(unsigned long flags)
 		
 int __noclone okernel_enter(unsigned long flags)
 {
-#if 0
 	unsigned long tmpl;
 
 	/* Malloc this since the stack will get over written later
@@ -129,7 +123,6 @@ int __noclone okernel_enter(unsigned long flags)
 	
 	unsigned long rbp,rsp,rflags,cr2,rax,rcx,rdx,rbx,rsi,rdi,r8,r9,r10,r11,r12,r13,r14,r15;
 	int ret;
-#endif
 	
 	HDEBUG(("called - flags (%lx)\n", flags));
 	HDEBUG(("about to call okernel_ret_from_fork...\n"));
@@ -137,7 +130,6 @@ int __noclone okernel_enter(unsigned long flags)
 	asm("jmp okernel_ret_from_fork ");
 	asm volatile(".Lokernel_ret_label: ");
 
-#if 0
 	if(flags == OKERNEL_IOCTL_LAUNCH){
 		asm volatile ("mov %%rbp,%0" : "=rm" (rbp));
 		HDEBUG(("cloned thread rbp will be set to  (%#lx)\n", rbp));
@@ -248,8 +240,6 @@ int __noclone okernel_enter(unsigned long flags)
 		asm volatile("xchg %bx, %bx");
 	}
 	return ret;
-#endif
-	return -1;
 }
 
 /* IOCTL to allow okernel ON to be toggled as an alternative to /proc/<pid> toggling */
@@ -360,7 +350,6 @@ static struct file_operations fops={
 
 static int __init okernel_init(void)
 {
-	//unsigned long tmpl;
 	
 	HDEBUG(("Start initialization...\n"));
 	
@@ -378,10 +367,6 @@ static int __init okernel_init(void)
 
 	okernel_enabled = 1;
 	okernel_dump_stack_info();
-	//asm("mov $.Lc_rip_label, %0" : "=r"(tmpl));
-
-	//HDEBUG(("cloned thread RIP will be set to: (%#lx)\n", tmpl));
-	//cloned_thread.rip = tmpl;
 	HDEBUG(("Enabled, initialization done.\n"));
 	return 0;
 }

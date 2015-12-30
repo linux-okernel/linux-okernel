@@ -987,7 +987,8 @@ ENTRY(do_softirq_own_stack)
 END(do_softirq_own_stack)
 
 #ifdef CONFIG_OKERNEL
-/* OKERNEL_FORK_LAUNCH = 2 */ 
+/* OKERNEL_FORK_LAUNCH = 2 */
+/* Be clear on what will happen if you let this return. */	
 ENTRY(okernel_ret_from_fork)
 	pushq	%rbp
 	mov	%rsp, %rbp
