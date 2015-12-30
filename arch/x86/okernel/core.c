@@ -109,22 +109,35 @@ void okernel_dump_stack_info(void)
 	       sp0, sp, sp0-THREAD_SIZE);
 }
 
-
-
-int __noclone okernel_enter(unsigned int flags)
+void __noclone okernel_enter_test(unsigned long flags)
 {
+		HDEBUG(("called - flags (%lx)\n", flags));
+		HDEBUG(("just trigger bug for now...\n"));
+		BUG();
+}
+		
+int __noclone okernel_enter(unsigned long flags)
+{
+#if 0
 	unsigned long tmpl;
 
 	/* Malloc this since the stack will get over written later
 	 * when the cloned thread is running. And passing a pointer
 	 * allows us to save stack space. */
+
 	struct nr_cloned_state *cloned_thread = kmalloc(sizeof(struct nr_cloned_state), GFP_KERNEL);
 	
 	unsigned long rbp,rsp,rflags,cr2,rax,rcx,rdx,rbx,rsi,rdi,r8,r9,r10,r11,r12,r13,r14,r15;
 	int ret;
+#endif
 	
-	HDEBUG(("called.\n"));
+	HDEBUG(("called - flags (%lx)\n", flags));
+	HDEBUG(("about to call okernel_ret_from_fork...\n"));
 
+	asm("jmp okernel_ret_from_fork ");
+	asm volatile(".Lokernel_ret_label: ");
+
+#if 0
 	if(flags == OKERNEL_IOCTL_LAUNCH){
 		asm volatile ("mov %%rbp,%0" : "=rm" (rbp));
 		HDEBUG(("cloned thread rbp will be set to  (%#lx)\n", rbp));
@@ -235,6 +248,8 @@ int __noclone okernel_enter(unsigned int flags)
 		asm volatile("xchg %bx, %bx");
 	}
 	return ret;
+#endif
+	return -1;
 }
 
 /* IOCTL to allow okernel ON to be toggled as an alternative to /proc/<pid> toggling */

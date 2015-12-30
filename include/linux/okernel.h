@@ -104,7 +104,8 @@ static inline void break_in_nr_mode(void)
 }
 extern int okernel_enabled;
 int okernel_setup(int* vcpu);
-int okernel_enter(unsigned int flags);
+int okernel_enter(unsigned long flags);
+void okernel_enter_test(unsigned long flags);
 
 void okernel_schedule_helper(void);
 void okernel_dump_stack_info(void);

@@ -36,7 +36,7 @@
 #include <asm/context_tracking.h>
 #include <asm/smap.h>
 #include <asm/pgtable_types.h>
-#include <linux/err.h>
+#include <linux/err.h>	
 
 /* Avoid __ASSEMBLER__'ifying <linux/audit.h> just for this.  */
 #include <linux/elf-em.h>
@@ -985,6 +985,18 @@ ENTRY(do_softirq_own_stack)
 	decl	PER_CPU_VAR(irq_count)
 	ret
 END(do_softirq_own_stack)
+
+#ifdef CONFIG_OKERNEL
+/* OKERNEL_FORK_LAUNCH = 2 */ 
+ENTRY(okernel_ret_from_fork)
+	pushq	%rbp
+	mov	%rsp, %rbp
+	movq $0x2, %rdi
+	call okernel_enter_test
+	leaveq
+	ret
+END(okernel_ret_from_fork)	
+#endif	
 
 #ifdef CONFIG_XEN
 idtentry xen_hypervisor_callback xen_do_hypervisor_callback has_error_code=0
