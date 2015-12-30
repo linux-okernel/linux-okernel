@@ -125,11 +125,7 @@ int __noclone okernel_enter(unsigned long flags)
 	int ret;
 	
 	HDEBUG(("called - flags (%lx)\n", flags));
-	HDEBUG(("about to call okernel_ret_from_fork...\n"));
-
-	asm("jmp okernel_ret_from_fork ");
-	asm volatile(".Lokernel_ret_label: ");
-
+	
 	if(flags == OKERNEL_IOCTL_LAUNCH){
 		asm volatile ("mov %%rbp,%0" : "=rm" (rbp));
 		HDEBUG(("cloned thread rbp will be set to  (%#lx)\n", rbp));

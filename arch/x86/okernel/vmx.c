@@ -2157,9 +2157,13 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu)
 	printk(KERN_ERR "R: rsp currently  (%#lx)\n", rsp);
 
 	if(cmd == VMCALL_DO_FORK_FIXUP){
+		local_irq_disable();
 		p = (struct task_struct*)vcpu->regs[VCPU_REGS_RBX];
 		HDEBUG(("VMCALL_DO_FORK_FIXUP called for p (%#lx) (%s)\n",
 			(unsigned long)p, p->comm));
+		set_tsk_thread_flag(p, TIF_OKERNEL_FORK);
+		clear_tsk_thread_flag(p, TIF_FORK);
+		local_irq_enable();
 		asm volatile("xchg %bx,%bx");
 		ret = 0;
 	} else if(cmd == VMCALL_DO_EXEC_1){

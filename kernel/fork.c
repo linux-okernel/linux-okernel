@@ -1750,10 +1750,12 @@ long _do_fork(unsigned long clone_flags,
 			 */			
 			printk(KERN_ERR "NR: __do_fork: about to vmcall DO_FORK_FIXUP before wake_up_new_task...\n");
 			(void)vmcall2(VMCALL_DO_FORK_FIXUP, (unsigned long)p);
+#if 0
 			p = ERR_PTR(-EINVAL);
 			nr = PTR_ERR(p);
 			printk(KERN_ERR "NR: fail fork for now...\n");
 			goto tmp_fork_fail;
+#endif
 		}
 		
 		wake_up_new_task(p);
@@ -1771,7 +1773,7 @@ long _do_fork(unsigned long clone_flags,
 	} else {
 		nr = PTR_ERR(p);
 	}
-tmp_fork_fail:
+//tmp_fork_fail:
 	return nr;
 }
 

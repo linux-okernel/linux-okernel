@@ -990,9 +990,13 @@ END(do_softirq_own_stack)
 /* OKERNEL_FORK_LAUNCH = 2 */
 /* Be clear on what will happen if you let this return. */	
 ENTRY(okernel_ret_from_fork)
-	pushq	%rbp
-	mov	%rsp, %rbp
-	movq $0x2, %rdi
+        LOCK ; btr $TIF_OKERNEL_FORK, TI_flags(%r8)
+	pushq	$0x0002
+	popfq					/* reset kernel eflags */
+
+	call	schedule_tail
+    
+	movq $0x2, %rdi	
 	call okernel_enter_test
 	leaveq
 	ret

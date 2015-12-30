@@ -112,6 +112,8 @@ do {									\
 	     "movq %%rax,%%rdi\n\t" 					  \
 	     "testl  %[_tif_fork],%P[ti_flags](%%r8)\n\t"		  \
 	     "jnz   ret_from_fork\n\t"					  \
+	     "testl  %[_tif_okernel_fork],%P[ti_flags](%%r8)\n\t"	  \
+	     "jnz   okernel_ret_from_fork\n\t"				  \
 	     RESTORE_CONTEXT						  \
 	     : "=a" (last)					  	  \
 	       __switch_canary_oparam					  \
@@ -119,6 +121,7 @@ do {									\
 	       [threadrsp] "i" (offsetof(struct task_struct, thread.sp)), \
 	       [ti_flags] "i" (offsetof(struct thread_info, flags)),	  \
 	       [_tif_fork] "i" (_TIF_FORK),			  	  \
+	       [_tif_okernel_fork] "i" (_TIF_OKERNEL_FORK),		  \
 	       [thread_info] "i" (offsetof(struct task_struct, stack)),   \
 	       [current_task] "m" (current_task)			  \
 	       __switch_canary_iparam					  \
