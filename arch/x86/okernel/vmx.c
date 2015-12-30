@@ -1357,29 +1357,25 @@ static void vmx_get_cpu(struct vmx_vcpu *vcpu)
 {
 	int cur_cpu = get_cpu();
 
-	if(vcpu->launched != 0){
-		vmcs_load(vcpu->vmcs);
-	} else {
-		if (__this_cpu_read(local_vcpu) != vcpu) {
-			__this_cpu_write(local_vcpu, vcpu);
+	if (__this_cpu_read(local_vcpu) != vcpu) {
+		__this_cpu_write(local_vcpu, vcpu);
+		
+		if (vcpu->cpu != cur_cpu) {
+			if (vcpu->cpu >= 0)
+				smp_call_function_single(vcpu->cpu,
+							 __vmx_get_cpu_helper, (void *) vcpu, 1);
+			else
+				vmcs_clear(vcpu->vmcs);
 			
-			if (vcpu->cpu != cur_cpu) {
-				if (vcpu->cpu >= 0)
-					smp_call_function_single(vcpu->cpu,
-								 __vmx_get_cpu_helper, (void *) vcpu, 1);
-				else
-					vmcs_clear(vcpu->vmcs);
-
-				vpid_sync_context(vcpu->vpid);
-				ept_sync_context(vcpu->eptp);
+			vpid_sync_context(vcpu->vpid);
+			ept_sync_context(vcpu->eptp);
 				
-				vcpu->launched = 0;
-				vmcs_load(vcpu->vmcs);
-				__vmx_setup_cpu();
-				vcpu->cpu = cur_cpu;
-			} else {
-				vmcs_load(vcpu->vmcs);
-			}
+			vcpu->launched = 0;
+			vmcs_load(vcpu->vmcs);
+			__vmx_setup_cpu();
+			vcpu->cpu = cur_cpu;
+		} else {
+			vmcs_load(vcpu->vmcs);
 		}
 	}
 }
@@ -2341,7 +2337,7 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu)
  * vmx_launch - the main loop for a cloned VMX okernel process (thread)
  */
 
-int vmx_launch(struct nr_cloned_state *cloned_thread)
+int vmx_launch(unsigned int flags, struct nr_cloned_state *cloned_thread)
 {
 	unsigned long rsp;
 	unsigned long rbp;

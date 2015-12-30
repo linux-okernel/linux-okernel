@@ -1,3 +1,19 @@
+/* 
+ * linux/arch/x86/okernel/core.c
+ * 
+ * Copyright (C) 2015 - Chris Dalton (cid@hpe.com), HPE Corp.
+ * Suport for splitting the kernel into inner and outer regions,
+ * with the aim of achieving some degree of intra-kernel protection.
+ * Processes marked as 'OKERNEL' run under vmx non-root mode (x86).
+ * They enter the kernel in that mode too (outer-kernel mode) 
+ * thus giving a (inner kernel - running in root-mode vmx on x86)
+ * a control point where restrictions can be put in place, e.g. enforce
+ * something like a vMMU interface, as in 'Nested Kernel', Dautenhahn,
+ *  et al. 
+ *  
+ * For basic vmx setup we re-use some of the existing kvm / dune code (in vmx.c). 
+ *
+ */
 #include <linux/errno.h>
 #include <linux/kernel.h>
 #include <linux/module.h>
@@ -93,7 +109,9 @@ void okernel_dump_stack_info(void)
 	       sp0, sp, sp0-THREAD_SIZE);
 }
 
-int __noclone okernel_enter(void)
+
+
+int __noclone okernel_enter(unsigned int flags)
 {
 	unsigned long tmpl;
 
@@ -107,105 +125,107 @@ int __noclone okernel_enter(void)
 	
 	HDEBUG(("called.\n"));
 
-	asm volatile ("mov %%rbp,%0" : "=rm" (rbp));
-	HDEBUG(("cloned thread rbp will be set to  (%#lx)\n", rbp));
-	cloned_thread->rbp = rbp;
+	if(flags == OKERNEL_IOCTL_LAUNCH){
+		asm volatile ("mov %%rbp,%0" : "=rm" (rbp));
+		HDEBUG(("cloned thread rbp will be set to  (%#lx)\n", rbp));
+		cloned_thread->rbp = rbp;
+		
+		asm volatile ("mov %%rsp,%0" : "=rm" (rsp));
+		HDEBUG(("cloned thread rsp will be set to  (%#lx)\n", rsp));
+		cloned_thread->rsp = rsp;
+		
+		asm volatile ("mov %%cr2,%0" : "=rm" (cr2));
+		HDEBUG(("cloned thread cr2 will be set to  (%#lx)\n", cr2));
+		cloned_thread->cr2 = cr2;
 
-	asm volatile ("mov %%rsp,%0" : "=rm" (rsp));
-	HDEBUG(("cloned thread rsp will be set to  (%#lx)\n", rsp));
-	cloned_thread->rsp = rsp;
+		asm volatile ("mov %%rax,%0" : "=rm" (rax));
+		HDEBUG(("cloned thread rax will be set to  (%#lx)\n", rax));
+		cloned_thread->rax = rax;
+		
+		asm volatile ("mov %%rcx,%0" : "=rm" (rcx));
+		HDEBUG(("cloned thread rcx will be set to  (%#lx)\n", rcx));
+		cloned_thread->rcx = rcx;
+		
+		asm volatile ("mov %%rdx,%0" : "=rm" (rdx));
+		HDEBUG(("cloned thread rdx will be set to  (%#lx)\n", rdx));
+		cloned_thread->rdx = rdx;
+		
+		asm volatile ("mov %%rdx,%0" : "=rm" (rbx));
+		HDEBUG(("cloned thread rbx will be set to  (%#lx)\n", rbx));
+		cloned_thread->rbx = rbx;
+		
+		asm volatile ("mov %%rsi,%0" : "=rm" (rsi));
+		HDEBUG(("cloned thread rsi will be set to  (%#lx)\n", rsi));
+		cloned_thread->rsi = rsi;
+		
+		asm volatile ("mov %%rdi,%0" : "=rm" (rdi));
+		HDEBUG(("cloned thread rdi will be set to  (%#lx)\n", rdi));
+		cloned_thread->rdi = rdi;
+		
+		asm volatile ("mov %%r8,%0" : "=rm" (r8));
+		HDEBUG(("cloned thread r8 will be set to  (%#lx)\n", r8));
+		cloned_thread->r8 = r8;
+		
+		asm volatile ("mov %%r9,%0" : "=rm" (r9));
+		HDEBUG(("cloned thread r9 will be set to  (%#lx)\n", r9));
+		cloned_thread->r9 = r9;
+		
+		asm volatile ("mov %%r10,%0" : "=rm" (r10));
+		HDEBUG(("cloned thread r10 will be set to  (%#lx)\n", r10));
+		cloned_thread->r10 = r10;
+		
+		asm volatile ("mov %%r11,%0" : "=rm" (r11));
+		HDEBUG(("cloned thread r11 will be set to  (%#lx)\n", r11));
+		cloned_thread->r11 = r11;
+		
+		asm volatile ("mov %%r12,%0" : "=rm" (r12));
+		HDEBUG(("cloned thread r12 will be set to  (%#lx)\n", r12));
+		cloned_thread->r12 = r12;
+		
+		asm volatile ("mov %%r13,%0" : "=rm" (r13));
+		HDEBUG(("cloned thread r13 will be set to  (%#lx)\n", r13));
+		cloned_thread->r13 = r13;
+		
+		asm volatile ("mov %%r14,%0" : "=rm" (r14));
+		HDEBUG(("cloned thread r14 will be set to  (%#lx)\n", r14));
+		cloned_thread->r14 = r14;
+		
+		asm volatile ("mov %%r15,%0" : "=rm" (r15));
+		HDEBUG(("cloned thread r15 will be set to  (%#lx)\n", r15));
+		cloned_thread->r15 = r15;
+		
+		asm("mov $.Lc_rip_label, %0" : "=r"(tmpl));
 
-	asm volatile ("mov %%cr2,%0" : "=rm" (cr2));
-	HDEBUG(("cloned thread cr2 will be set to  (%#lx)\n", cr2));
-	cloned_thread->cr2 = cr2;
-
-	asm volatile ("mov %%rax,%0" : "=rm" (rax));
-	HDEBUG(("cloned thread rax will be set to  (%#lx)\n", rax));
-	cloned_thread->rax = rax;
-
-	asm volatile ("mov %%rcx,%0" : "=rm" (rcx));
-	HDEBUG(("cloned thread rcx will be set to  (%#lx)\n", rcx));
-	cloned_thread->rcx = rcx;
-	
-	asm volatile ("mov %%rdx,%0" : "=rm" (rdx));
-	HDEBUG(("cloned thread rdx will be set to  (%#lx)\n", rdx));
-	cloned_thread->rdx = rdx;
-
-	asm volatile ("mov %%rdx,%0" : "=rm" (rbx));
-	HDEBUG(("cloned thread rbx will be set to  (%#lx)\n", rbx));
-	cloned_thread->rbx = rbx;
-
-	asm volatile ("mov %%rsi,%0" : "=rm" (rsi));
-	HDEBUG(("cloned thread rsi will be set to  (%#lx)\n", rsi));
-	cloned_thread->rsi = rsi;
-
-	asm volatile ("mov %%rdi,%0" : "=rm" (rdi));
-	HDEBUG(("cloned thread rdi will be set to  (%#lx)\n", rdi));
-	cloned_thread->rdi = rdi;
-
-	asm volatile ("mov %%r8,%0" : "=rm" (r8));
-	HDEBUG(("cloned thread r8 will be set to  (%#lx)\n", r8));
-	cloned_thread->r8 = r8;
-
-	asm volatile ("mov %%r9,%0" : "=rm" (r9));
-	HDEBUG(("cloned thread r9 will be set to  (%#lx)\n", r9));
-	cloned_thread->r9 = r9;
-
-	asm volatile ("mov %%r10,%0" : "=rm" (r10));
-	HDEBUG(("cloned thread r10 will be set to  (%#lx)\n", r10));
-	cloned_thread->r10 = r10;
-
-	asm volatile ("mov %%r11,%0" : "=rm" (r11));
-	HDEBUG(("cloned thread r11 will be set to  (%#lx)\n", r11));
-	cloned_thread->r11 = r11;
-	
-	asm volatile ("mov %%r12,%0" : "=rm" (r12));
-	HDEBUG(("cloned thread r12 will be set to  (%#lx)\n", r12));
-	cloned_thread->r12 = r12;
-
-	asm volatile ("mov %%r13,%0" : "=rm" (r13));
-	HDEBUG(("cloned thread r13 will be set to  (%#lx)\n", r13));
-	cloned_thread->r13 = r13;
-
-	asm volatile ("mov %%r14,%0" : "=rm" (r14));
-	HDEBUG(("cloned thread r14 will be set to  (%#lx)\n", r14));
-	cloned_thread->r14 = r14;
-
-	asm volatile ("mov %%r15,%0" : "=rm" (r15));
-	HDEBUG(("cloned thread r15 will be set to  (%#lx)\n", r15));
-	cloned_thread->r15 = r15;
-
-	asm("mov $.Lc_rip_label, %0" : "=r"(tmpl));
-
-	HDEBUG(("cloned thread RIP will be set to: (%#lx)\n", tmpl));
-	cloned_thread->rip = tmpl;
-	
+		HDEBUG(("cloned thread RIP will be set to: (%#lx)\n", tmpl));
+		cloned_thread->rip = tmpl;
+		
 #if 0
-	regs = task_pt_regs(current);
-	HDEBUG(("----start of 'current' regs from __show_regs:\n"));
-	__show_regs(regs, 1);
-	HDEBUG(("----end of 'current' regs from __show_regs:\n"));
+		regs = task_pt_regs(current);
+		HDEBUG(("----start of 'current' regs from __show_regs:\n"));
+		__show_regs(regs, 1);
+		HDEBUG(("----end of 'current' regs from __show_regs:\n"));
 #endif	
 
 #if 0
-	asm volatile ( "pushf\n\t"
-                   "pop %0"
-                   : "=g"(rflags) );
-	
-	if((rflags & RFLAGS_IF_BIT)){
-		HDEBUG(("cloned thread: interupts enabled via rflags.\n"));
-	}
-	/* Cloned thread will start with interupts disabled. */
-	rflags = (rflags & ~RFLAGS_IF_BIT);
-	cloned_thread->rflags = rflags;
-#endif
-	rflags = 0x002;
-	cloned_thread->rflags = rflags;
-	HDEBUG(("cloned thread rflags will be set to  (%#lx)\n", rflags));
+		asm volatile ( "pushf\n\t"
+			       "pop %0"
+			       : "=g"(rflags) );
 		
+		if((rflags & RFLAGS_IF_BIT)){
+			HDEBUG(("cloned thread: interupts enabled via rflags.\n"));
+		}
+		/* Cloned thread will start with interupts disabled. */
+		rflags = (rflags & ~RFLAGS_IF_BIT);
+		cloned_thread->rflags = rflags;
+#endif
+		rflags = 0x002;
+		cloned_thread->rflags = rflags;
+		HDEBUG(("cloned thread rflags will be set to  (%#lx)\n", rflags));
+	}
+
 	asm volatile("xchg %bx, %bx");
 
-	ret = vmx_launch(cloned_thread);
+	ret = vmx_launch(flags, cloned_thread);
 	
 	asm volatile(".Lc_rip_label: ");
 	
@@ -229,7 +249,7 @@ long ok_device_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 {
 	unsigned long val;
 	int ret;
-	struct thread_info *ti; 
+	struct thread_info *ti;
 
 	HDEBUG(("called.\n"));
 	switch(cmd)
@@ -252,7 +272,7 @@ long ok_device_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 			printk(KERN_CRIT "NR: Calling okernel_enter in  NR mode kernel...shouldn't get here!!\n");
 		}
 		
-		ret = okernel_enter();
+		ret = okernel_enter(OKERNEL_IOCTL_LAUNCH);
 
 		if(vmx_nr_mode()){
 			goto nr_exit;

@@ -3,7 +3,7 @@
  * 
  * Copyright (C) 2015 - Chris Dalton (cid@hpe.com), HPE Corp.
  * Suport for splitting the kernel into inner and outer regions,
- * we the aim of achieving some degree of intra-kernel protection.
+ * with the aim of achieving some degree of intra-kernel protection.
  * Processes marked as 'OKERNEL' run under vmx non-root mode (x86).
  * They enter the kernel in that mode too (outer-kernel mode) 
  * thus giving a (inner kernel - running in root-mode vmx on x86)
@@ -35,6 +35,9 @@
 #define OKERNEL_OFF     0
 #define OKERNEL_ON_EXEC 1
 #define OKERNEL_ON      2
+
+#define OKERNEL_IOCTL_LAUNCH 1
+#define OKERNEL_FORK_LAUNCH  2
 
 
 #ifdef CONFIG_OKERNEL
@@ -101,7 +104,7 @@ static inline void break_in_nr_mode(void)
 }
 extern int okernel_enabled;
 int okernel_setup(int* vcpu);
-int okernel_enter(void);
+int okernel_enter(unsigned int flags);
 
 void okernel_schedule_helper(void);
 void okernel_dump_stack_info(void);

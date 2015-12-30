@@ -179,7 +179,7 @@ struct vmx_vcpu {
 
 extern __init int vmx_init(void);
 extern void vmx_exit(void);
-extern int vmx_launch(struct nr_cloned_state *cloned_thread);
+extern int vmx_launch(unsigned int flags, struct nr_cloned_state *cloned_thread);
 extern int vmx_init_ept(struct vmx_vcpu *vcpu);
 extern int vmx_create_ept(struct vmx_vcpu *vcpu);
 extern void vmx_destroy_ept(struct vmx_vcpu *vcpu);
