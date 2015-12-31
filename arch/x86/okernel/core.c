@@ -106,9 +106,18 @@ void okernel_dump_stack_info(void)
 
 void __noclone okernel_enter_test(unsigned long flags)
 {
-		HDEBUG(("called - flags (%lx)\n", flags));
-		HDEBUG(("just trigger bug for now...\n"));
-		BUG();
+	int i;
+	
+	HDEBUG(("called - flags (%lx) pid(%d)\n", flags, current->pid));
+	for(i = 0; i < 20; i++){
+		
+		HDEBUG(("pid (%d) Calling schedule_timeout (%d)...\n", current->pid, i));
+		set_current_state(TASK_INTERRUPTIBLE);
+		schedule_timeout(2*HZ);
+		HDEBUG(("pid (%d) Done calling schedule_timeout (%d).\n", current->pid, i));
+	}
+	HDEBUG(("Calling do_exit() for pid (%d)...\n", current->pid));
+	do_exit(0);
 }
 		
 int __noclone okernel_enter(unsigned long flags)
