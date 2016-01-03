@@ -1026,7 +1026,8 @@ ENTRY(okernel_ret_from_fork)
 	/* xchg %bx,%bx */
 	
 	call	schedule_tail
-
+	xchg %bx,%bx
+	
         pushq	$0x0202	
 	popfq
 

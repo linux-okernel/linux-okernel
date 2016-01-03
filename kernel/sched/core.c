@@ -3179,7 +3179,8 @@ asmlinkage __visible void __sched schedule(void)
 {
 	struct task_struct *tsk = current;
 	volatile struct thread_info *ti;
-	
+	int cpu = smp_processor_id();
+	struct tss_struct *tss = &per_cpu(cpu_tss, cpu);
 	
 	if(is_in_vmx_nr_mode()){
 		/* Return control to the original process running in root-mode VMX */
@@ -3188,7 +3189,8 @@ asmlinkage __visible void __sched schedule(void)
 		ti = current_thread_info();
 		
 		//dump_stack();
-		printk(KERN_ERR "NR: schedule called (pid=%d)\n", current->pid);
+		printk(KERN_ERR "NR: schedule called (pid=%d)  cpu_curr_tos (%#lx) flags(%#x)...\n",
+		       current->pid, (unsigned long)tss->x86_tss.sp0, ti->flags);
 		asm volatile("xchg %bx, %bx");
 
 
@@ -3225,7 +3227,8 @@ asmlinkage __visible void __sched schedule(void)
 	}
 	if(is_in_vmx_nr_mode()){
 		ti = current_thread_info();
-		printk(KERN_ERR "NR: returning from VMCALL schedule (pid=%d)\n", current->pid);
+		printk(KERN_ERR "NR: returning from VMCALL schedule (pid=%d)  cpu_curr_tos (%#lx) flags (%#x)\n",
+		       current->pid, (unsigned long)tss->x86_tss.sp0, ti->flags);
 		asm volatile("xchg %bx, %bx");
 		printk(KERN_ERR "NR: schedule return in_atomic(): %d, irqs_disabled(): %d, pid: %d, name: %s\n",
 		       in_atomic(), irqs_disabled(), current->pid, current->comm);

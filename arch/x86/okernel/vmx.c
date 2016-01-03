@@ -2125,6 +2125,8 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu)
 	unsigned int cloned_tsk_state;
 	unsigned long rbp;
 	unsigned long rsp;
+	int cpu = smp_processor_id();
+	struct tss_struct *tss = &per_cpu(cpu_tss, cpu);
 
         /* do_fork_fixup args */
 	struct task_struct *p;
@@ -2303,22 +2305,28 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu)
 
                 /* Re-sync cloned-thread thread_info */
 #if 1
-		printk(KERN_ERR "R: syncing cloned thread_info state (NR->R)...\n");
+		printk(KERN_ERR "R: syncing cloned thread_info state (NR->R) (original r_ti->flags=%#x)\n",
+			r_ti->flags);
 		asm volatile("xchg %bx, %bx");
 		memcpy(r_ti, nr_ti, sizeof(struct thread_info));
 #endif
-		printk(KERN_ERR "R: in calling schedule (pid %d)...\n", current->pid);
+		printk(KERN_ERR "R: about to call schedule_r (pid %d) cpu_curr_tos (%#lx) flags (%#x)...\n",
+		       current->pid, (unsigned long)tss->x86_tss.sp0, r_ti->flags);
 		asm volatile("xchg %bx, %bx");
 
 		schedule_r_mode();
 #if 1
                 /* Re-sync cloned-thread thread_info */
+		tss = &per_cpu(cpu_tss, cpu);
+		printk(KERN_ERR "R: returning from schedule_r (pid %d) cpu_curr_tos (%#lx) flags (%#x).\n",
+		       current->pid, (unsigned long)tss->x86_tss.sp0, r_ti->flags);
 		printk(KERN_ERR "R: syncing cloned thread_info state (R->NR)...\n");
 		asm volatile("xchg %bx, %bx");
 		memcpy(nr_ti, r_ti, sizeof(struct thread_info));
+		printk(KERN_ERR "R: synced cloned thread_info state (R->NR) (nr_ti->flags=%#x)\n",
+			nr_ti->flags);
 		//clear_tsk_need_resched(current);
 #endif
-		printk(KERN_ERR "R: returning from schedule.\n");
 		printk(KERN_ERR "R: returning from schedule Rsaved prempt_c (%#x) NR saved (%#x)\n",
 		       r_ti->saved_preempt_count, nr_ti->saved_preempt_count);
 		printk(KERN_ERR "R: ret from sched in_atomic(): %d, irqs_disabled(): %d, pid: %d, name: %s\n",
@@ -2476,7 +2484,7 @@ fast_path:
 
 		if(cloned_rflags & RFLAGS_IF_BIT){
 			if((preempt_count() < 2) && (rcu_preempt_depth() !=0 )){
-				schedule_ok = 0;
+				schedule_ok = 1;
 			}
 			local_irq_enable();
 		} else {
@@ -2499,7 +2507,7 @@ fast_path:
 
 		if (ret == EXIT_REASON_VMCALL){
 			vmx_handle_vmcall(vcpu);
-			schedule_ok = 0;
+			schedule_ok = 1;
 		}
 		else if (ret == EXIT_REASON_CPUID)
 			vmx_handle_cpuid(vcpu);
@@ -2527,7 +2535,7 @@ fast_path:
 					printk(KERN_ERR "R: calling do_page_fault_r...\n");
 					do_page_fault_r(&regs, err, cr2);
 					printk(KERN_ERR "R: returned from do_page_fault_r.\n");
-					schedule_ok = 0;
+					schedule_ok = 1;
 					continue;
 				} else if(vii.s.vector == EXCEPTION_GP){
 					err = (u64)vmcs_readl(VMCS_VMEXIT_INTR_ERRCODE);
