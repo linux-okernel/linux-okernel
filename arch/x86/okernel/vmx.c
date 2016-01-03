@@ -2302,18 +2302,22 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu)
 		       (void *)current->task_state_change);
 
                 /* Re-sync cloned-thread thread_info */
+#if 1
 		printk(KERN_ERR "R: syncing cloned thread_info state (NR->R)...\n");
 		asm volatile("xchg %bx, %bx");
 		memcpy(r_ti, nr_ti, sizeof(struct thread_info));
-
-		printk(KERN_ERR "R: in calling schedule...\n");
+#endif
+		printk(KERN_ERR "R: in calling schedule (pid %d)...\n", current->pid);
 		asm volatile("xchg %bx, %bx");
+
 		schedule_r_mode();
-		/* Re-sync cloned-thread thread_info */
+#if 1
+                /* Re-sync cloned-thread thread_info */
 		printk(KERN_ERR "R: syncing cloned thread_info state (R->NR)...\n");
 		asm volatile("xchg %bx, %bx");
 		memcpy(nr_ti, r_ti, sizeof(struct thread_info));
-
+		//clear_tsk_need_resched(current);
+#endif
 		printk(KERN_ERR "R: returning from schedule.\n");
 		printk(KERN_ERR "R: returning from schedule Rsaved prempt_c (%#x) NR saved (%#x)\n",
 		       r_ti->saved_preempt_count, nr_ti->saved_preempt_count);
@@ -2480,11 +2484,11 @@ fast_path:
 			 * (most likely) exited due to the timer tick
 			 * but not through an explicit call to
 			 * schedule. */
-			if(ret != EXIT_REASON_EXTERNAL_INTERRUPT){
-				printk(KERN_ERR "R: unexpected fast_path exit (%d)\n", ret);
-				BUG();
+			if(ret == EXIT_REASON_EXTERNAL_INTERRUPT){
+				goto fast_path;
+			} else {
+				printk(KERN_ERR "R: non-timer fast_path exit with interrupts disabled (%d)\n", ret);
 			}
-			goto fast_path;
 		}
 		
 		if (ret == EXIT_REASON_VMCALL || ret == EXIT_REASON_CPUID) {
@@ -2525,10 +2529,20 @@ fast_path:
 					printk(KERN_ERR "R: returned from do_page_fault_r.\n");
 					schedule_ok = 0;
 					continue;
+				} else if(vii.s.vector == EXCEPTION_GP){
+					err = (u64)vmcs_readl(VMCS_VMEXIT_INTR_ERRCODE);
+					cr2 = (u64)vmcs_readl(EXIT_QUALIFICATION);
+
+					printk(KERN_ERR "R: Got GP error - exit qualification (%#lx) err (%#lx)\n",
+					       cr2, err);
+					printk(KERN_ERR "R: Guest rip (%#lx)\n", vmcs_readl(GUEST_RIP));
+					printk(KERN_ERR "R: can't handle for now...just BUG()\n");
+					BUG();
 				} else {
 					vmx_put_cpu(vcpu);				
-					printk(KERN_INFO "R: unhandled exception/NMI: reason %d, exit qual %lx\n",
-					       ret, vmcs_readl(EXIT_QUALIFICATION));
+					printk(KERN_INFO "R: unhandled exception/NMI: ret (%d) vector (%d), exit qual (%lx)\n",
+					       ret, vii.s.vector, vmcs_readl(EXIT_QUALIFICATION));
+					BUG();
 				}
 			}
 			done = 1;

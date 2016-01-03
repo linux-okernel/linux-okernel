@@ -104,7 +104,9 @@ static inline void break_in_nr_mode(void)
 }
 extern int okernel_enabled;
 int okernel_setup(int* vcpu);
-int okernel_enter(unsigned long flags);
+//int okernel_enter(unsigned long flags, unsigned long rbp, unsigned long rsp);
+asmlinkage int okernel_enter(unsigned long flags);
+asmlinkage void __noclone okernel_enter_fork(void);
 void okernel_enter_test(unsigned long flags);
 
 void okernel_schedule_helper(void);

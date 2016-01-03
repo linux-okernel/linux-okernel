@@ -23,6 +23,8 @@ enum vmmerr {
 	VMMERR_MSR_FAULT,
 };
 
+#define EXCEPTION_DE			0x0
+#define EXCEPTION_GP			0xD
 #define EXCEPTION_PF			0xE
 
 

@@ -334,10 +334,7 @@ int_restore_rest:
 
 syscall_return:
 	/* The IRETQ could re-enable interrupts: */
-	/* 
-
-
-	
+/*
         xor %r11,%r11	
 	movq %cr4,%r11
 	andq $0x2000,%r11
@@ -987,6 +984,7 @@ ENTRY(do_softirq_own_stack)
 END(do_softirq_own_stack)
 
 #ifdef CONFIG_OKERNEL
+#if 0
 /* OKERNEL_FORK_LAUNCH = 2 */
 /* Be clear on what will happen if you let this return. */	
 ENTRY(okernel_ret_from_fork)
@@ -994,13 +992,72 @@ ENTRY(okernel_ret_from_fork)
 	pushq	$0x0002
 	popfq					/* reset kernel eflags */
 
+	xchg %bx,%bx
+	
 	call	schedule_tail
-    
-	movq $0x2, %rdi	
-	call okernel_enter_test
+
+        pushq	$0x0202	
+	popfq
+	
+	movq %rbp, %rsi
+	movq %rsp, %rdx
+	movq $0x2, %rdi
+
+	call okernel_enter
+
 	leaveq
 	ret
-END(okernel_ret_from_fork)	
+END(okernel_ret_from_fork)
+ENTRY(okernel_ret_from_fork_iret)
+	xchg %bx,%bx	
+	GET_THREAD_INFO(%r8)
+	pushq	$0x0002
+	popfq
+	RESTORE_EXTRA_REGS
+	xchg %bx,%bx
+	jmp	int_ret_from_sys_call	
+END(okernel_ret_from_fork_iret)
+#else
+ENTRY(okernel_ret_from_fork)
+        LOCK ; btr $TIF_OKERNEL_FORK, TI_flags(%r8)
+	pushq	$0x0002
+	popfq					/* reset kernel eflags */
+
+	/* xchg %bx,%bx */
+	
+	call	schedule_tail
+
+        pushq	$0x0202	
+	popfq
+
+	/*
+	movq %rbp, %rsi
+	movq %rsp, %rdx
+	movq $0x2, %rdi
+	*/
+	call okernel_enter_fork
+
+#if 0
+	xchg %bx,%bx	
+	GET_THREAD_INFO(%r8)
+	pushq	$0x0002
+	popfq
+	RESTORE_EXTRA_REGS
+	RESTORE_
+	xchg %bx,%bx
+	jmp	int_ret_from_sys_call	
+#endif
+	pushq	$0x0002
+	popfq
+	RESTORE_EXTRA_REGS
+	RESTORE_C_REGS
+        xchg %bx,%bx	
+	
+	/* Point RSP at the "iret" frame. */
+	REMOVE_PT_GPREGS_FROM_STACK 6*8
+	INTERRUPT_RETURN
+END(okernel_ret_from_fork)
+#endif	
 #endif	
 
 #ifdef CONFIG_XEN

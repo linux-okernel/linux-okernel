@@ -109,18 +109,18 @@ void __noclone okernel_enter_test(unsigned long flags)
 	int i;
 	
 	HDEBUG(("called - flags (%lx) pid(%d)\n", flags, current->pid));
-	for(i = 0; i < 20; i++){
+	for(i = 0; i < 10; i++){
 		
 		HDEBUG(("pid (%d) Calling schedule_timeout (%d)...\n", current->pid, i));
 		set_current_state(TASK_INTERRUPTIBLE);
 		schedule_timeout(2*HZ);
 		HDEBUG(("pid (%d) Done calling schedule_timeout (%d).\n", current->pid, i));
 	}
-	HDEBUG(("Calling do_exit() for pid (%d)...\n", current->pid));
-	do_exit(0);
+	//HDEBUG(("Calling do_exit() for pid (%d)...\n", current->pid));
+	//do_exit(0);
 }
-		
-int __noclone okernel_enter(unsigned long flags)
+
+asmlinkage void __noclone okernel_enter_fork(void)
 {
 	unsigned long tmpl;
 
@@ -132,107 +132,259 @@ int __noclone okernel_enter(unsigned long flags)
 	
 	unsigned long rbp,rsp,rflags,cr2,rax,rcx,rdx,rbx,rsi,rdi,r8,r9,r10,r11,r12,r13,r14,r15;
 	int ret;
+	struct thread_info *ti;
+	//unsigned long k_stack;
+	
+	HDEBUG(("called.\n"));
+
+	asm volatile ("mov %%rbp,%0" : "=rm" (rbp));
+	HDEBUG(("cloned thread rbp will be set to  (%#lx)\n", rbp));
+	cloned_thread->rbp = rbp;
+	
+	asm volatile ("mov %%rsp,%0" : "=rm" (rsp));
+	HDEBUG(("cloned thread rsp will be set to  (%#lx)\n", rsp));
+	cloned_thread->rsp = rsp;
+	
+	asm volatile ("mov %%cr2,%0" : "=rm" (cr2));
+	HDEBUG(("cloned thread cr2 will be set to  (%#lx)\n", cr2));
+	cloned_thread->cr2 = cr2;
+	
+	asm volatile ("mov %%rax,%0" : "=rm" (rax));
+	HDEBUG(("cloned thread rax will be set to  (%#lx)\n", rax));
+	cloned_thread->rax = rax;
+	
+	asm volatile ("mov %%rcx,%0" : "=rm" (rcx));
+	HDEBUG(("cloned thread rcx will be set to  (%#lx)\n", rcx));
+	cloned_thread->rcx = rcx;
+	
+	asm volatile ("mov %%rdx,%0" : "=rm" (rdx));
+	HDEBUG(("cloned thread rdx will be set to  (%#lx)\n", rdx));
+	cloned_thread->rdx = rdx;
+	
+	asm volatile ("mov %%rdx,%0" : "=rm" (rbx));
+	HDEBUG(("cloned thread rbx will be set to  (%#lx)\n", rbx));
+	cloned_thread->rbx = rbx;
+	
+	asm volatile ("mov %%rsi,%0" : "=rm" (rsi));
+	HDEBUG(("cloned thread rsi will be set to  (%#lx)\n", rsi));
+	cloned_thread->rsi = rsi;
+	
+	asm volatile ("mov %%rdi,%0" : "=rm" (rdi));
+	HDEBUG(("cloned thread rdi will be set to  (%#lx)\n", rdi));
+	cloned_thread->rdi = rdi;
+	
+	asm volatile ("mov %%r8,%0" : "=rm" (r8));
+	HDEBUG(("cloned thread r8 will be set to  (%#lx)\n", r8));
+	cloned_thread->r8 = r8;
+	
+	asm volatile ("mov %%r9,%0" : "=rm" (r9));
+	HDEBUG(("cloned thread r9 will be set to  (%#lx)\n", r9));
+	cloned_thread->r9 = r9;
+	
+	asm volatile ("mov %%r10,%0" : "=rm" (r10));
+	HDEBUG(("cloned thread r10 will be set to  (%#lx)\n", r10));
+	cloned_thread->r10 = r10;
+	
+	asm volatile ("mov %%r11,%0" : "=rm" (r11));
+	HDEBUG(("cloned thread r11 will be set to  (%#lx)\n", r11));
+	cloned_thread->r11 = r11;
+	
+	asm volatile ("mov %%r12,%0" : "=rm" (r12));
+	HDEBUG(("cloned thread r12 will be set to  (%#lx)\n", r12));
+	cloned_thread->r12 = r12;
+	
+	asm volatile ("mov %%r13,%0" : "=rm" (r13));
+	HDEBUG(("cloned thread r13 will be set to  (%#lx)\n", r13));
+	cloned_thread->r13 = r13;
+	
+	asm volatile ("mov %%r14,%0" : "=rm" (r14));
+	HDEBUG(("cloned thread r14 will be set to  (%#lx)\n", r14));
+	cloned_thread->r14 = r14;
+	
+	asm volatile ("mov %%r15,%0" : "=rm" (r15));
+	HDEBUG(("cloned thread r15 will be set to  (%#lx)\n", r15));
+	cloned_thread->r15 = r15;
+
+	rflags = 0x002;
+	cloned_thread->rflags = rflags;
+	HDEBUG(("cloned thread rflags will be set to  (%#lx)\n", rflags));
+
+	
+	asm("mov $.Lc_ret_from_fork_label, %0" : "=r"(tmpl));
+	HDEBUG(("cloned thread RIP will be set to: (%#lx)\n", tmpl));
+	cloned_thread->rip = tmpl;
+		
+	asm volatile("xchg %bx, %bx");
+
+	ret = vmx_launch(2, cloned_thread);
+	
+	asm volatile(".Lc_ret_from_fork_label: ");
+	
+	if(vmx_nr_mode()){
+		asm volatile("xchg %bx, %bx");
+		printk(KERN_ERR "NR: Returning from okernel_enter_fork (pid=%d)\n",
+			current->pid);
+		asm volatile("xchg %bx, %bx");
+		ti = current_thread_info();
+	
+		printk(KERN_ERR "NR: initial state in return from okernel_enter_fork :\n");
+		printk(KERN_ERR "NR: current->h_irqs_en (%d) current->h_irqs_en_nr (%d)\n",
+		       current->hardirqs_enabled, current->hardirqs_enabled_nr);
+		printk(KERN_ERR "NR: in_atomic(): %d, irqs_disabled(): %d, pid: %d, name: %s\n",
+		       in_atomic(), irqs_disabled(), current->pid, current->comm);
+		printk(KERN_ERR "NR: preempt_count (%#x) rcu_preempt_depth (%#x)\n",
+		       preempt_count(), rcu_preempt_depth());
+		printk(KERN_ERR "NR: ti->saved_preempt_count (%#x) current->lockdep_depth (%d)\n",
+		       ti->saved_preempt_count, current->lockdep_depth);
+
+		current->lockdep_depth = 0;
+
+		printk(KERN_ERR "NR: okernel_enter - going back to okernel_ret_from_fork.\n");
+
+#if 0
+		clear_tsk_need_resched(current);
+		asm volatile (
+			"pushq	$0x0002\n\t"
+			"popfq");
+                //asm volatile ("mov %0, %%rbp": : "r" (f_rbp));		
+		asm volatile ("mov %0, %%rsp": : "r" (f_rsp));
+		asm volatile ("movq $0, 80(%rsp)");
+#endif
+		clear_tsk_need_resched(current);
+		//local_irq_enable();
+		//okernel_enter_test(10);
+		//local_irq_disable();
+#if 0
+		asm volatile ("mov %0, %%rbp": : "r" (f_rbp));
+		asm volatile ("mov %0, %%rsp": : "r" (f_rsp));
+		asm volatile ("jmp okernel_ret_from_fork_iret");
+#endif		
+	}
+	return;
+}
+
+//int __noclone okernel_enter(unsigned long flags, unsigned long f_rbp, unsigned long f_rsp)
+asmlinkage int __noclone okernel_enter(unsigned long flags)
+{
+	unsigned long tmpl;
+
+	/* Malloc this since the stack will get over written later
+	 * when the cloned thread is running. And passing a pointer
+	 * allows us to save stack space. */
+
+	struct nr_cloned_state *cloned_thread = kmalloc(sizeof(struct nr_cloned_state), GFP_KERNEL);
+	
+	unsigned long rbp,rsp,rflags,cr2,rax,rcx,rdx,rbx,rsi,rdi,r8,r9,r10,r11,r12,r13,r14,r15;
+	int ret;
+	struct thread_info *ti;
+	unsigned long k_stack;
 	
 	HDEBUG(("called - flags (%lx)\n", flags));
-	
+
 	if(flags == OKERNEL_IOCTL_LAUNCH){
-		asm volatile ("mov %%rbp,%0" : "=rm" (rbp));
-		HDEBUG(("cloned thread rbp will be set to  (%#lx)\n", rbp));
-		cloned_thread->rbp = rbp;
-		
-		asm volatile ("mov %%rsp,%0" : "=rm" (rsp));
-		HDEBUG(("cloned thread rsp will be set to  (%#lx)\n", rsp));
-		cloned_thread->rsp = rsp;
-		
-		asm volatile ("mov %%cr2,%0" : "=rm" (cr2));
-		HDEBUG(("cloned thread cr2 will be set to  (%#lx)\n", cr2));
-		cloned_thread->cr2 = cr2;
-
-		asm volatile ("mov %%rax,%0" : "=rm" (rax));
-		HDEBUG(("cloned thread rax will be set to  (%#lx)\n", rax));
-		cloned_thread->rax = rax;
-		
-		asm volatile ("mov %%rcx,%0" : "=rm" (rcx));
-		HDEBUG(("cloned thread rcx will be set to  (%#lx)\n", rcx));
-		cloned_thread->rcx = rcx;
-		
-		asm volatile ("mov %%rdx,%0" : "=rm" (rdx));
-		HDEBUG(("cloned thread rdx will be set to  (%#lx)\n", rdx));
-		cloned_thread->rdx = rdx;
-		
-		asm volatile ("mov %%rdx,%0" : "=rm" (rbx));
-		HDEBUG(("cloned thread rbx will be set to  (%#lx)\n", rbx));
-		cloned_thread->rbx = rbx;
-		
-		asm volatile ("mov %%rsi,%0" : "=rm" (rsi));
-		HDEBUG(("cloned thread rsi will be set to  (%#lx)\n", rsi));
-		cloned_thread->rsi = rsi;
-		
-		asm volatile ("mov %%rdi,%0" : "=rm" (rdi));
-		HDEBUG(("cloned thread rdi will be set to  (%#lx)\n", rdi));
-		cloned_thread->rdi = rdi;
-		
-		asm volatile ("mov %%r8,%0" : "=rm" (r8));
-		HDEBUG(("cloned thread r8 will be set to  (%#lx)\n", r8));
-		cloned_thread->r8 = r8;
-		
-		asm volatile ("mov %%r9,%0" : "=rm" (r9));
-		HDEBUG(("cloned thread r9 will be set to  (%#lx)\n", r9));
-		cloned_thread->r9 = r9;
-		
-		asm volatile ("mov %%r10,%0" : "=rm" (r10));
-		HDEBUG(("cloned thread r10 will be set to  (%#lx)\n", r10));
-		cloned_thread->r10 = r10;
-		
-		asm volatile ("mov %%r11,%0" : "=rm" (r11));
-		HDEBUG(("cloned thread r11 will be set to  (%#lx)\n", r11));
-		cloned_thread->r11 = r11;
-		
-		asm volatile ("mov %%r12,%0" : "=rm" (r12));
-		HDEBUG(("cloned thread r12 will be set to  (%#lx)\n", r12));
-		cloned_thread->r12 = r12;
-		
-		asm volatile ("mov %%r13,%0" : "=rm" (r13));
-		HDEBUG(("cloned thread r13 will be set to  (%#lx)\n", r13));
-		cloned_thread->r13 = r13;
-		
-		asm volatile ("mov %%r14,%0" : "=rm" (r14));
-		HDEBUG(("cloned thread r14 will be set to  (%#lx)\n", r14));
-		cloned_thread->r14 = r14;
-		
-		asm volatile ("mov %%r15,%0" : "=rm" (r15));
-		HDEBUG(("cloned thread r15 will be set to  (%#lx)\n", r15));
-		cloned_thread->r15 = r15;
-		
-		asm("mov $.Lc_rip_label, %0" : "=r"(tmpl));
-
-		HDEBUG(("cloned thread RIP will be set to: (%#lx)\n", tmpl));
-		cloned_thread->rip = tmpl;
-		
-#if 0
-		regs = task_pt_regs(current);
-		HDEBUG(("----start of 'current' regs from __show_regs:\n"));
-		__show_regs(regs, 1);
-		HDEBUG(("----end of 'current' regs from __show_regs:\n"));
-#endif	
-
-#if 0
-		asm volatile ( "pushf\n\t"
-			       "pop %0"
-			       : "=g"(rflags) );
-		
-		if((rflags & RFLAGS_IF_BIT)){
-			HDEBUG(("cloned thread: interupts enabled via rflags.\n"));
-		}
-		/* Cloned thread will start with interupts disabled. */
-		rflags = (rflags & ~RFLAGS_IF_BIT);
-		cloned_thread->rflags = rflags;
-#endif
-		rflags = 0x002;
-		cloned_thread->rflags = rflags;
-		HDEBUG(("cloned thread rflags will be set to  (%#lx)\n", rflags));
+		HDEBUG(("OKERNEL_IOCTL_LAUNCH...\n"));
+	} else {
+		printk(KERN_ERR "okernel_enter: invalid flags arg.\n");
+		BUG();
 	}
+	
+	asm volatile ("mov %%rbp,%0" : "=rm" (rbp));
+	HDEBUG(("cloned thread rbp will be set to  (%#lx)\n", rbp));
+	cloned_thread->rbp = rbp;
+	
+	asm volatile ("mov %%rsp,%0" : "=rm" (rsp));
+	HDEBUG(("cloned thread rsp will be set to  (%#lx)\n", rsp));
+	cloned_thread->rsp = rsp;
+	
+	asm volatile ("mov %%cr2,%0" : "=rm" (cr2));
+	HDEBUG(("cloned thread cr2 will be set to  (%#lx)\n", cr2));
+	cloned_thread->cr2 = cr2;
+	
+	asm volatile ("mov %%rax,%0" : "=rm" (rax));
+	HDEBUG(("cloned thread rax will be set to  (%#lx)\n", rax));
+	cloned_thread->rax = rax;
+	
+	asm volatile ("mov %%rcx,%0" : "=rm" (rcx));
+	HDEBUG(("cloned thread rcx will be set to  (%#lx)\n", rcx));
+	cloned_thread->rcx = rcx;
+	
+	asm volatile ("mov %%rdx,%0" : "=rm" (rdx));
+	HDEBUG(("cloned thread rdx will be set to  (%#lx)\n", rdx));
+	cloned_thread->rdx = rdx;
+	
+	asm volatile ("mov %%rdx,%0" : "=rm" (rbx));
+	HDEBUG(("cloned thread rbx will be set to  (%#lx)\n", rbx));
+	cloned_thread->rbx = rbx;
+	
+	asm volatile ("mov %%rsi,%0" : "=rm" (rsi));
+	HDEBUG(("cloned thread rsi will be set to  (%#lx)\n", rsi));
+	cloned_thread->rsi = rsi;
+	
+	asm volatile ("mov %%rdi,%0" : "=rm" (rdi));
+	HDEBUG(("cloned thread rdi will be set to  (%#lx)\n", rdi));
+	cloned_thread->rdi = rdi;
+	
+	asm volatile ("mov %%r8,%0" : "=rm" (r8));
+	HDEBUG(("cloned thread r8 will be set to  (%#lx)\n", r8));
+	cloned_thread->r8 = r8;
+	
+	asm volatile ("mov %%r9,%0" : "=rm" (r9));
+	HDEBUG(("cloned thread r9 will be set to  (%#lx)\n", r9));
+	cloned_thread->r9 = r9;
+	
+	asm volatile ("mov %%r10,%0" : "=rm" (r10));
+	HDEBUG(("cloned thread r10 will be set to  (%#lx)\n", r10));
+	cloned_thread->r10 = r10;
+	
+	asm volatile ("mov %%r11,%0" : "=rm" (r11));
+	HDEBUG(("cloned thread r11 will be set to  (%#lx)\n", r11));
+	cloned_thread->r11 = r11;
+	
+	asm volatile ("mov %%r12,%0" : "=rm" (r12));
+	HDEBUG(("cloned thread r12 will be set to  (%#lx)\n", r12));
+	cloned_thread->r12 = r12;
+	
+	asm volatile ("mov %%r13,%0" : "=rm" (r13));
+	HDEBUG(("cloned thread r13 will be set to  (%#lx)\n", r13));
+	cloned_thread->r13 = r13;
+	
+	asm volatile ("mov %%r14,%0" : "=rm" (r14));
+	HDEBUG(("cloned thread r14 will be set to  (%#lx)\n", r14));
+	cloned_thread->r14 = r14;
+	
+	asm volatile ("mov %%r15,%0" : "=rm" (r15));
+	HDEBUG(("cloned thread r15 will be set to  (%#lx)\n", r15));
+	cloned_thread->r15 = r15;
 
+	rflags = 0x002;
+	cloned_thread->rflags = rflags;
+	HDEBUG(("cloned thread rflags will be set to  (%#lx)\n", rflags));
+
+	asm("mov $.Lc_rip_label, %0" : "=r"(tmpl));
+	HDEBUG(("cloned thread RIP will be set to: (%#lx)\n", tmpl));
+	cloned_thread->rip = tmpl;
+	
+#if 0
+	regs = task_pt_regs(current);
+	HDEBUG(("----start of 'current' regs from __show_regs:\n"));
+	__show_regs(regs, 1);
+	HDEBUG(("----end of 'current' regs from __show_regs:\n"));
+#endif	
+	
+#if 0
+	asm volatile ( "pushf\n\t"
+			       "pop %0"
+		       : "=g"(rflags) );
+	
+	if((rflags & RFLAGS_IF_BIT)){
+		HDEBUG(("cloned thread: interupts enabled via rflags.\n"));
+	}
+	/* Cloned thread will start with interupts disabled. */
+	rflags = (rflags & ~RFLAGS_IF_BIT);
+	cloned_thread->rflags = rflags;
+#endif
+	
+	
 	asm volatile("xchg %bx, %bx");
 
 	ret = vmx_launch(flags, cloned_thread);
@@ -241,9 +393,35 @@ int __noclone okernel_enter(unsigned long flags)
 	
 	if(vmx_nr_mode()){
 		asm volatile("xchg %bx, %bx");
-		printk(KERN_ERR "NR: Returning from okernel_enter.\n");
+		printk(KERN_ERR "NR: Returning from okernel_enter (IOCTL_LAUNCH).\n");
 		asm volatile("xchg %bx, %bx");
-	}
+		ti = current_thread_info();
+	
+		printk(KERN_ERR "NR: initial state in return from okernel_enter (IOCTL_LAUNCH):\n");
+		printk(KERN_ERR "NR: current->h_irqs_en (%d) current->h_irqs_en_nr (%d)\n",
+		       current->hardirqs_enabled, current->hardirqs_enabled_nr);
+		printk(KERN_ERR "NR: in_atomic(): %d, irqs_disabled(): %d, pid: %d, name: %s\n",
+		       in_atomic(), irqs_disabled(), current->pid, current->comm);
+		printk(KERN_ERR "NR: preempt_count (%#x) rcu_preempt_depth (%#x)\n",
+		       preempt_count(), rcu_preempt_depth());
+		printk(KERN_ERR "NR: ti->saved_preempt_count (%#x) current->lockdep_depth (%d)\n",
+		       ti->saved_preempt_count, current->lockdep_depth);
+		current->lockdep_depth = 0;
+		local_irq_enable();
+		printk(KERN_ERR "NR: ------------------------------------------------------------------\n");
+		printk(KERN_ERR "NR: set state for return through kernel to upace from okernel_enter:\n");
+		printk(KERN_ERR "NR: current->h_irqs_en (%d) current->h_irqs_en_nr (%d)\n",
+		       current->hardirqs_enabled, current->hardirqs_enabled_nr);
+		printk(KERN_ERR "NR: in_atomic(): %d, irqs_disabled(): %d, pid: %d, name: %s\n",
+		       in_atomic(), irqs_disabled(), current->pid, current->comm);
+		printk(KERN_ERR "NR: preempt_count (%#x) rcu_preempt_depth (%#x) saved preempt (%#x)\n",
+		       preempt_count(), rcu_preempt_depth(), ti->saved_preempt_count);
+		printk(KERN_ERR "NR: ti->saved_preempt_count (%#x) current->lockdep_depth (%d)\n",
+		       ti->saved_preempt_count, current->lockdep_depth);
+		printk(KERN_ERR "NR: starting back towards user space (IOCTL_LAUNCH)...\n");
+		return ret;
+		
+	} 
 	return ret;
 }
 
@@ -259,7 +437,7 @@ long ok_device_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 {
 	unsigned long val;
 	int ret;
-	struct thread_info *ti;
+
 
 	HDEBUG(("called.\n"));
 	switch(cmd)
@@ -303,37 +481,6 @@ long ok_device_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 		
 	}
 nr_exit:
-	if(vmx_nr_mode()){
-		ti = current_thread_info();
-	
-		printk(KERN_ERR "NR: initial state in return from ok_device_ioctl:\n");
-		printk(KERN_ERR "NR: current->h_irqs_en (%d) current->h_irqs_en_nr (%d)\n",
-		       current->hardirqs_enabled, current->hardirqs_enabled_nr);
-		printk(KERN_ERR "NR: in_atomic(): %d, irqs_disabled(): %d, pid: %d, name: %s\n",
-		       in_atomic(), irqs_disabled(), current->pid, current->comm);
-		printk(KERN_ERR "NR: preempt_count (%#x) rcu_preempt_depth (%#x)\n",
-		       preempt_count(), rcu_preempt_depth());
-		printk(KERN_ERR "NR: ti->saved_preempt_count (%#x) current->lockdep_depth (%d)\n",
-		       ti->saved_preempt_count, current->lockdep_depth);
-		       
-		current->lockdep_depth = 0;
-		
-		local_irq_enable();
-		
-		printk(KERN_ERR "NR: ------------------------------------------------------------------\n");
-		printk(KERN_ERR "NR: set state for return through kernel to upace from ok_device_ioctl:\n");
-		printk(KERN_ERR "NR: current->h_irqs_en (%d) current->h_irqs_en_nr (%d)\n",
-		       current->hardirqs_enabled, current->hardirqs_enabled_nr);
-		printk(KERN_ERR "NR: in_atomic(): %d, irqs_disabled(): %d, pid: %d, name: %s\n",
-		       in_atomic(), irqs_disabled(), current->pid, current->comm);
-		printk(KERN_ERR "NR: preempt_count (%#x) rcu_preempt_depth (%#x) saved preempt (%#x)\n",
-		       preempt_count(), rcu_preempt_depth(), ti->saved_preempt_count);
-		printk(KERN_ERR "NR: ti->saved_preempt_count (%#x) current->lockdep_depth (%d)\n",
-		       ti->saved_preempt_count, current->lockdep_depth);
-		printk(KERN_ERR "NR: starting back towards user space...\n");
-		asm volatile("xchg %bx, %bx");
-		return 0;
-	}
 	return 0;
 }
 

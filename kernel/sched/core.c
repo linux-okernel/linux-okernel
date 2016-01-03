@@ -3188,7 +3188,7 @@ asmlinkage __visible void __sched schedule(void)
 		ti = current_thread_info();
 		
 		//dump_stack();
-		printk(KERN_ERR "NR: schedule called.\n");
+		printk(KERN_ERR "NR: schedule called (pid=%d)\n", current->pid);
 		asm volatile("xchg %bx, %bx");
 
 
@@ -3225,7 +3225,7 @@ asmlinkage __visible void __sched schedule(void)
 	}
 	if(is_in_vmx_nr_mode()){
 		ti = current_thread_info();
-		printk(KERN_ERR "NR: returning from VMCALL schedule\n");
+		printk(KERN_ERR "NR: returning from VMCALL schedule (pid=%d)\n", current->pid);
 		asm volatile("xchg %bx, %bx");
 		printk(KERN_ERR "NR: schedule return in_atomic(): %d, irqs_disabled(): %d, pid: %d, name: %s\n",
 		       in_atomic(), irqs_disabled(), current->pid, current->comm);
