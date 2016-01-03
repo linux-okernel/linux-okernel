@@ -2476,7 +2476,7 @@ fast_path:
 
 		if(cloned_rflags & RFLAGS_IF_BIT){
 			if((preempt_count() < 2) && (rcu_preempt_depth() !=0 )){
-				schedule_ok = 1;
+				schedule_ok = 0;
 			}
 			local_irq_enable();
 		} else {

@@ -205,7 +205,7 @@ asmlinkage void __noclone okernel_enter_fork(void)
 	HDEBUG(("cloned thread r15 will be set to  (%#lx)\n", r15));
 	cloned_thread->r15 = r15;
 
-	rflags = 0x002;
+	rflags = 0x202;
 	cloned_thread->rflags = rflags;
 	HDEBUG(("cloned thread rflags will be set to  (%#lx)\n", rflags));
 
@@ -250,7 +250,7 @@ asmlinkage void __noclone okernel_enter_fork(void)
 		asm volatile ("mov %0, %%rsp": : "r" (f_rsp));
 		asm volatile ("movq $0, 80(%rsp)");
 #endif
-		clear_tsk_need_resched(current);
+		//clear_tsk_need_resched(current);
 		//local_irq_enable();
 		//okernel_enter_test(10);
 		//local_irq_disable();

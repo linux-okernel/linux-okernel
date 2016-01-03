@@ -1037,25 +1037,14 @@ ENTRY(okernel_ret_from_fork)
 	*/
 	call okernel_enter_fork
 
-#if 0
-	xchg %bx,%bx	
-	GET_THREAD_INFO(%r8)
-	pushq	$0x0002
-	popfq
+	//xchg %bx,%bx	
+	//GET_THREAD_INFO(%r8)
+	//pushq	$0x0002
+	//popfq
 	RESTORE_EXTRA_REGS
-	RESTORE_
+	//RESTORE_C_REGS
 	xchg %bx,%bx
 	jmp	int_ret_from_sys_call	
-#endif
-	pushq	$0x0002
-	popfq
-	RESTORE_EXTRA_REGS
-	RESTORE_C_REGS
-        xchg %bx,%bx	
-	
-	/* Point RSP at the "iret" frame. */
-	REMOVE_PT_GPREGS_FROM_STACK 6*8
-	INTERRUPT_RETURN
 END(okernel_ret_from_fork)
 #endif	
 #endif	
