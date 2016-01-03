@@ -2265,6 +2265,7 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu)
 		printk(KERN_ERR "R: do_exec4 (%s) done - ret (%d)\n", filename->name, ret);
 #endif
 	} else if (cmd == VMCALL_SCHED){
+		local_irq_disable();
 		cloned_tsk_state = vcpu->cloned_tsk->state;
 		
 		printk(KERN_ERR "R: in VMCALL schedule - current state (%lu) cloned state (%u)\n",
@@ -2313,16 +2314,20 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu)
 		printk(KERN_ERR "R: about to call schedule_r (pid %d) cpu_curr_tos (%#lx) flags (%#x)...\n",
 		       current->pid, (unsigned long)tss->x86_tss.sp0, r_ti->flags);
 		asm volatile("xchg %bx, %bx");
-
+		local_irq_enable();
+		
 		schedule_r_mode();
+		local_irq_disable();
 #if 1
                 /* Re-sync cloned-thread thread_info */
+		
 		tss = &per_cpu(cpu_tss, cpu);
 		printk(KERN_ERR "R: returning from schedule_r (pid %d) cpu_curr_tos (%#lx) flags (%#x).\n",
 		       current->pid, (unsigned long)tss->x86_tss.sp0, r_ti->flags);
 		printk(KERN_ERR "R: syncing cloned thread_info state (R->NR)...\n");
 		asm volatile("xchg %bx, %bx");
 		memcpy(nr_ti, r_ti, sizeof(struct thread_info));
+		//nr_ti->flags = 0;
 		printk(KERN_ERR "R: synced cloned thread_info state (R->NR) (nr_ti->flags=%#x)\n",
 			nr_ti->flags);
 		//clear_tsk_need_resched(current);
@@ -2335,6 +2340,7 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu)
 		       preempt_count(), rcu_preempt_depth());
 		printk(KERN_ERR "R: current->lockdep_depth (%d)\n", current->lockdep_depth);
 		asm volatile("xchg %bx, %bx");
+		local_irq_enable();
 	} else if(cmd == VMCALL_DOEXIT){
 		printk(KERN_ERR "R: calling do_exit...\n");
 		do_exit(0);
