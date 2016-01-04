@@ -334,7 +334,8 @@ int_restore_rest:
 
 syscall_return:
 	/* The IRETQ could re-enable interrupts: */
-/*
+
+	pushq %r11
         xor %r11,%r11	
 	movq %cr4,%r11
 	andq $0x2000,%r11
@@ -342,7 +343,7 @@ syscall_return:
 	jne rmode
 	xchg %bx,%bx
 rmode:
-	*/
+	popq %r11
 	DISABLE_INTERRUPTS(CLBR_ANY)
 	TRACE_IRQS_IRETQ
 
@@ -1028,8 +1029,8 @@ ENTRY(okernel_ret_from_fork)
 	call	schedule_tail
 	xchg %bx,%bx
 	
-        pushq	$0x0202	
-	popfq
+        //pushq	$0x0202	
+	//popfq
 
 	/*
 	movq %rbp, %rsi
@@ -1043,6 +1044,8 @@ ENTRY(okernel_ret_from_fork)
 	//pushq	$0x0002
 	//popfq
 	RESTORE_EXTRA_REGS
+	//movl	$0, RAX(%rsp)
+	//movl	$0, ORIG_RAX(%rsp)
 	//RESTORE_C_REGS
 	xchg %bx,%bx
 	jmp	int_ret_from_sys_call	

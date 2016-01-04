@@ -133,7 +133,7 @@ asmlinkage void __noclone okernel_enter_fork(void)
 	unsigned long rbp,rsp,rflags,cr2,rax,rcx,rdx,rbx,rsi,rdi,r8,r9,r10,r11,r12,r13,r14,r15;
 	int ret;
 	struct thread_info *ti;
-	//unsigned long k_stack;
+	unsigned long fs;
 	
 	HDEBUG(("called.\n"));
 
@@ -205,7 +205,7 @@ asmlinkage void __noclone okernel_enter_fork(void)
 	HDEBUG(("cloned thread r15 will be set to  (%#lx)\n", r15));
 	cloned_thread->r15 = r15;
 
-	rflags = 0x202;
+	rflags = 0x002;
 	cloned_thread->rflags = rflags;
 	HDEBUG(("cloned thread rflags will be set to  (%#lx)\n", rflags));
 
@@ -224,6 +224,9 @@ asmlinkage void __noclone okernel_enter_fork(void)
 		asm volatile("xchg %bx, %bx");
 		printk(KERN_ERR "NR: Returning from okernel_enter_fork (pid=%d)\n",
 			current->pid);
+		wrmsrl(MSR_FS_BASE, current->preempt_count_nr);
+		rdmsrl(MSR_FS_BASE, fs);
+		printk(KERN_ERR "NR: setting MSR_FS_BASE (%#lx)\n", fs); 
 		asm volatile("xchg %bx, %bx");
 		ti = current_thread_info();
 	
@@ -240,6 +243,7 @@ asmlinkage void __noclone okernel_enter_fork(void)
 		current->lockdep_depth = 0;
 
 		printk(KERN_ERR "NR: okernel_enter - going back to okernel_ret_from_fork.\n");
+		//force_iret();
 
 #if 0
 		clear_tsk_need_resched(current);

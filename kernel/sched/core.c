@@ -3181,16 +3181,17 @@ asmlinkage __visible void __sched schedule(void)
 	volatile struct thread_info *ti;
 	int cpu = smp_processor_id();
 	struct tss_struct *tss = &per_cpu(cpu_tss, cpu);
+	unsigned long fs;
 	
 	if(is_in_vmx_nr_mode()){
 		/* Return control to the original process running in root-mode VMX */
 		/* shouldn't be holding locks at this point? */
 #if 1
 		ti = current_thread_info();
-		
+		rdmsrl(MSR_FS_BASE, fs);
 		//dump_stack();
-		printk(KERN_ERR "NR: schedule called (pid=%d)  cpu_curr_tos (%#lx) flags(%#x)...\n",
-		       current->pid, (unsigned long)tss->x86_tss.sp0, ti->flags);
+	        printk(KERN_ERR "NR: schedule called (pid=%d)  cpu_cur_tos (%#lx) flgs(%#x) MSR_FS_BASE=%#lx\n",
+		       current->pid, (unsigned long)tss->x86_tss.sp0, ti->flags, fs);
 		asm volatile("xchg %bx, %bx");
 
 
@@ -3227,8 +3228,9 @@ asmlinkage __visible void __sched schedule(void)
 	}
 	if(is_in_vmx_nr_mode()){
 		ti = current_thread_info();
-		printk(KERN_ERR "NR: returning from VMCALL schedule (pid=%d)  cpu_curr_tos (%#lx) flags (%#x)\n",
-		       current->pid, (unsigned long)tss->x86_tss.sp0, ti->flags);
+		rdmsrl(MSR_FS_BASE, fs);
+		printk(KERN_ERR "NR: returned from VMCALL schedule (pid=%d)  cpu_cur_tos (%#lx) flgs (%#x) MSR_FS_BASE=%#lx\n",
+		       current->pid, (unsigned long)tss->x86_tss.sp0, ti->flags, fs);
 		asm volatile("xchg %bx, %bx");
 		printk(KERN_ERR "NR: schedule return in_atomic(): %d, irqs_disabled(): %d, pid: %d, name: %s\n",
 		       in_atomic(), irqs_disabled(), current->pid, current->comm);

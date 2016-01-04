@@ -1706,7 +1706,9 @@ static void vmx_setup_initial_guest_state(struct vmx_vcpu *vcpu)
 	vmcs_writel(GUEST_SYSENTER_EIP, current_cpu_state.sysenter_eip);
 	
 	vmcs_writel(GUEST_GDTR_BASE, current_cpu_state.gdt_base);
+	
 	vmcs_writel(GUEST_GDTR_LIMIT, current_cpu_state.gdt_limit);
+	//vmcs_writel(GUEST_GDTR_LIMIT, 0x7f);
 	vmcs_writel(GUEST_IDTR_BASE, current_cpu_state.idt_base);
 	vmcs_writel(GUEST_IDTR_LIMIT, current_cpu_state.idt_limit);
 
@@ -2127,7 +2129,8 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu)
 	unsigned long rsp;
 	int cpu = smp_processor_id();
 	struct tss_struct *tss = &per_cpu(cpu_tss, cpu);
-
+	unsigned long fs;
+	
         /* do_fork_fixup args */
 	struct task_struct *p;
         
@@ -2160,11 +2163,18 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu)
 
 	if(cmd == VMCALL_DO_FORK_FIXUP){
 		local_irq_disable();
+
+		
 		p = (struct task_struct*)vcpu->regs[VCPU_REGS_RBX];
 		HDEBUG(("VMCALL_DO_FORK_FIXUP called for p (%#lx) (%s)\n",
 			(unsigned long)p, p->comm));
 		set_tsk_thread_flag(p, TIF_OKERNEL_FORK);
 		clear_tsk_thread_flag(p, TIF_FORK);
+		/* Need to fix MSR state properly - just reusing a var for now */
+		rdmsrl(MSR_FS_BASE, fs);
+		p->preempt_count_nr = fs;
+		HDEBUG(("VMCALL_DO_FORK_FIXUP setting fs to (%#lx) for p (%#lx)\n",
+			p->preempt_count_nr, (unsigned long)p));
 		local_irq_enable();
 		asm volatile("xchg %bx,%bx");
 		ret = 0;
@@ -2311,8 +2321,9 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu)
 		asm volatile("xchg %bx, %bx");
 		memcpy(r_ti, nr_ti, sizeof(struct thread_info));
 #endif
-		printk(KERN_ERR "R: about to call schedule_r (pid %d) cpu_curr_tos (%#lx) flags (%#x)...\n",
-		       current->pid, (unsigned long)tss->x86_tss.sp0, r_ti->flags);
+		rdmsrl(MSR_FS_BASE, fs);
+		printk(KERN_ERR "R: calling schedule_r (pid %d) cpu_cur_tos (%#lx) flgs (%#x) MSR_FS_BASE=%#lx\n",
+		       current->pid, (unsigned long)tss->x86_tss.sp0, r_ti->flags, fs);
 		asm volatile("xchg %bx, %bx");
 		local_irq_enable();
 		
@@ -2322,8 +2333,9 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu)
                 /* Re-sync cloned-thread thread_info */
 		
 		tss = &per_cpu(cpu_tss, cpu);
-		printk(KERN_ERR "R: returning from schedule_r (pid %d) cpu_curr_tos (%#lx) flags (%#x).\n",
-		       current->pid, (unsigned long)tss->x86_tss.sp0, r_ti->flags);
+		rdmsrl(MSR_FS_BASE, fs);
+		printk(KERN_ERR "R: returned schedule_r (pid %d) cpu_cur_tos (%#lx) flgs (%#x) MSR_FS_BASE=%#lx\n",
+		       current->pid, (unsigned long)tss->x86_tss.sp0, r_ti->flags, fs);
 		printk(KERN_ERR "R: syncing cloned thread_info state (R->NR)...\n");
 		asm volatile("xchg %bx, %bx");
 		memcpy(nr_ti, r_ti, sizeof(struct thread_info));
@@ -2541,6 +2553,7 @@ fast_path:
 					printk(KERN_ERR "R: calling do_page_fault_r...\n");
 					do_page_fault_r(&regs, err, cr2);
 					printk(KERN_ERR "R: returned from do_page_fault_r.\n");
+					asm volatile("xchg %bx, %bx");
 					schedule_ok = 1;
 					continue;
 				} else if(vii.s.vector == EXCEPTION_GP){
