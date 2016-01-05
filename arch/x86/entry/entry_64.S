@@ -987,72 +987,24 @@ ENTRY(do_softirq_own_stack)
 END(do_softirq_own_stack)
 
 #ifdef CONFIG_OKERNEL
-#if 0
-/* OKERNEL_FORK_LAUNCH = 2 */
-/* Be clear on what will happen if you let this return. */	
 ENTRY(okernel_ret_from_fork)
         LOCK ; btr $TIF_OKERNEL_FORK, TI_flags(%r8)
 	pushq	$0x0002
 	popfq					/* reset kernel eflags */
 
-	xchg %bx,%bx
-	
-	call	schedule_tail
-
-        pushq	$0x0202	
-	popfq
-	
-	movq %rbp, %rsi
-	movq %rsp, %rdx
-	movq $0x2, %rdi
-
-	call okernel_enter
-
-	leaveq
-	ret
-END(okernel_ret_from_fork)
-ENTRY(okernel_ret_from_fork_iret)
-	xchg %bx,%bx	
-	GET_THREAD_INFO(%r8)
-	pushq	$0x0002
-	popfq
-	RESTORE_EXTRA_REGS
-	xchg %bx,%bx
-	jmp	int_ret_from_sys_call	
-END(okernel_ret_from_fork_iret)
-#else
-ENTRY(okernel_ret_from_fork)
-        LOCK ; btr $TIF_OKERNEL_FORK, TI_flags(%r8)
-	pushq	$0x0002
-	popfq					/* reset kernel eflags */
-
-	/* xchg %bx,%bx */
+	//xchg %bx,%bx
 	
 	call	schedule_tail
 	xchg %bx,%bx
-	
-        //pushq	$0x0202	
-	//popfq
 
-	/*
-	movq %rbp, %rsi
-	movq %rsp, %rdx
-	movq $0x2, %rdi
-	*/
 	call okernel_enter_fork
 
-	//xchg %bx,%bx	
-	//GET_THREAD_INFO(%r8)
-	//pushq	$0x0002
-	//popfq
 	RESTORE_EXTRA_REGS
-	//movl	$0, RAX(%rsp)
-	//movl	$0, ORIG_RAX(%rsp)
-	//RESTORE_C_REGS
-	xchg %bx,%bx
+
+	//xchg %bx,%bx
+
 	jmp	int_ret_from_sys_call	
 END(okernel_ret_from_fork)
-#endif	
 #endif	
 
 #ifdef CONFIG_XEN

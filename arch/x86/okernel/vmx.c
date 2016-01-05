@@ -1070,21 +1070,8 @@ static __init int setup_vmcs_config(struct vmcs_config *vmcs_conf)
 				&_pin_based_exec_control) < 0)
 		return -EIO;
 
-#if 0
-	min =
-
-	      CPU_BASED_CR8_LOAD_EXITING |
-	      CPU_BASED_CR8_STORE_EXITING |
-	      CPU_BASED_CR3_LOAD_EXITING |
-	      CPU_BASED_CR3_STORE_EXITING |
-	      CPU_BASED_MOV_DR_EXITING |
-	      CPU_BASED_USE_TSC_OFFSETING |
-	      CPU_BASED_INVLPG_EXITING;
-#endif
-#if 1
 	min = CPU_BASED_USE_TSC_OFFSETING;
 		
-#endif
 	opt = CPU_BASED_TPR_SHADOW |
 	      CPU_BASED_USE_MSR_BITMAPS |
 	      CPU_BASED_ACTIVATE_SECONDARY_CONTROLS;
@@ -1260,15 +1247,12 @@ static void vmx_setup_constant_host_state(void)
 	vmcs_write16(HOST_FS_SELECTOR, 0);            /* 22.2.4 */
 	vmcs_write16(HOST_GS_SELECTOR, 0);            /* 22.2.4 */
 
-#ifdef CONFIG_X86_64
 	rdmsrl(MSR_FS_BASE, tmpl);
+	HDEBUG(("setting host MSR_FS_BASE=%#lx\n", tmpl));
 	vmcs_writel(HOST_FS_BASE, tmpl); /* 22.2.4 */
 	rdmsrl(MSR_GS_BASE, tmpl);
+	HDEBUG(("setting host MSR_GS_BASE=%#lx\n", tmpl));
 	vmcs_writel(HOST_GS_BASE, tmpl); /* 22.2.4 */
-#else
-	vmcs_writel(HOST_FS_BASE, 0); /* 22.2.4 */
-	vmcs_writel(HOST_GS_BASE, 0); /* 22.2.4 */
-#endif
 }
 
 
@@ -1315,7 +1299,7 @@ static inline unsigned long vmx_read_tr_base(void)
 	return segment_base(tr);
 }
 
-static void __vmx_setup_cpu(void)
+static void __vmx_setup_cpu(struct vmx_vcpu *vcpu)
 {
 	struct desc_ptr *gdt = this_cpu_ptr(&host_gdt);
 	unsigned long sysenter_esp;
@@ -1331,9 +1315,18 @@ static void __vmx_setup_cpu(void)
 	rdmsrl(MSR_IA32_SYSENTER_ESP, sysenter_esp);
 	vmcs_writel(HOST_IA32_SYSENTER_ESP, sysenter_esp); /* 22.2.3 */
 
-	rdmsrl(MSR_FS_BASE, tmpl);
-	vmcs_writel(HOST_FS_BASE, tmpl); /* 22.2.4 */
+	if(vcpu->cloned_thread){
+		if(vcpu->cloned_thread->msr_fs_base){
+			HDEBUG(("setting host MSR_FS_BASE=%#lx\n", vcpu->cloned_thread->msr_fs_base));
+			vmcs_writel(HOST_FS_BASE, vcpu->cloned_thread->msr_fs_base); /* 22.2.4 */
+		}
+	} else {
+		rdmsrl(MSR_FS_BASE, tmpl);
+		HDEBUG(("setting host MSR_FS_BASE=%#lx\n", tmpl));
+		vmcs_writel(HOST_FS_BASE, tmpl); /* 22.2.4 */
+	}
 	rdmsrl(MSR_GS_BASE, tmpl);
+	HDEBUG(("setting host MSR_GS_BASE=%#lx\n", tmpl));
 	vmcs_writel(HOST_GS_BASE, tmpl); /* 22.2.4 */
 }
 
@@ -1372,7 +1365,7 @@ static void vmx_get_cpu(struct vmx_vcpu *vcpu)
 				
 			vcpu->launched = 0;
 			vmcs_load(vcpu->vmcs);
-			__vmx_setup_cpu();
+			__vmx_setup_cpu(vcpu);
 			vcpu->cpu = cur_cpu;
 		} else {
 			vmcs_load(vcpu->vmcs);
@@ -1569,8 +1562,12 @@ void get_cpu_state(struct vmx_vcpu *vcpu, struct vmcs_cpu_state* cpu_state)
 	cpu_state->gs_selector = 0;
 
 	/* Segment Base + Limits */
-	rdmsrl(MSR_FS_BASE, tmpl);
-	cpu_state->fs_base = tmpl;
+	if(cloned_thread->msr_fs_base){
+		cpu_state->fs_base = cloned_thread->msr_fs_base;
+	} else {
+		rdmsrl(MSR_FS_BASE, tmpl);
+		cpu_state->fs_base = tmpl;
+	}
 	rdmsrl(MSR_GS_BASE, tmpl);
 	cpu_state->gs_base = tmpl;
 	
@@ -1606,20 +1603,6 @@ void get_cpu_state(struct vmx_vcpu *vcpu, struct vmcs_cpu_state* cpu_state)
 	return;
 }
 
-#if 0
-/********************************************************************************/
-/* Clone this host state into the 'guest'                                       */
-/********************************************************************************/
-
-	if (vmcs_config.vmexit_ctrl & VM_EXIT_LOAD_IA32_PAT) {
-		rdmsr(MSR_IA32_CR_PAT, low32, high32);
-		vmcs_write64(HOST_IA32_PAT, low32 | ((u64) high32 << 32));
-	}
-
-/********************************************************************************/
-/* Clone this host state into the 'guest' - done.                               */
-/********************************************************************************/
-#endif
 
 /**
  * vmx_setup_initial_guest_state - configures the initial state of guest registers
@@ -1733,6 +1716,7 @@ static void vmx_setup_initial_guest_state(struct vmx_vcpu *vcpu)
 	vmcs_writel(GUEST_ES_BASE, 0);
 	vmcs_writel(GUEST_GS_BASE, current_cpu_state.gs_base);
 	vmcs_writel(GUEST_SS_BASE, 0);
+	HDEBUG(("setting GUEST_FS_BASE=%#lx\n", current_cpu_state.fs_base));
 	vmcs_writel(GUEST_FS_BASE, current_cpu_state.fs_base);
 
         /* guest segment access rights */
@@ -1790,36 +1774,6 @@ static void vmx_setup_vmcs(struct vmx_vcpu *vcpu)
 
 	vmcs_write64(MSR_BITMAP, __pa(msr_bitmap));
 	
-#if 0
-	//setup_msr(vcpu);
-	
-	if (vmcs_config.vmentry_ctrl & VM_ENTRY_LOAD_IA32_PAT) {
-		u32 msr_low, msr_high;
-		u64 host_pat;
-		rdmsr(MSR_IA32_CR_PAT, msr_low, msr_high);
-		host_pat = msr_low | ((u64) msr_high << 32);
-		/* Write the default value follow host pat */
-		vmcs_write64(GUEST_IA32_PAT, host_pat);
-		/* Keep arch.pat sync with GUEST_IA32_PAT */
-		vmx->vcpu.arch.pat = host_pat;
-	}
-
-	for (i = 0; i < NR_VMX_MSR; ++i) {
-		u32 index = vmx_msr_index[i];
-		u32 data_low, data_high;
-		int j = vmx->nmsrs;
-
-		if (rdmsr_safe(index, &data_low, &data_high) < 0)
-			continue;
-		if (wrmsr_safe(index, data_low, data_high) < 0)
-			continue;
-		vmx->guest_msrs[j].index = i;
-		vmx->guest_msrs[j].data = 0;
-		vmx->guest_msrs[j].mask = -1ull;
-		++vmx->nmsrs;
-	}
-#endif
-
 	vmcs_config.vmentry_ctrl |= VM_ENTRY_IA32E_MODE;
 
 	vmcs_write32(VM_EXIT_CONTROLS, vmcs_config.vmexit_ctrl);
@@ -1922,7 +1876,7 @@ static struct vmx_vcpu * vmx_create_vcpu(struct nr_cloned_state* cloned_thread)
 	vcpu->cloned_thread = cloned_thread;
 	
 	vmx_setup_initial_guest_state(vcpu);
-
+	
 	vmx_put_cpu(vcpu);
 	
 	if (cpu_has_vmx_ept_ad_bits()) {
@@ -2760,20 +2714,18 @@ int __init vmx_init(void)
 		printk(KERN_ERR "vmx: ability to load EFER register is required\n");
 		return -EIO;
 	}
-	
+
+	/* Don't exit on any MSR accesses */
 	msr_bitmap = (unsigned long *)__get_free_page(GFP_KERNEL);
-        if (!msr_bitmap) {
+
+	if (!msr_bitmap) {
                 return -ENOMEM;
         }
-        /* FIXME: do we need APIC virtualization (flexpriority?) */
-	/* cid: Neeed to look at this */ 
-#if 1
+        
 	memset(msr_bitmap, 0x0, PAGE_SIZE);
-        //__vmx_disable_intercept_for_msr(msr_bitmap, MSR_FS_BASE);
-        //__vmx_disable_intercept_for_msr(msr_bitmap, MSR_GS_BASE);
 
         set_bit(0, vmx_vpid_bitmap); /* 0 is reserved for host */
-#endif
+	
 	printk(KERN_ERR "okernel: vmx_init 1.\n");
  
 	for_each_possible_cpu(cpu) {

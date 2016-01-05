@@ -31,6 +31,7 @@ struct nr_cloned_state {
 	unsigned long r15;
 	unsigned long rip;
 	unsigned long cr2;
+	unsigned long msr_fs_base;
 };
 
 /* Need to make these non-global */

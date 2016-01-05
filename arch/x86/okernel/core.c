@@ -134,17 +134,18 @@ asmlinkage void __noclone okernel_enter_fork(void)
 	int ret;
 	struct thread_info *ti;
 	unsigned long fs;
+	unsigned long fs2;
+
+	//memset(cloned_thread, 0, sizeof(struct nr_cloned_state));
 	
 	HDEBUG(("called.\n"));
 
+	cloned_thread->msr_fs_base = 0;
+	
 	asm volatile ("mov %%rbp,%0" : "=rm" (rbp));
 	HDEBUG(("cloned thread rbp will be set to  (%#lx)\n", rbp));
 	cloned_thread->rbp = rbp;
-	
-	asm volatile ("mov %%rsp,%0" : "=rm" (rsp));
-	HDEBUG(("cloned thread rsp will be set to  (%#lx)\n", rsp));
-	cloned_thread->rsp = rsp;
-	
+		
 	asm volatile ("mov %%cr2,%0" : "=rm" (cr2));
 	HDEBUG(("cloned thread cr2 will be set to  (%#lx)\n", cr2));
 	cloned_thread->cr2 = cr2;
@@ -213,7 +214,16 @@ asmlinkage void __noclone okernel_enter_fork(void)
 	asm("mov $.Lc_ret_from_fork_label, %0" : "=r"(tmpl));
 	HDEBUG(("cloned thread RIP will be set to: (%#lx)\n", tmpl));
 	cloned_thread->rip = tmpl;
-		
+
+	//rdmsrl(MSR_FS_BASE, fs);
+	//HDEBUG(("MSR_FS_BASE=(%#lx) prior to vmx_launch.\n", fs)); 
+
+	//cloned_thread->msr_fs_base = current->preempt_count_nr;
+
+	asm volatile ("mov %%rsp,%0" : "=rm" (rsp));
+	HDEBUG(("cloned thread rsp will be set to  (%#lx)\n", rsp));
+	cloned_thread->rsp = rsp;
+	
 	asm volatile("xchg %bx, %bx");
 
 	ret = vmx_launch(2, cloned_thread);
@@ -226,10 +236,13 @@ asmlinkage void __noclone okernel_enter_fork(void)
 			current->pid);
 		wrmsrl(MSR_FS_BASE, current->preempt_count_nr);
 		rdmsrl(MSR_FS_BASE, fs);
-		printk(KERN_ERR "NR: setting MSR_FS_BASE (%#lx)\n", fs); 
+		printk(KERN_ERR "NR:  MSR_FS_BASE (%#lx) curr (%#lx)\n",
+		       fs ,current->preempt_count_nr); 
 		asm volatile("xchg %bx, %bx");
 		ti = current_thread_info();
-	
+
+		current->lockdep_depth = 0;
+		
 		printk(KERN_ERR "NR: initial state in return from okernel_enter_fork :\n");
 		printk(KERN_ERR "NR: current->h_irqs_en (%d) current->h_irqs_en_nr (%d)\n",
 		       current->hardirqs_enabled, current->hardirqs_enabled_nr);
@@ -240,29 +253,9 @@ asmlinkage void __noclone okernel_enter_fork(void)
 		printk(KERN_ERR "NR: ti->saved_preempt_count (%#x) current->lockdep_depth (%d)\n",
 		       ti->saved_preempt_count, current->lockdep_depth);
 
-		current->lockdep_depth = 0;
+	
 
 		printk(KERN_ERR "NR: okernel_enter - going back to okernel_ret_from_fork.\n");
-		//force_iret();
-
-#if 0
-		clear_tsk_need_resched(current);
-		asm volatile (
-			"pushq	$0x0002\n\t"
-			"popfq");
-                //asm volatile ("mov %0, %%rbp": : "r" (f_rbp));		
-		asm volatile ("mov %0, %%rsp": : "r" (f_rsp));
-		asm volatile ("movq $0, 80(%rsp)");
-#endif
-		//clear_tsk_need_resched(current);
-		//local_irq_enable();
-		//okernel_enter_test(10);
-		//local_irq_disable();
-#if 0
-		asm volatile ("mov %0, %%rbp": : "r" (f_rbp));
-		asm volatile ("mov %0, %%rsp": : "r" (f_rsp));
-		asm volatile ("jmp okernel_ret_from_fork_iret");
-#endif		
 	}
 	return;
 }
@@ -281,10 +274,12 @@ asmlinkage int __noclone okernel_enter(unsigned long flags)
 	unsigned long rbp,rsp,rflags,cr2,rax,rcx,rdx,rbx,rsi,rdi,r8,r9,r10,r11,r12,r13,r14,r15;
 	int ret;
 	struct thread_info *ti;
-	unsigned long k_stack;
 	
 	HDEBUG(("called - flags (%lx)\n", flags));
 
+	cloned_thread->msr_fs_base = 0;
+	//memset(cloned_thread, 0, sizeof(struct nr_cloned_state));
+	
 	if(flags == OKERNEL_IOCTL_LAUNCH){
 		HDEBUG(("OKERNEL_IOCTL_LAUNCH...\n"));
 	} else {
@@ -292,13 +287,13 @@ asmlinkage int __noclone okernel_enter(unsigned long flags)
 		BUG();
 	}
 	
+
+	
 	asm volatile ("mov %%rbp,%0" : "=rm" (rbp));
 	HDEBUG(("cloned thread rbp will be set to  (%#lx)\n", rbp));
 	cloned_thread->rbp = rbp;
 	
-	asm volatile ("mov %%rsp,%0" : "=rm" (rsp));
-	HDEBUG(("cloned thread rsp will be set to  (%#lx)\n", rsp));
-	cloned_thread->rsp = rsp;
+
 	
 	asm volatile ("mov %%cr2,%0" : "=rm" (cr2));
 	HDEBUG(("cloned thread cr2 will be set to  (%#lx)\n", cr2));
@@ -387,7 +382,9 @@ asmlinkage int __noclone okernel_enter(unsigned long flags)
 	rflags = (rflags & ~RFLAGS_IF_BIT);
 	cloned_thread->rflags = rflags;
 #endif
-	
+	asm volatile ("mov %%rsp,%0" : "=rm" (rsp));
+	HDEBUG(("cloned thread rsp will be set to  (%#lx)\n", rsp));
+	cloned_thread->rsp = rsp;
 	
 	asm volatile("xchg %bx, %bx");
 
