@@ -2553,7 +2553,7 @@ fast_path:
 					printk(KERN_ERR "R: calling do_page_fault_r...\n");
 					do_page_fault_r(&regs, err, cr2);
 					printk(KERN_ERR "R: returned from do_page_fault_r.\n");
-					asm volatile("xchg %bx, %bx");
+					//asm volatile("xchg %bx, %bx");
 					schedule_ok = 1;
 					continue;
 				} else if(vii.s.vector == EXCEPTION_GP){

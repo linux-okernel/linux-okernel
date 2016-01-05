@@ -335,6 +335,7 @@ int_restore_rest:
 syscall_return:
 	/* The IRETQ could re-enable interrupts: */
 
+	/* okernel debugging to cause a breakpoint
 	pushq %r11
         xor %r11,%r11	
 	movq %cr4,%r11
@@ -344,6 +345,7 @@ syscall_return:
 	xchg %bx,%bx
 rmode:
 	popq %r11
+	*/
 	DISABLE_INTERRUPTS(CLBR_ANY)
 	TRACE_IRQS_IRETQ
 
