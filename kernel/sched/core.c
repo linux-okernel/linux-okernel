@@ -3205,10 +3205,9 @@ asmlinkage __visible void __sched schedule(void)
 		       in_atomic(), irqs_disabled(), current->pid, current->comm);
 		printk(KERN_ERR "NR: schedule preempt_count (%#x) rcu_preempt_depth (%#x) saved preempt (%#x)\n",
 		       preempt_count(), rcu_preempt_depth(), ti->saved_preempt_count);
-		printk(KERN_ERR "NR: schedule current->h_irqs_en (%d) current->h_irqs_en_nr (%d)\n",
-		       current->hardirqs_enabled, current->hardirqs_enabled_nr);
+		printk(KERN_ERR "NR: schedule current->h_irqs_en (%d)\n",
+		       current->hardirqs_enabled);
 		printk(KERN_ERR "NR: current->lockdep_depth (%d)\n", current->lockdep_depth);
-		//BUG_ON(current->state == TASK_INTERRUPTIBLE);
 #endif
 		//dump_stack();
 		sched_submit_work(tsk);
@@ -3237,8 +3236,8 @@ asmlinkage __visible void __sched schedule(void)
 		printk(KERN_ERR "NR: schedule return preempt_count (%#x) rcu_preempt_depth (%#x) saved preempt (%#x)\n",
 		       preempt_count(), rcu_preempt_depth(), ti->saved_preempt_count);
 		printk(KERN_ERR "NR: current->lockdep_depth (%d)\n", current->lockdep_depth);
-		printk(KERN_ERR "NR: schedule return current->h_irqs_en (%d) current->h_irqs_en_nr (%d)\n",
-		       current->hardirqs_enabled, current->hardirqs_enabled_nr);
+		printk(KERN_ERR "NR: schedule return current->h_irqs_en (%d)\n",
+		       current->hardirqs_enabled);
 		asm volatile("xchg %bx, %bx");
 	}
 }

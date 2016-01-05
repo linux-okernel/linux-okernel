@@ -586,7 +586,9 @@ int clone_kstack2(struct vmx_vcpu *vcpu)
 		if(i == 0){
 			vcpu->cloned_thread_info = (struct thread_info*)vaddr;
 		}
+		vmx_ept_sync_individual_addr(vcpu, paddr);
 	}
+
 	return 1;
 }
 
@@ -1299,7 +1301,7 @@ static inline unsigned long vmx_read_tr_base(void)
 	return segment_base(tr);
 }
 
-static void __vmx_setup_cpu(struct vmx_vcpu *vcpu)
+static void __vmx_setup_cpu(void)
 {
 	struct desc_ptr *gdt = this_cpu_ptr(&host_gdt);
 	unsigned long sysenter_esp;
@@ -1315,16 +1317,9 @@ static void __vmx_setup_cpu(struct vmx_vcpu *vcpu)
 	rdmsrl(MSR_IA32_SYSENTER_ESP, sysenter_esp);
 	vmcs_writel(HOST_IA32_SYSENTER_ESP, sysenter_esp); /* 22.2.3 */
 
-	if(vcpu->cloned_thread){
-		if(vcpu->cloned_thread->msr_fs_base){
-			HDEBUG(("setting host MSR_FS_BASE=%#lx\n", vcpu->cloned_thread->msr_fs_base));
-			vmcs_writel(HOST_FS_BASE, vcpu->cloned_thread->msr_fs_base); /* 22.2.4 */
-		}
-	} else {
-		rdmsrl(MSR_FS_BASE, tmpl);
-		HDEBUG(("setting host MSR_FS_BASE=%#lx\n", tmpl));
-		vmcs_writel(HOST_FS_BASE, tmpl); /* 22.2.4 */
-	}
+	rdmsrl(MSR_FS_BASE, tmpl);
+	HDEBUG(("setting host MSR_FS_BASE=%#lx\n", tmpl));
+	vmcs_writel(HOST_FS_BASE, tmpl); /* 22.2.4 */
 	rdmsrl(MSR_GS_BASE, tmpl);
 	HDEBUG(("setting host MSR_GS_BASE=%#lx\n", tmpl));
 	vmcs_writel(HOST_GS_BASE, tmpl); /* 22.2.4 */
@@ -1365,7 +1360,7 @@ static void vmx_get_cpu(struct vmx_vcpu *vcpu)
 				
 			vcpu->launched = 0;
 			vmcs_load(vcpu->vmcs);
-			__vmx_setup_cpu(vcpu);
+			__vmx_setup_cpu();
 			vcpu->cpu = cur_cpu;
 		} else {
 			vmcs_load(vcpu->vmcs);
@@ -1562,12 +1557,17 @@ void get_cpu_state(struct vmx_vcpu *vcpu, struct vmcs_cpu_state* cpu_state)
 	cpu_state->gs_selector = 0;
 
 	/* Segment Base + Limits */
+#if 1
 	if(cloned_thread->msr_fs_base){
 		cpu_state->fs_base = cloned_thread->msr_fs_base;
 	} else {
 		rdmsrl(MSR_FS_BASE, tmpl);
 		cpu_state->fs_base = tmpl;
 	}
+#else
+	rdmsrl(MSR_FS_BASE, tmpl);
+	cpu_state->fs_base = tmpl;
+#endif
 	rdmsrl(MSR_GS_BASE, tmpl);
 	cpu_state->gs_base = tmpl;
 	
@@ -2124,11 +2124,12 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu)
 			(unsigned long)p, p->comm));
 		set_tsk_thread_flag(p, TIF_OKERNEL_FORK);
 		clear_tsk_thread_flag(p, TIF_FORK);
-		/* Need to fix MSR state properly - just reusing a var for now */
+
+		/* Otherwise we lose MSR_FS_BASE state (used by glibc in user space on x64) */
 		rdmsrl(MSR_FS_BASE, fs);
-		p->preempt_count_nr = fs;
+		p->okernel_fork_fs_base = fs;
 		HDEBUG(("VMCALL_DO_FORK_FIXUP setting fs to (%#lx) for p (%#lx)\n",
-			p->preempt_count_nr, (unsigned long)p));
+			p->okernel_fork_fs_base, (unsigned long)p));
 		local_irq_enable();
 		asm volatile("xchg %bx,%bx");
 		ret = 0;
@@ -2282,6 +2283,7 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu)
 		local_irq_enable();
 		
 		schedule_r_mode();
+		barrier();
 		local_irq_disable();
 #if 1
                 /* Re-sync cloned-thread thread_info */

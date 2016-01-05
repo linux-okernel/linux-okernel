@@ -1385,7 +1385,6 @@ struct task_struct {
 
 #ifdef CONFIG_PREEMPT_RCU
 	int rcu_read_lock_nesting;
-	int rcu_read_lock_nesting_nr;
 	union rcu_special rcu_read_unlock_special;
 	struct list_head rcu_node_entry;
 	struct rcu_node *rcu_blocked_node;
@@ -1583,14 +1582,12 @@ struct task_struct {
 	unsigned int hardirq_enable_event;
 	unsigned int hardirq_disable_event;
 	int hardirqs_enabled;
-	int hardirqs_enabled_nr;
 	int hardirq_context;
 	unsigned long softirq_disable_ip;
 	unsigned long softirq_enable_ip;
 	unsigned int softirq_disable_event;
 	unsigned int softirq_enable_event;
 	int softirqs_enabled;
-	int softirqs_enabled_nr;
 	int softirq_context;
 #endif
 #ifdef CONFIG_LOCKDEP
@@ -1600,11 +1597,6 @@ struct task_struct {
 	unsigned int lockdep_recursion;
 	struct held_lock held_locks[MAX_LOCK_DEPTH];
 	gfp_t lockdep_reclaim_gfp;
-	u64 curr_chain_key_nr;
-	int lockdep_depth_nr;
-	unsigned int lockdep_recursion_nr;
-	struct held_lock held_locks_nr[MAX_LOCK_DEPTH];
-	gfp_t lockdep_reclaim_gfp_nr;
 #endif
 
 /* journalling filesystem info */
@@ -1790,7 +1782,7 @@ struct task_struct {
 	unsigned long okernel_status;
 	/* Replace with pointer to vcpu specific data */
 	int okernel_vcpu;
-	unsigned long preempt_count_nr;
+	unsigned long okernel_fork_fs_base;
 #endif
 /* CPU-specific state of this task */
 	struct thread_struct thread;

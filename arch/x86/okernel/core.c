@@ -132,13 +132,9 @@ asmlinkage void __noclone okernel_enter_fork(void)
 	
 	unsigned long rbp,rsp,rflags,cr2,rax,rcx,rdx,rbx,rsi,rdi,r8,r9,r10,r11,r12,r13,r14,r15;
 	int ret;
-	struct thread_info *ti;
 	unsigned long fs;
-	unsigned long fs2;
 
-	//memset(cloned_thread, 0, sizeof(struct nr_cloned_state));
-	
-	HDEBUG(("called.\n"));
+	HDEBUG(("called for pid=%d\n", current->pid));
 
 	cloned_thread->msr_fs_base = 0;
 	
@@ -206,19 +202,17 @@ asmlinkage void __noclone okernel_enter_fork(void)
 	HDEBUG(("cloned thread r15 will be set to  (%#lx)\n", r15));
 	cloned_thread->r15 = r15;
 
+	
 	rflags = 0x002;
 	cloned_thread->rflags = rflags;
 	HDEBUG(("cloned thread rflags will be set to  (%#lx)\n", rflags));
-
+	
 	
 	asm("mov $.Lc_ret_from_fork_label, %0" : "=r"(tmpl));
 	HDEBUG(("cloned thread RIP will be set to: (%#lx)\n", tmpl));
 	cloned_thread->rip = tmpl;
 
-	//rdmsrl(MSR_FS_BASE, fs);
-	//HDEBUG(("MSR_FS_BASE=(%#lx) prior to vmx_launch.\n", fs)); 
-
-	//cloned_thread->msr_fs_base = current->preempt_count_nr;
+	cloned_thread->msr_fs_base = current->okernel_fork_fs_base;
 
 	asm volatile ("mov %%rsp,%0" : "=rm" (rsp));
 	HDEBUG(("cloned thread rsp will be set to  (%#lx)\n", rsp));
@@ -229,32 +223,28 @@ asmlinkage void __noclone okernel_enter_fork(void)
 	ret = vmx_launch(2, cloned_thread);
 	
 	asm volatile(".Lc_ret_from_fork_label: ");
+
+	barrier();
 	
 	if(vmx_nr_mode()){
 		asm volatile("xchg %bx, %bx");
 		printk(KERN_ERR "NR: Returning from okernel_enter_fork (pid=%d)\n",
-			current->pid);
-		wrmsrl(MSR_FS_BASE, current->preempt_count_nr);
+		       current->pid);
+		//wrmsrl(MSR_FS_BASE, current->okernel_fork_fs_base);
 		rdmsrl(MSR_FS_BASE, fs);
 		printk(KERN_ERR "NR:  MSR_FS_BASE (%#lx) curr (%#lx)\n",
-		       fs ,current->preempt_count_nr); 
+		       fs ,current->okernel_fork_fs_base); 
 		asm volatile("xchg %bx, %bx");
-		ti = current_thread_info();
-
+			
 		current->lockdep_depth = 0;
 		
 		printk(KERN_ERR "NR: initial state in return from okernel_enter_fork :\n");
-		printk(KERN_ERR "NR: current->h_irqs_en (%d) current->h_irqs_en_nr (%d)\n",
-		       current->hardirqs_enabled, current->hardirqs_enabled_nr);
+		printk(KERN_ERR "NR: current->h_irqs_en (%d)\n",
+		       current->hardirqs_enabled);
 		printk(KERN_ERR "NR: in_atomic(): %d, irqs_disabled(): %d, pid: %d, name: %s\n",
 		       in_atomic(), irqs_disabled(), current->pid, current->comm);
 		printk(KERN_ERR "NR: preempt_count (%#x) rcu_preempt_depth (%#x)\n",
 		       preempt_count(), rcu_preempt_depth());
-		printk(KERN_ERR "NR: ti->saved_preempt_count (%#x) current->lockdep_depth (%d)\n",
-		       ti->saved_preempt_count, current->lockdep_depth);
-
-	
-
 		printk(KERN_ERR "NR: okernel_enter - going back to okernel_ret_from_fork.\n");
 	}
 	return;
@@ -278,7 +268,6 @@ asmlinkage int __noclone okernel_enter(unsigned long flags)
 	HDEBUG(("called - flags (%lx)\n", flags));
 
 	cloned_thread->msr_fs_base = 0;
-	//memset(cloned_thread, 0, sizeof(struct nr_cloned_state));
 	
 	if(flags == OKERNEL_IOCTL_LAUNCH){
 		HDEBUG(("OKERNEL_IOCTL_LAUNCH...\n"));
@@ -287,14 +276,10 @@ asmlinkage int __noclone okernel_enter(unsigned long flags)
 		BUG();
 	}
 	
-
-	
 	asm volatile ("mov %%rbp,%0" : "=rm" (rbp));
 	HDEBUG(("cloned thread rbp will be set to  (%#lx)\n", rbp));
 	cloned_thread->rbp = rbp;
-	
 
-	
 	asm volatile ("mov %%cr2,%0" : "=rm" (cr2));
 	HDEBUG(("cloned thread cr2 will be set to  (%#lx)\n", cr2));
 	cloned_thread->cr2 = cr2;
@@ -399,8 +384,8 @@ asmlinkage int __noclone okernel_enter(unsigned long flags)
 		ti = current_thread_info();
 	
 		printk(KERN_ERR "NR: initial state in return from okernel_enter (IOCTL_LAUNCH):\n");
-		printk(KERN_ERR "NR: current->h_irqs_en (%d) current->h_irqs_en_nr (%d)\n",
-		       current->hardirqs_enabled, current->hardirqs_enabled_nr);
+		printk(KERN_ERR "NR: current->h_irqs_en (%d)\n",
+		       current->hardirqs_enabled);
 		printk(KERN_ERR "NR: in_atomic(): %d, irqs_disabled(): %d, pid: %d, name: %s\n",
 		       in_atomic(), irqs_disabled(), current->pid, current->comm);
 		printk(KERN_ERR "NR: preempt_count (%#x) rcu_preempt_depth (%#x)\n",
@@ -411,8 +396,8 @@ asmlinkage int __noclone okernel_enter(unsigned long flags)
 		local_irq_enable();
 		printk(KERN_ERR "NR: ------------------------------------------------------------------\n");
 		printk(KERN_ERR "NR: set state for return through kernel to upace from okernel_enter:\n");
-		printk(KERN_ERR "NR: current->h_irqs_en (%d) current->h_irqs_en_nr (%d)\n",
-		       current->hardirqs_enabled, current->hardirqs_enabled_nr);
+		printk(KERN_ERR "NR: current->h_irqs_en (%d)\n",
+		       current->hardirqs_enabled);
 		printk(KERN_ERR "NR: in_atomic(): %d, irqs_disabled(): %d, pid: %d, name: %s\n",
 		       in_atomic(), irqs_disabled(), current->pid, current->comm);
 		printk(KERN_ERR "NR: preempt_count (%#x) rcu_preempt_depth (%#x) saved preempt (%#x)\n",
