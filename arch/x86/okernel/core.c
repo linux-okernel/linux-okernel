@@ -65,6 +65,7 @@ static int major_no;
 int okernel_enabled;
 
 
+
 #ifdef CONFIG_OKERNEL_SCHED
 void okernel_schedule_helper(void)
 {
@@ -120,6 +121,27 @@ void __noclone okernel_enter_test(unsigned long flags)
 	//do_exit(0);
 }
 
+asmlinkage void __noclone okernel_enter_fork_debug(void)
+{
+	unsigned long fs;
+	
+	HDEBUG(("Returning from okernel_enter_fork (pid=%d)\n",
+		current->pid));
+	rdmsrl(MSR_FS_BASE, fs);
+	HDEBUG(("MSR_FS_BASE (%#lx) curr (%#lx)\n",
+		fs ,current->okernel_fork_fs_base)); 
+	BXMAGICBREAK;
+		
+	HDEBUG(("initial state in return from okernel_enter_fork :\n"));
+	HDEBUG(("current->h_irqs_en (%d)\n",
+		current->hardirqs_enabled));
+	HDEBUG(("in_atomic(): %d, irqs_disabled(): %d, pid: %d, name: %s\n",
+		in_atomic(), irqs_disabled(), current->pid, current->comm));
+	HDEBUG(("preempt_count (%#x) rcu_preempt_depth (%#x)\n",
+		preempt_count(), rcu_preempt_depth()));
+	HDEBUG(("going back to okernel_ret_from_fork.\n"));
+}
+
 asmlinkage void __noclone okernel_enter_fork(void)
 {
 	unsigned long tmpl;
@@ -132,7 +154,6 @@ asmlinkage void __noclone okernel_enter_fork(void)
 	
 	unsigned long rbp,rsp,rflags,cr2,rax,rcx,rdx,rbx,rsi,rdi,r8,r9,r10,r11,r12,r13,r14,r15;
 	int ret;
-	unsigned long fs;
 
 	HDEBUG(("called for pid=%d\n", current->pid));
 
@@ -215,38 +236,28 @@ asmlinkage void __noclone okernel_enter_fork(void)
 	cloned_thread->msr_fs_base = current->okernel_fork_fs_base;
 
 	asm volatile ("mov %%rsp,%0" : "=rm" (rsp));
+
 	HDEBUG(("cloned thread rsp will be set to  (%#lx)\n", rsp));
 	cloned_thread->rsp = rsp;
 	
 	BXMAGICBREAK;
 
+	barrier();
+	
 	ret = vmx_launch(2, cloned_thread);
 	
 	asm volatile(".Lc_ret_from_fork_label: ");
 
-	barrier();
+	BXMAGICBREAK;
 	
-	if(vmx_nr_mode()){
-		BXMAGICBREAK;
-		HDEBUG(("Returning from okernel_enter_fork (pid=%d)\n",
-			current->pid));
-		//wrmsrl(MSR_FS_BASE, current->okernel_fork_fs_base);
-		rdmsrl(MSR_FS_BASE, fs);
-		HDEBUG(("MSR_FS_BASE (%#lx) curr (%#lx)\n",
-			fs ,current->okernel_fork_fs_base)); 
-		BXMAGICBREAK;
-			
-		current->lockdep_depth = 0;
-		
-		HDEBUG(("initial state in return from okernel_enter_fork :\n"));
-		HDEBUG(("current->h_irqs_en (%d)\n",
-			current->hardirqs_enabled));
-		HDEBUG(("in_atomic(): %d, irqs_disabled(): %d, pid: %d, name: %s\n",
-			in_atomic(), irqs_disabled(), current->pid, current->comm));
-		HDEBUG(("preempt_count (%#x) rcu_preempt_depth (%#x)\n",
-			preempt_count(), rcu_preempt_depth()));
-		HDEBUG(("going back to okernel_ret_from_fork.\n"));
-	}
+	/* Be careful what we do here as the C register state may not
+	   be the same as the compiler is expecting (since we are
+	   jumping straight to this point with state restored from a
+	   VMCS record which the compiler won't be aware of). We are
+	   ok once we return to our calling function, or if we call a
+	   function.*/
+	
+	okernel_enter_fork_debug();
 	return;
 }
 
@@ -262,8 +273,8 @@ int __noclone okernel_enter(unsigned long flags)
 	
 	unsigned long rbp,rsp,rflags,cr2,rax,rcx,rdx,rbx,rsi,rdi,r8,r9,r10,r11,r12,r13,r14,r15;
 	int ret;
-	struct thread_info *ti;
-	
+
+		
 	HDEBUG(("called - flags (%lx)\n", flags));
 
 	cloned_thread->msr_fs_base = 0;
@@ -349,9 +360,9 @@ int __noclone okernel_enter(unsigned long flags)
 	
 #if 0
 	regs = task_pt_regs(current);
-	HDEBUG(("----start of 'current' regs from __show_regs:\n"));
+	//HDEBUG(("----start of 'current' regs from __show_regs:\n"));
 	__show_regs(regs, 1);
-	HDEBUG(("----end of 'current' regs from __show_regs:\n"));
+	//HDEBUG(("----end of 'current' regs from __show_regs:\n"));
 #endif	
 	
 #if 0
@@ -366,50 +377,23 @@ int __noclone okernel_enter(unsigned long flags)
 	rflags = (rflags & ~RFLAGS_IF_BIT);
 	cloned_thread->rflags = rflags;
 #endif
+
 	asm volatile ("mov %%rsp,%0" : "=rm" (rsp));
 	HDEBUG(("cloned thread rsp will be set to  (%#lx)\n", rsp));
-	cloned_thread->rsp = rsp;
-	
-	BXMAGICBREAK;
-
-	ret = vmx_launch(flags, cloned_thread);
-
-	asm volatile(".Lc_rip_label: ");
+	cloned_thread->rsp = rsp;	
 
 	barrier();
 	
-	if(vmx_nr_mode()){
-		BXMAGICBREAK;
-		asm volatile ("xchg %bx, %bx");
-		HDEBUG(("Returning from okernel_enter (IOCTL_LAUNCH).\n"));
-		BXMAGICBREAK;
-		ti = current_thread_info();
-		
-		HDEBUG(("initial state in return from okernel_enter (IOCTL_LAUNCH):\n"));
-		HDEBUG(("current->h_irqs_en (%d)\n",
-			current->hardirqs_enabled));
-		HDEBUG(("in_atomic(): %d, irqs_disabled(): %d, pid: %d, name: %s\n",
-			in_atomic(), irqs_disabled(), current->pid, current->comm));
-		HDEBUG(("preempt_count (%#x) rcu_preempt_depth (%#x)\n",
-			preempt_count(), rcu_preempt_depth()));
-		HDEBUG(("ti->saved_preempt_count (%#x) current->lockdep_depth (%d)\n",
-			ti->saved_preempt_count, current->lockdep_depth));
-		current->lockdep_depth = 0;
-		local_irq_enable();
-		HDEBUG(("------------------------------------------------------------------\n"));
-		HDEBUG(("set state for return through kernel to upace from okernel_enter:\n"));
-		HDEBUG(("current->h_irqs_en (%d)\n",
-			current->hardirqs_enabled));
-		HDEBUG(("in_atomic(): %d, irqs_disabled(): %d, pid: %d, name: %s\n",
-			in_atomic(), irqs_disabled(), current->pid, current->comm));
-		HDEBUG(("preempt_count (%#x) rcu_preempt_depth (%#x) saved preempt (%#x)\n",
-			preempt_count(), rcu_preempt_depth(), ti->saved_preempt_count));
-		HDEBUG(("ti->saved_preempt_count (%#x) current->lockdep_depth (%d)\n",
-			ti->saved_preempt_count, current->lockdep_depth));
-		HDEBUG(("starting back towards user space (IOCTL_LAUNCH)...\n"));
-		return ret;
-		
-	} 
+	ret = vmx_launch(flags, cloned_thread);
+
+	asm volatile(".Lc_rip_label: ");
+	
+	/* Be careful what we do here as the C register state may not
+	   be the same as the compiler is expecting (since we are
+	   jumping straight to this point with state restored from a
+	   VMCS record which the compiler won't be aware of). We are
+	   ok once we return to our calling function.*/
+	
 	return ret;
 }
 
@@ -425,7 +409,7 @@ long ok_device_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 {
 	unsigned long val;
 	int ret;
-
+	struct thread_info *ti;
 
 	HDEBUG(("called.\n"));
 	switch(cmd)
@@ -450,10 +434,38 @@ long ok_device_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 		
 		ret = okernel_enter(OKERNEL_IOCTL_LAUNCH);
 
+#if 1
 		if(vmx_nr_mode()){
+			BXMAGICBREAK;
+			HDEBUG(("Returning from okernel_enter (IOCTL_LAUNCH).\n"));
+			BXMAGICBREAK;
+			ti = current_thread_info();
+			
+			HDEBUG(("initial state in return from okernel_enter (IOCTL_LAUNCH):\n"));
+			HDEBUG(("current->h_irqs_en (%d)\n",
+				current->hardirqs_enabled));
+			HDEBUG(("in_atomic(): %d, irqs_disabled(): %d, pid: %d, name: %s\n",
+				in_atomic(), irqs_disabled(), current->pid, current->comm));
+			HDEBUG(("preempt_count (%#x) rcu_preempt_depth (%#x)\n",
+				preempt_count(), rcu_preempt_depth()));
+			HDEBUG(("ti->saved_preempt_count (%#x) current->lockdep_depth (%d)\n",
+				ti->saved_preempt_count, current->lockdep_depth));
+			current->lockdep_depth = 0;
+			local_irq_enable();
+			HDEBUG(("------------------------------------------------------------------\n"));
+			HDEBUG(("set state for return through kernel to upace from okernel_enter:\n"));
+			HDEBUG(("current->h_irqs_en (%d)\n",
+				current->hardirqs_enabled));
+			HDEBUG(("in_atomic(): %d, irqs_disabled(): %d, pid: %d, name: %s\n",
+				in_atomic(), irqs_disabled(), current->pid, current->comm));
+			HDEBUG(("preempt_count (%#x) rcu_preempt_depth (%#x) saved preempt (%#x)\n",
+				preempt_count(), rcu_preempt_depth(), ti->saved_preempt_count));
+			HDEBUG(("ti->saved_preempt_count (%#x) current->lockdep_depth (%d)\n",
+				ti->saved_preempt_count, current->lockdep_depth));
+			HDEBUG(("starting back towards user space (IOCTL_LAUNCH)...\n"));
+#endif
 			goto nr_exit;
 		}
-
 		current->okernel_status = OKERNEL_OFF;
 
 		if(ret){

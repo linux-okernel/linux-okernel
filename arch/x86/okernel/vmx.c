@@ -2132,7 +2132,7 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu)
 		HDEBUG(("VMCALL_DO_FORK_FIXUP setting fs to (%#lx) for p (%#lx)\n",
 			p->okernel_fork_fs_base, (unsigned long)p));
 		local_irq_enable();
-		asm volatile("xchg %bx,%bx");
+		BXMAGICBREAK;
 		ret = 0;
 	} else if(cmd == VMCALL_DO_EXEC_1){
 		HDEBUG(("VMCALL_DO_EXEC_1 called.\n"));
