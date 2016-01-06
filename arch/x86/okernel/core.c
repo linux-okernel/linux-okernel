@@ -218,7 +218,7 @@ asmlinkage void __noclone okernel_enter_fork(void)
 	HDEBUG(("cloned thread rsp will be set to  (%#lx)\n", rsp));
 	cloned_thread->rsp = rsp;
 	
-	asm volatile("xchg %bx, %bx");
+	BXMAGICBREAK;
 
 	ret = vmx_launch(2, cloned_thread);
 	
@@ -227,14 +227,14 @@ asmlinkage void __noclone okernel_enter_fork(void)
 	barrier();
 	
 	if(vmx_nr_mode()){
-		asm volatile("xchg %bx, %bx");
+		BXMAGICBREAK;
 		printk(KERN_ERR "NR: Returning from okernel_enter_fork (pid=%d)\n",
 		       current->pid);
 		//wrmsrl(MSR_FS_BASE, current->okernel_fork_fs_base);
 		rdmsrl(MSR_FS_BASE, fs);
 		printk(KERN_ERR "NR:  MSR_FS_BASE (%#lx) curr (%#lx)\n",
 		       fs ,current->okernel_fork_fs_base); 
-		asm volatile("xchg %bx, %bx");
+		BXMAGICBREAK;
 			
 		current->lockdep_depth = 0;
 		
@@ -371,16 +371,16 @@ asmlinkage int __noclone okernel_enter(unsigned long flags)
 	HDEBUG(("cloned thread rsp will be set to  (%#lx)\n", rsp));
 	cloned_thread->rsp = rsp;
 	
-	asm volatile("xchg %bx, %bx");
+	BXMAGICBREAK;
 
 	ret = vmx_launch(flags, cloned_thread);
 	
 	asm volatile(".Lc_rip_label: ");
 	
 	if(vmx_nr_mode()){
-		asm volatile("xchg %bx, %bx");
+		BXMAGICBREAK;
 		printk(KERN_ERR "NR: Returning from okernel_enter (IOCTL_LAUNCH).\n");
-		asm volatile("xchg %bx, %bx");
+		BXMAGICBREAK;
 		ti = current_thread_info();
 	
 		printk(KERN_ERR "NR: initial state in return from okernel_enter (IOCTL_LAUNCH):\n");

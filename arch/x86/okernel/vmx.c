@@ -2143,7 +2143,7 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu)
 		       filename->name,
 		       (unsigned long)current->mm->pgd,
 		       (unsigned long)current->active_mm->pgd);
-		asm volatile("xchg %bx, %bx");
+		BXMAGICBREAK;
 		ret = do_execve(filename, argv, envp);
 		printk(KERN_ERR "R: do_exec1 (%s) done: current->mm pgd (%#lx) active_mm pgd (%#lx) ret (%d)\n",
 		       filename->name,
@@ -2156,7 +2156,7 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu)
 		vmcs_writel(GUEST_CR3, __pa((unsigned long)current->mm->pgd));
 		local_irq_enable();
 		vmx_put_cpu(vcpu);
-		asm volatile("xchg %bx, %bx");
+		BXMAGICBREAK;
 	} else if(cmd == VMCALL_DO_EXEC_2){
 		printk(KERN_ERR "R: VMCALL_DO_EXEC2 called.\n");
 
@@ -2168,7 +2168,7 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu)
 
 		printk(KERN_ERR "R: do_exec2 fd(%d) filename(%s)\n",
 		       fd, filename->name);
-		asm volatile("xchg %bx, %bx");
+		BXMAGICBREAK;
 	      
 		ret = do_execveat(fd, filename, argv, envp, flags);
 
@@ -2180,7 +2180,7 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu)
 		vmx_put_cpu(vcpu);
 		printk(KERN_ERR "R: do_exec2 (%s) done - ret(%d)\n",
 		       filename->name, ret);
-		asm volatile("xchg %bx, %bx");
+		BXMAGICBREAK;
 			
 #ifdef CONFIG_COMPAT
 	} else if(cmd == VMCALL_DO_EXEC_3){
@@ -2193,7 +2193,7 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu)
 		       filename->name,
 		       (unsigned long)current->mm->pgd,
 		       (unsigned long)current->active_mm->pgd);
-		asm volatile("xchg %bx, %bx");
+		BXMAGICBREAK;
 		compat_do_execve(filename, argv, envp);
 		printk(KERN_ERR "R: do_exec3 (%s) done: current->mm pgd (%#lx) active_mm pgd (%#lx) ret (%d)\n",
 		       filename->name,
@@ -2206,7 +2206,7 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu)
 		vmcs_writel(GUEST_CR3, __pa((unsigned long)current->mm->pgd));
 		local_irq_enable();
 		vmx_put_cpu(vcpu);
-		asm volatile("xchg %bx, %bx");
+		BXMAGICBREAK;
 	} else if(cmd == VMCALL_DO_EXEC_4){
 		printk(KERN_ERR "R: VMCALL_DO_EXEC_4 called.\n");
 
@@ -2218,7 +2218,7 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu)
 
 		printk(KERN_ERR "R: do_exec4 fd(%d) filename(%s)\n",
 		       fd, filename->name);
-		asm volatile("xchg %bx, %bx");
+		BXMAGICBREAK;
 	      
 		compat_do_execveat(fd, filename, argv, envp, flags);
 		local_irq_disable();
@@ -2273,13 +2273,13 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu)
 #if 1
 		printk(KERN_ERR "R: syncing cloned thread_info state (NR->R) (original r_ti->flags=%#x)\n",
 			r_ti->flags);
-		asm volatile("xchg %bx, %bx");
+		BXMAGICBREAK;
 		memcpy(r_ti, nr_ti, sizeof(struct thread_info));
 #endif
 		rdmsrl(MSR_FS_BASE, fs);
 		printk(KERN_ERR "R: calling schedule_r (pid %d) cpu_cur_tos (%#lx) flgs (%#x) MSR_FS_BASE=%#lx\n",
 		       current->pid, (unsigned long)tss->x86_tss.sp0, r_ti->flags, fs);
-		asm volatile("xchg %bx, %bx");
+		BXMAGICBREAK;
 		local_irq_enable();
 		
 		schedule_r_mode();
@@ -2293,7 +2293,7 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu)
 		printk(KERN_ERR "R: returned schedule_r (pid %d) cpu_cur_tos (%#lx) flgs (%#x) MSR_FS_BASE=%#lx\n",
 		       current->pid, (unsigned long)tss->x86_tss.sp0, r_ti->flags, fs);
 		printk(KERN_ERR "R: syncing cloned thread_info state (R->NR)...\n");
-		asm volatile("xchg %bx, %bx");
+		BXMAGICBREAK;
 		memcpy(nr_ti, r_ti, sizeof(struct thread_info));
 		//nr_ti->flags = 0;
 		printk(KERN_ERR "R: synced cloned thread_info state (R->NR) (nr_ti->flags=%#x)\n",
@@ -2307,7 +2307,7 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu)
 		printk(KERN_ERR "R: ret from preempt_count (%d) rcu_preempt_depth (%d)\n",
 		       preempt_count(), rcu_preempt_depth());
 		printk(KERN_ERR "R: current->lockdep_depth (%d)\n", current->lockdep_depth);
-		asm volatile("xchg %bx, %bx");
+		BXMAGICBREAK;
 		local_irq_enable();
 	} else if(cmd == VMCALL_DOEXIT){
 		printk(KERN_ERR "R: calling do_exit...\n");
@@ -2408,10 +2408,10 @@ int vmx_launch(unsigned int flags, struct nr_cloned_state *cloned_thread)
 	asm volatile ("mov %0, %%rbp": : "r" (new_rbp));
 	asm volatile ("mov %0, %%rsp": : "r" (new_rsp));
 
-	asm volatile("xchg %bx, %bx");
+	BXMAGICBREAK;
 	/* can we still access fred? */
 	printk(KERN_ERR "R: fred (%lu) address of fred (%#lx)\n", fred, (unsigned long)&fred);
-	asm volatile("xchg %bx, %bx");
+	BXMAGICBREAK;
 	
 #if 1
 	vcpu->cloned_tsk = current;
@@ -2509,7 +2509,7 @@ fast_path:
 					printk(KERN_ERR "R: calling do_page_fault_r...\n");
 					do_page_fault_r(&regs, err, cr2);
 					printk(KERN_ERR "R: returned from do_page_fault_r.\n");
-					//asm volatile("xchg %bx, %bx");
+					//BXMAGICBREAK;
 					schedule_ok = 1;
 					continue;
 				} else if(vii.s.vector == EXCEPTION_GP){

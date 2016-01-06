@@ -659,8 +659,8 @@ void do_exit(long code)
 
 #ifdef CONFIG_OKERNEL
 	if(is_in_vmx_nr_mode()){
-		printk(KERN_ERR "NR: do_exit called.\n");
-		asm volatile("xchg %bx, %bx");
+	        HDEBUG(("called.\n"));
+		BXMAGICBREAK;
 		(void)vmcall(VMCALL_DOEXIT);
 	}
 #endif

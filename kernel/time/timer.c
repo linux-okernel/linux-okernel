@@ -1476,8 +1476,8 @@ signed long __sched schedule_timeout(signed long timeout)
 	
 	if(is_in_vmx_nr_mode()){
 		ti = current_thread_info();
-		printk(KERN_ERR "NR: schedule_timeout 0 - current state (%ld)\n", current->state);
-		asm volatile("xchg %bx, %bx");
+		HDEBUG(("current state (%ld)\n", current->state));
+		BXMAGICBREAK;
 	}
 	
 	switch (timeout)
@@ -1492,15 +1492,15 @@ signed long __sched schedule_timeout(signed long timeout)
 		 */
 			
 		if(is_in_vmx_nr_mode()){
-			printk(KERN_ERR "NR: schedule_timeout (max timeout) calling schedule (pid=%d)...\n",
-				current->pid);
-			asm volatile("xchg %bx, %bx");
+			HDEBUG(("(max timeout) calling schedule (pid=%d)...\n",
+				current->pid));
+			BXMAGICBREAK;
 		}
 		schedule();
 		if(is_in_vmx_nr_mode()){
-			printk(KERN_ERR "NR: schedule_timeout (max timeout) returned from schedule (pid=%d)\n",
-				current->pid);
-			asm volatile("xchg %bx, %bx");
+			HDEBUG(("(max timeout) returned from schedule (pid=%d)\n",
+				current->pid));
+			BXMAGICBREAK;
 		}
 		goto out;
 	default:
@@ -1528,17 +1528,17 @@ signed long __sched schedule_timeout(signed long timeout)
 	__mod_timer(&timer, expire, false, TIMER_NOT_PINNED);
 
 	if(is_in_vmx_nr_mode()){
-		printk(KERN_ERR "NR: schedule_timeout (not max timeout) calling schedule (pid=%d)...\n",
-		       current->pid);
-		asm volatile("xchg %bx, %bx");
+		HDEBUG(("not max timeout) calling schedule (pid=%d)...\n",
+			current->pid);
+		BXMAGICBREAK;
 	}
 	
 	schedule();
 
 	if(is_in_vmx_nr_mode()){
-		printk(KERN_ERR "NR: schedule_timeout (not max timeout) returned from schedule (pid=%d)\n",
-		       current->pid);
-		asm volatile("xchg %bx, %bx");
+		HDEBUG(("not max timeout) returned from schedule (pid=%d)\n",
+			current->pid));
+		BXMAGICBREAK;
 	}
 	
 	del_singleshot_timer_sync(&timer);

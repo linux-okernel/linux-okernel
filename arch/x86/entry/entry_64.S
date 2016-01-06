@@ -342,7 +342,7 @@ syscall_return:
 	andq $0x2000,%r11
 	cmpq $0, %r11
 	jne rmode
-	xchg %bx,%bx
+	xchg %bx, %bx
 rmode:
 	popq %r11
 	*/
@@ -992,16 +992,17 @@ ENTRY(okernel_ret_from_fork)
 	pushq	$0x0002
 	popfq					/* reset kernel eflags */
 
-	//xchg %bx,%bx
+	//xchg %bx, %bx
 	
 	call	schedule_tail
-	xchg %bx,%bx
 
+	//xchg %bx, %bx
+	
 	call okernel_enter_fork
-
+	
 	RESTORE_EXTRA_REGS
 
-	//xchg %bx,%bx
+	//xchg %bx, %bx
 
 	jmp	int_ret_from_sys_call	
 END(okernel_ret_from_fork)

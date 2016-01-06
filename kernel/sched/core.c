@@ -3154,7 +3154,7 @@ static void  __sched okernel_schedule(void)
 	if(is_in_vmx_nr_mode()){
 		/* Return control to the original process running in root-mode VMX */
 		//okernel_schedule_helper();
-		asm volatile("xchg %bx, %bx");
+		BXMAGICBREAK;
 		printk(KERN_ERR "NR: okernel_scheduled called - shouldn't get here!\n");
 		BUG();
 	} else {
@@ -3192,7 +3192,7 @@ asmlinkage __visible void __sched schedule(void)
 		//dump_stack();
 	        printk(KERN_ERR "NR: schedule called (pid=%d)  cpu_cur_tos (%#lx) flgs(%#x) MSR_FS_BASE=%#lx\n",
 		       current->pid, (unsigned long)tss->x86_tss.sp0, ti->flags, fs);
-		asm volatile("xchg %bx, %bx");
+		BXMAGICBREAK;
 
 
 		if(irqs_disabled()){
@@ -3230,7 +3230,7 @@ asmlinkage __visible void __sched schedule(void)
 		rdmsrl(MSR_FS_BASE, fs);
 		printk(KERN_ERR "NR: returned from VMCALL schedule (pid=%d)  cpu_cur_tos (%#lx) flgs (%#x) MSR_FS_BASE=%#lx\n",
 		       current->pid, (unsigned long)tss->x86_tss.sp0, ti->flags, fs);
-		asm volatile("xchg %bx, %bx");
+		BXMAGICBREAK;
 		printk(KERN_ERR "NR: schedule return in_atomic(): %d, irqs_disabled(): %d, pid: %d, name: %s\n",
 		       in_atomic(), irqs_disabled(), current->pid, current->comm);
 		printk(KERN_ERR "NR: schedule return preempt_count (%#x) rcu_preempt_depth (%#x) saved preempt (%#x)\n",
@@ -3238,7 +3238,7 @@ asmlinkage __visible void __sched schedule(void)
 		printk(KERN_ERR "NR: current->lockdep_depth (%d)\n", current->lockdep_depth);
 		printk(KERN_ERR "NR: schedule return current->h_irqs_en (%d)\n",
 		       current->hardirqs_enabled);
-		asm volatile("xchg %bx, %bx");
+		BXMAGICBREAK;
 	}
 }
 EXPORT_SYMBOL(schedule);

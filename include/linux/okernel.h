@@ -84,6 +84,33 @@ int compat_do_execveat(int fd, struct filename *filename,
 #endif
 
 
+
+#define HPL_DEBUG
+#ifdef HPL_DEBUG
+#define HDEBUG(args)  (printk(KERN_ERR "%s: cpu(%d) %s: ", vmx_nr_mode()?"NR":"R", raw_smp_processor_id(), __func__), printk args)
+#else
+#define HDEBUG(args)
+#endif
+
+#define HPE_BREAKPOINTS_ENABLED
+#ifdef HPE_BREAKPOINTS_ENABLED
+#define BXMAGICBREAK asm volatile("xchg %bx,%bx")
+#define BXMAGICBREAK_ASM xchg %bx,%bx
+#else
+#define BXMAGICBREAK
+#define BXMAGICBREAK_ASM
+#endif
+
+
+
+//#define HPL_DEBUG2
+#ifdef HPL_DEBUG2
+#define HDEBUG2(args) (printk(KERN_ERR "NR(%u):  cpu(%d) %s: ", vmx_nr_mode(), raw_smp_processor_id(), __func__), printk args)
+#else
+#define HDEBUG2(args)
+#endif
+
+
 static inline bool vmx_nr_mode(void)
 {
 	unsigned long cr4;
