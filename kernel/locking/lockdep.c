@@ -3517,8 +3517,8 @@ static void check_flags(unsigned long flags)
 		return;
 
 	if(is_in_vmx_nr_mode()){
-		printk(KERN_ERR "NR: check IR status against flags: flags (%#lx) c->hirqs_en (%d)\n",
-		       flags, current->hardirqs_enabled);
+		HDEBUG(("check IR status against flags: flags (%#lx) c->hirqs_en (%d)\n",
+			flags, current->hardirqs_enabled));
 	}
 	
 	if (irqs_disabled_flags(flags)) {
@@ -3551,7 +3551,7 @@ static void check_flags(unsigned long flags)
 	if (!debug_locks)
 		print_irqtrace_events(current);
 	if(is_in_vmx_nr_mode()){
-		printk(KERN_ERR "NR: check flags done.\n");
+		HDEBUG(("check flags done.\n"));
 	}
 #endif
 }

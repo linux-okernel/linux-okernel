@@ -98,10 +98,10 @@ void okernel_dump_stack_info(void)
 	sp  = current_stack_pointer();
 	end_stack = sp0 - THREAD_SIZE;
 
-	printk(KERN_ERR  "okernel: thread/stack size (%lu) thread_info* (%#lx) stack in-use (%#lx) (%lu)\n",
-	       THREAD_SIZE, (unsigned long)current_thread_info(), okernel_stack_use(), okernel_stack_use());
-	printk(KERN_ERR "okernel: stack sp0 (%#lx) current sp (%#lx) end stack (%#lx)\n",
-	       sp0, sp, sp0-THREAD_SIZE);
+	HDEBUG(("thread/stack size (%lu) thread_info* (%#lx) stack in-use (%#lx) (%lu)\n",
+		THREAD_SIZE, (unsigned long)current_thread_info(), okernel_stack_use(), okernel_stack_use()));
+	HDEBUG(("stack sp0 (%#lx) current sp (%#lx) end stack (%#lx)\n",
+		sp0, sp, sp0-THREAD_SIZE));
 }
 
 void __noclone okernel_enter_test(unsigned long flags)
@@ -228,30 +228,29 @@ asmlinkage void __noclone okernel_enter_fork(void)
 	
 	if(vmx_nr_mode()){
 		BXMAGICBREAK;
-		printk(KERN_ERR "NR: Returning from okernel_enter_fork (pid=%d)\n",
-		       current->pid);
+		HDEBUG(("Returning from okernel_enter_fork (pid=%d)\n",
+			current->pid));
 		//wrmsrl(MSR_FS_BASE, current->okernel_fork_fs_base);
 		rdmsrl(MSR_FS_BASE, fs);
-		printk(KERN_ERR "NR:  MSR_FS_BASE (%#lx) curr (%#lx)\n",
-		       fs ,current->okernel_fork_fs_base); 
+		HDEBUG(("MSR_FS_BASE (%#lx) curr (%#lx)\n",
+			fs ,current->okernel_fork_fs_base)); 
 		BXMAGICBREAK;
 			
 		current->lockdep_depth = 0;
 		
-		printk(KERN_ERR "NR: initial state in return from okernel_enter_fork :\n");
-		printk(KERN_ERR "NR: current->h_irqs_en (%d)\n",
-		       current->hardirqs_enabled);
-		printk(KERN_ERR "NR: in_atomic(): %d, irqs_disabled(): %d, pid: %d, name: %s\n",
-		       in_atomic(), irqs_disabled(), current->pid, current->comm);
-		printk(KERN_ERR "NR: preempt_count (%#x) rcu_preempt_depth (%#x)\n",
-		       preempt_count(), rcu_preempt_depth());
-		printk(KERN_ERR "NR: okernel_enter - going back to okernel_ret_from_fork.\n");
+		HDEBUG(("initial state in return from okernel_enter_fork :\n"));
+		HDEBUG(("current->h_irqs_en (%d)\n",
+			current->hardirqs_enabled));
+		HDEBUG(("in_atomic(): %d, irqs_disabled(): %d, pid: %d, name: %s\n",
+			in_atomic(), irqs_disabled(), current->pid, current->comm));
+		HDEBUG(("preempt_count (%#x) rcu_preempt_depth (%#x)\n",
+			preempt_count(), rcu_preempt_depth()));
+		HDEBUG(("going back to okernel_ret_from_fork.\n"));
 	}
 	return;
 }
 
-//int __noclone okernel_enter(unsigned long flags, unsigned long f_rbp, unsigned long f_rsp)
-asmlinkage int __noclone okernel_enter(unsigned long flags)
+int __noclone okernel_enter(unsigned long flags)
 {
 	unsigned long tmpl;
 
@@ -374,37 +373,40 @@ asmlinkage int __noclone okernel_enter(unsigned long flags)
 	BXMAGICBREAK;
 
 	ret = vmx_launch(flags, cloned_thread);
-	
+
 	asm volatile(".Lc_rip_label: ");
+
+	barrier();
 	
 	if(vmx_nr_mode()){
 		BXMAGICBREAK;
-		printk(KERN_ERR "NR: Returning from okernel_enter (IOCTL_LAUNCH).\n");
+		asm volatile ("xchg %bx, %bx");
+		HDEBUG(("Returning from okernel_enter (IOCTL_LAUNCH).\n"));
 		BXMAGICBREAK;
 		ti = current_thread_info();
-	
-		printk(KERN_ERR "NR: initial state in return from okernel_enter (IOCTL_LAUNCH):\n");
-		printk(KERN_ERR "NR: current->h_irqs_en (%d)\n",
-		       current->hardirqs_enabled);
-		printk(KERN_ERR "NR: in_atomic(): %d, irqs_disabled(): %d, pid: %d, name: %s\n",
-		       in_atomic(), irqs_disabled(), current->pid, current->comm);
-		printk(KERN_ERR "NR: preempt_count (%#x) rcu_preempt_depth (%#x)\n",
-		       preempt_count(), rcu_preempt_depth());
-		printk(KERN_ERR "NR: ti->saved_preempt_count (%#x) current->lockdep_depth (%d)\n",
-		       ti->saved_preempt_count, current->lockdep_depth);
+		
+		HDEBUG(("initial state in return from okernel_enter (IOCTL_LAUNCH):\n"));
+		HDEBUG(("current->h_irqs_en (%d)\n",
+			current->hardirqs_enabled));
+		HDEBUG(("in_atomic(): %d, irqs_disabled(): %d, pid: %d, name: %s\n",
+			in_atomic(), irqs_disabled(), current->pid, current->comm));
+		HDEBUG(("preempt_count (%#x) rcu_preempt_depth (%#x)\n",
+			preempt_count(), rcu_preempt_depth()));
+		HDEBUG(("ti->saved_preempt_count (%#x) current->lockdep_depth (%d)\n",
+			ti->saved_preempt_count, current->lockdep_depth));
 		current->lockdep_depth = 0;
 		local_irq_enable();
-		printk(KERN_ERR "NR: ------------------------------------------------------------------\n");
-		printk(KERN_ERR "NR: set state for return through kernel to upace from okernel_enter:\n");
-		printk(KERN_ERR "NR: current->h_irqs_en (%d)\n",
-		       current->hardirqs_enabled);
-		printk(KERN_ERR "NR: in_atomic(): %d, irqs_disabled(): %d, pid: %d, name: %s\n",
-		       in_atomic(), irqs_disabled(), current->pid, current->comm);
-		printk(KERN_ERR "NR: preempt_count (%#x) rcu_preempt_depth (%#x) saved preempt (%#x)\n",
-		       preempt_count(), rcu_preempt_depth(), ti->saved_preempt_count);
-		printk(KERN_ERR "NR: ti->saved_preempt_count (%#x) current->lockdep_depth (%d)\n",
-		       ti->saved_preempt_count, current->lockdep_depth);
-		printk(KERN_ERR "NR: starting back towards user space (IOCTL_LAUNCH)...\n");
+		HDEBUG(("------------------------------------------------------------------\n"));
+		HDEBUG(("set state for return through kernel to upace from okernel_enter:\n"));
+		HDEBUG(("current->h_irqs_en (%d)\n",
+			current->hardirqs_enabled));
+		HDEBUG(("in_atomic(): %d, irqs_disabled(): %d, pid: %d, name: %s\n",
+			in_atomic(), irqs_disabled(), current->pid, current->comm));
+		HDEBUG(("preempt_count (%#x) rcu_preempt_depth (%#x) saved preempt (%#x)\n",
+			preempt_count(), rcu_preempt_depth(), ti->saved_preempt_count));
+		HDEBUG(("ti->saved_preempt_count (%#x) current->lockdep_depth (%d)\n",
+			ti->saved_preempt_count, current->lockdep_depth));
+		HDEBUG(("starting back towards user space (IOCTL_LAUNCH)...\n"));
 		return ret;
 		
 	} 
@@ -433,7 +435,7 @@ long ok_device_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 		HDEBUG(("cmd is OKERNEL_ON_CMD with arg (%lu) for pid (%d)\n",
 			val, current->pid));
 		if(val != 1){
-			printk(KERN_ERR "OKERNEL_ON_CMD arg not 1.\n");
+			HDEBUG(("OKERNEL_ON_CMD arg not 1.\n"));
 			return -EINVAL;
 		}
 		/* do okernel_enter() here... */

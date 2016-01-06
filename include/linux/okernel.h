@@ -91,8 +91,15 @@ int compat_do_execveat(int fd, struct filename *filename,
 #else
 #define HDEBUG(args)
 #endif
+//#define HPL_DEBUG2
+#ifdef HPL_DEBUG2
+#define HDEBUG2(args) (printk(KERN_ERR "%s: cpu(%d) %s: ", vmx_nr_mode()?"NR":"R", raw_smp_processor_id(), __func__), printk args)
+#else
+#define HDEBUG2(args)
+#endif
 
-#define HPE_BREAKPOINTS_ENABLED
+
+//#define HPE_BREAKPOINTS_ENABLED
 #ifdef HPE_BREAKPOINTS_ENABLED
 #define BXMAGICBREAK asm volatile("xchg %bx,%bx")
 #define BXMAGICBREAK_ASM xchg %bx,%bx
@@ -103,12 +110,7 @@ int compat_do_execveat(int fd, struct filename *filename,
 
 
 
-//#define HPL_DEBUG2
-#ifdef HPL_DEBUG2
-#define HDEBUG2(args) (printk(KERN_ERR "NR(%u):  cpu(%d) %s: ", vmx_nr_mode(), raw_smp_processor_id(), __func__), printk args)
-#else
-#define HDEBUG2(args)
-#endif
+
 
 
 static inline bool vmx_nr_mode(void)
@@ -123,6 +125,7 @@ static inline bool vmx_nr_mode(void)
 }
 
 int is_in_vmx_nr_mode(void);
+
 static inline void break_in_nr_mode(void)
 {
 	if(is_in_vmx_nr_mode()){
@@ -132,7 +135,7 @@ static inline void break_in_nr_mode(void)
 extern int okernel_enabled;
 int okernel_setup(int* vcpu);
 //int okernel_enter(unsigned long flags, unsigned long rbp, unsigned long rsp);
-asmlinkage int okernel_enter(unsigned long flags);
+int okernel_enter(unsigned long flags);
 asmlinkage void __noclone okernel_enter_fork(void);
 void okernel_enter_test(unsigned long flags);
 

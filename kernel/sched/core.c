@@ -830,8 +830,7 @@ static void set_load_weight(struct task_struct *p)
 static void enqueue_task(struct rq *rq, struct task_struct *p, int flags)
 {
 	if(p->okernel_status == OKERNEL_ON){
-		printk(KERN_ERR "NR(%d): in enqueue task.\n",
-		       is_in_vmx_nr_mode());
+		HDEBUG(("in enqueue task.\n"));
 	}
 	update_rq_clock(rq);
 	sched_info_queued(rq, p);
@@ -851,8 +850,7 @@ void activate_task(struct rq *rq, struct task_struct *p, int flags)
 		rq->nr_uninterruptible--;
 
 	if(p->okernel_status == OKERNEL_ON){
-		printk(KERN_ERR "NR(%d): About to enqueue OKERNEL process.\n",
-		       is_in_vmx_nr_mode());
+		HDEBUG(("About to enqueue OKERNEL process.\n"));
 	}
 	enqueue_task(rq, p, flags);
 }
@@ -3190,8 +3188,8 @@ asmlinkage __visible void __sched schedule(void)
 		ti = current_thread_info();
 		rdmsrl(MSR_FS_BASE, fs);
 		//dump_stack();
-	        printk(KERN_ERR "NR: schedule called (pid=%d)  cpu_cur_tos (%#lx) flgs(%#x) MSR_FS_BASE=%#lx\n",
-		       current->pid, (unsigned long)tss->x86_tss.sp0, ti->flags, fs);
+	        HDEBUG(("called (pid=%d)  cpu_cur_tos (%#lx) flgs(%#x) MSR_FS_BASE=%#lx\n",
+			current->pid, (unsigned long)tss->x86_tss.sp0, ti->flags, fs));
 		BXMAGICBREAK;
 
 
@@ -3201,13 +3199,13 @@ asmlinkage __visible void __sched schedule(void)
 			BUG();
 		}
 		
-		printk(KERN_ERR "NR: schedule in_atomic(): %d, irqs_disabled(): %d, pid: %d, name: %s\n",
-		       in_atomic(), irqs_disabled(), current->pid, current->comm);
-		printk(KERN_ERR "NR: schedule preempt_count (%#x) rcu_preempt_depth (%#x) saved preempt (%#x)\n",
-		       preempt_count(), rcu_preempt_depth(), ti->saved_preempt_count);
-		printk(KERN_ERR "NR: schedule current->h_irqs_en (%d)\n",
-		       current->hardirqs_enabled);
-		printk(KERN_ERR "NR: current->lockdep_depth (%d)\n", current->lockdep_depth);
+		HDEBUG(("in_atomic(): %d, irqs_disabled(): %d, pid: %d, name: %s\n",
+			in_atomic(), irqs_disabled(), current->pid, current->comm));
+		HDEBUG(("preempt_count (%#x) rcu_preempt_depth (%#x) saved preempt (%#x)\n",
+			 preempt_count(), rcu_preempt_depth(), ti->saved_preempt_count));
+		HDEBUG(("current->h_irqs_en (%d)\n",
+			current->hardirqs_enabled));
+		HDEBUG(("current->lockdep_depth (%d)\n", current->lockdep_depth));
 #endif
 		//dump_stack();
 		sched_submit_work(tsk);
@@ -3228,16 +3226,15 @@ asmlinkage __visible void __sched schedule(void)
 	if(is_in_vmx_nr_mode()){
 		ti = current_thread_info();
 		rdmsrl(MSR_FS_BASE, fs);
-		printk(KERN_ERR "NR: returned from VMCALL schedule (pid=%d)  cpu_cur_tos (%#lx) flgs (%#x) MSR_FS_BASE=%#lx\n",
-		       current->pid, (unsigned long)tss->x86_tss.sp0, ti->flags, fs);
+		HDEBUG(("returned from VMCALL schedule (pid=%d)  cpu_cur_tos (%#lx) flgs (%#x) MSR_FS_BASE=%#lx\n",
+			current->pid, (unsigned long)tss->x86_tss.sp0, ti->flags, fs));
 		BXMAGICBREAK;
-		printk(KERN_ERR "NR: schedule return in_atomic(): %d, irqs_disabled(): %d, pid: %d, name: %s\n",
-		       in_atomic(), irqs_disabled(), current->pid, current->comm);
-		printk(KERN_ERR "NR: schedule return preempt_count (%#x) rcu_preempt_depth (%#x) saved preempt (%#x)\n",
-		       preempt_count(), rcu_preempt_depth(), ti->saved_preempt_count);
-		printk(KERN_ERR "NR: current->lockdep_depth (%d)\n", current->lockdep_depth);
-		printk(KERN_ERR "NR: schedule return current->h_irqs_en (%d)\n",
-		       current->hardirqs_enabled);
+		HDEBUG(("return in_atomic(): %d, irqs_disabled(): %d, pid: %d, name: %s\n",
+			in_atomic(), irqs_disabled(), current->pid, current->comm));
+		HDEBUG(("return preempt_count (%#x) rcu_preempt_depth (%#x) saved preempt (%#x)\n",
+			preempt_count(), rcu_preempt_depth(), ti->saved_preempt_count));
+		HDEBUG(("current->lockdep_depth (%d)\n", current->lockdep_depth));
+		HDEBUG(("return current->h_irqs_en (%d)\n", current->hardirqs_enabled));
 		BXMAGICBREAK;
 	}
 }
@@ -7564,8 +7561,8 @@ static inline int preempt_count_equals(int preempt_offset)
 
 
 	if(is_in_vmx_nr_mode()){
-		printk(KERN_ERR "preempt_c_e: p_c (%#x) ~PA (%#lx) rcu_pr_dep (%#x) offest (%#x)\n",
-		       preempt_count(), ~PREEMPT_ACTIVE, rcu_preempt_depth(), preempt_offset);
+		HDEBUG(("p_c (%#x) ~PA (%#lx) rcu_pr_dep (%#x) offest (%#x)\n",
+			preempt_count(), ~PREEMPT_ACTIVE, rcu_preempt_depth(), preempt_offset));
 	}
 	nested = (preempt_count() & ~PREEMPT_ACTIVE) + rcu_preempt_depth();
 #endif
@@ -7618,17 +7615,15 @@ void ___might_sleep(const char *file, int line, int preempt_offset)
 	prev_jiffy = jiffies;
 
 	if(is_in_vmx_nr_mode()){
-		printk(KERN_ERR "NR preempt_count_equals (%d) !irqs_disabled (%d) !idle (%d)\n",
-		       preempt_count_equals(preempt_offset), !irqs_disabled(), !is_idle_task(current));
+	        HDEBUG(("preempt_count_equals (%d) !irqs_disabled (%d) !idle (%d)\n",
+			preempt_count_equals(preempt_offset), !irqs_disabled(), !is_idle_task(current)));
 		printk(KERN_ERR
 		       "BUG: NR sleeping function called from invalid context at %s:%d\n",
 		       file, line);
-		printk(KERN_ERR
-		       "NR in_atomic(): %d, irqs_disabled(): %d, pid: %d, name: %s\n",
-		       in_atomic(), irqs_disabled(),
-		       current->pid, current->comm);
-		printk(KERN_ERR "NR preempt_offset (%d) preempt_count (%d) rcu_preempt_depth (%d)\n",
-		       preempt_offset, preempt_count(), rcu_preempt_depth());
+		HDEBUG(("in_atomic(): %d, irqs_disabled(): %d, pid: %d, name: %s\n",
+			in_atomic(), irqs_disabled(), current->pid, current->comm));
+		HDEBUG(("preempt_offset (%d) preempt_count (%d) rcu_preempt_depth (%d)\n",
+			preempt_offset, preempt_count(), rcu_preempt_depth()));
 	} else {
 		printk(KERN_ERR
 		       "BUG: sleeping function called from invalid context at %s:%d\n",

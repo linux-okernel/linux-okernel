@@ -1528,15 +1528,15 @@ signed long __sched schedule_timeout(signed long timeout)
 	__mod_timer(&timer, expire, false, TIMER_NOT_PINNED);
 
 	if(is_in_vmx_nr_mode()){
-		HDEBUG(("not max timeout) calling schedule (pid=%d)...\n",
-			current->pid);
+		HDEBUG(("(not max timeout) calling schedule (pid=%d)...\n",
+			current->pid));
 		BXMAGICBREAK;
 	}
 	
 	schedule();
 
 	if(is_in_vmx_nr_mode()){
-		HDEBUG(("not max timeout) returned from schedule (pid=%d)\n",
+		HDEBUG(("(not max timeout) returned from schedule (pid=%d)\n",
 			current->pid));
 		BXMAGICBREAK;
 	}
