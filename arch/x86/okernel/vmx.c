@@ -2125,9 +2125,12 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu)
 			(unsigned long)p, p->comm));
 		set_tsk_thread_flag(p, TIF_OKERNEL_FORK);
 		clear_tsk_thread_flag(p, TIF_FORK);
-
+#if 0
 		/* Otherwise we lose MSR_FS_BASE state (used by glibc in user space on x64) */
 		rdmsrl(MSR_FS_BASE, fs);
+#else
+		fs = vmcs_readl(GUEST_FS_BASE);
+#endif
 		p->okernel_fork_fs_base = fs;
 		HDEBUG(("VMCALL_DO_FORK_FIXUP setting fs to (%#lx) for p (%#lx)\n",
 			p->okernel_fork_fs_base, (unsigned long)p));
@@ -2447,6 +2450,48 @@ fast_path:
 				continue;
 			}
 		}
+#if 1
+		if (signal_pending(current)) {
+                        int signr;
+                        siginfo_t info;
+                        //uint32_t x;
+
+                        local_irq_enable();
+                        vmx_put_cpu(vcpu);
+
+			HDEBUG(("Signal pending (pid=%d) before vmx resume.\n", current->pid));
+                        spin_lock_irq(&current->sighand->siglock);
+                        signr = dequeue_signal(current, &current->blocked,
+                                               &info);
+                        spin_unlock_irq(&current->sighand->siglock);
+                        if (!signr){
+				HDEBUG(("invalid signal number\n"));
+				continue;
+			}
+			HDEBUG(("Pending signal number =%d\n", signr));
+			
+                        if (signr == SIGSEGV) {
+                                printk(KERN_INFO "vmx: got sigsegv, do_exit() for now.");
+				do_exit(0);
+                                break;
+                        }
+
+			continue;
+#if 0
+                        if (signr == SIGKILL) {
+                                printk(KERN_INFO "vmx: got sigkill, dying");
+                                vcpu->ret_code = ((ENOSYS) << 8);
+                                break;
+                        }
+
+                        x  = DUNE_SIGNAL_INTR_BASE + signr;
+                        x |= INTR_INFO_VALID_MASK;
+
+                        vmcs_write32(VM_ENTRY_INTR_INFO_FIELD, x);
+                        continue;
+#endif
+                }
+#endif
 		
 		/**************************** GO FOR IT ***************************/
 		
@@ -2502,6 +2547,8 @@ fast_path:
 					regs.ip = vmcs_readl(GUEST_RIP);
 					regs.cs = vmcs_readl(GUEST_CS_SELECTOR);
 					regs.ss = vmcs_readl(GUEST_SS_SELECTOR);
+					regs.sp = vmcs_readl(GUEST_RSP);
+					
 					vmx_put_cpu(vcpu);
 					regs.orig_ax = err;
 					//printk("R: ptregs before do_page_fault_r call: \n");

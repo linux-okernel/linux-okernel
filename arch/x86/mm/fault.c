@@ -749,7 +749,7 @@ show_signal_msg(struct pt_regs *regs, unsigned long error_code,
 
 	if (!printk_ratelimit())
 		return;
-
+	dump_stack();
 	printk("%s%s[%d]: segfault at %lx ip %p sp %p error %lx",
 		task_pid_nr(tsk) > 1 ? KERN_INFO : KERN_EMERG,
 		tsk->comm, task_pid_nr(tsk), address,
@@ -1201,12 +1201,14 @@ retry:
 
 	vma = find_vma(mm, address);
 	if (unlikely(!vma)) {
+		HDEBUG(("calling bad area 1\n"));
 		bad_area(regs, error_code, address);
 		return;
 	}
 	if (likely(vma->vm_start <= address))
 		goto good_area;
 	if (unlikely(!(vma->vm_flags & VM_GROWSDOWN))) {
+		HDEBUG(("calling bad area 2\n"));
 		bad_area(regs, error_code, address);
 		return;
 	}
@@ -1218,11 +1220,16 @@ retry:
 		 * 32 pointers and then decrements %sp by 65535.)
 		 */
 		if (unlikely(address + 65536 + 32 * sizeof(unsigned long) < regs->sp)) {
+			HDEBUG(("calling bad area 3 (regs->sp=%#lx)\n", regs->sp));
+			HDEBUG(("ptregs before do_page_fault_r call: \n"));
+			show_regs(regs);
+			HDEBUG(("ptregs before do_page_fault_r done.\n"));
 			bad_area(regs, error_code, address);
 			return;
 		}
 	}
 	if (unlikely(expand_stack(vma, address))) {
+		HDEBUG(("calling bad area 4\n"));
 		bad_area(regs, error_code, address);
 		return;
 	}
