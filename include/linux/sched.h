@@ -1783,6 +1783,7 @@ struct task_struct {
 	/* Replace with pointer to vcpu specific data */
 	int okernel_vcpu;
 	unsigned long okernel_fork_fs_base;
+	unsigned long okernel_fork_gs_base;
 #endif
 /* CPU-specific state of this task */
 	struct thread_struct thread;

@@ -2085,6 +2085,7 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu)
 	int cpu = smp_processor_id();
 	struct tss_struct *tss = &per_cpu(cpu_tss, cpu);
 	unsigned long fs;
+	unsigned long gs;
 	
         /* do_fork_fixup args */
 	struct task_struct *p;
@@ -2130,10 +2131,14 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu)
 		rdmsrl(MSR_FS_BASE, fs);
 #else
 		fs = vmcs_readl(GUEST_FS_BASE);
+		gs = vmcs_readl(GUEST_GS_BASE);
 #endif
 		p->okernel_fork_fs_base = fs;
+		p->okernel_fork_gs_base = gs;
 		HDEBUG(("VMCALL_DO_FORK_FIXUP setting fs to (%#lx) for p (%#lx)\n",
 			p->okernel_fork_fs_base, (unsigned long)p));
+		HDEBUG(("VMCALL_DO_FORK_FIXUP setting gs to (%#lx) for p (%#lx)\n",
+			p->okernel_fork_gs_base, (unsigned long)p));
 		local_irq_enable();
 		BXMAGICBREAK;
 		ret = 0;
@@ -2514,7 +2519,7 @@ fast_path:
 			if(ret == EXIT_REASON_EXTERNAL_INTERRUPT){
 				goto fast_path;
 			} else {
-				printk(KERN_ERR "R: non-timer fast_path exit with interrupts disabled (%d)\n", ret);
+				HDEBUG(("non-timer fast_path exit with interrupts disabled (%d)\n", ret));
 			}
 		}
 		
@@ -2535,6 +2540,7 @@ fast_path:
 		else if (ret == EXIT_REASON_EXCEPTION_NMI) {
 			vmx_get_cpu(vcpu);
 			vii.v = vmcs_readl(VM_EXIT_INTR_INFO);
+			HDEBUG(("recieved EXCEPTION or NMI\n"));
 			if(vii.s.valid == INTR_INFO_VALID_VALID){
 				if(vii.s.vector == EXCEPTION_PF){
 					err = (u64)vmcs_readl(VMCS_VMEXIT_INTR_ERRCODE);
