@@ -408,15 +408,11 @@ static int ok_device_open(struct inode *inode, struct file *file)
 	return 0;
 }
 
-gate_desc nr_idt_table[NR_VECTORS] __page_aligned_bss;
-
 long ok_device_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 {
 	unsigned long val;
 	int ret;
 	struct thread_info *ti;
-	struct desc_ptr idt;
-	void* idt_p;
 	
 
 	HDEBUG(("called.\n"));
@@ -442,37 +438,11 @@ long ok_device_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 		
 		ret = okernel_enter(OKERNEL_IOCTL_LAUNCH);
 
-#if 1
 		if(vmx_nr_mode()){
 			BXMAGICBREAK;
 			HDEBUG(("Returning from okernel_enter (IOCTL_LAUNCH).\n"));
 			BXMAGICBREAK;
 
-			native_store_idt(&idt);
-			
-			HDEBUG(("have IDT values from native_store_idt: vaddr=%#lx, paddr=%#lx, size=%#x\n",
-				idt.address, __pa(idt.address), idt.size));
-
-			HDEBUG(("trying gto access idt_table (addr idt_table=%#lx phys=%#lx)\n",
-				(unsigned long)&idt_table, (unsigned long)__pa(&idt_table)));
-			BXMAGICBREAK;
-			memcpy(&nr_idt_table, &idt_table, IDT_ENTRIES * 16);
-
-			HDEBUG(("accessed idt_table ok (addr idt_table=%#lx phys=%#lx)\n",
-				(unsigned long)&idt_table, (unsigned long)__pa(&idt_table)));
-			BXMAGICBREAK;
-
-
-			HDEBUG(("trying gto access idt (addr idt=%#lx phys=%#lx)\n",
-				idt.address, __pa(idt.address)));
-			BXMAGICBREAK;
-			idt_p = (gate_desc*)(idt.address);
-			memcpy(&nr_idt_table, idt_p, IDT_ENTRIES * 16);
-
-			HDEBUG(("accessed idt ok.\n"));
-			
-			BXMAGICBREAK;
-			
 			ti = current_thread_info();
 			
 			HDEBUG(("initial state in return from okernel_enter (IOCTL_LAUNCH):\n"));
@@ -497,7 +467,6 @@ long ok_device_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 			HDEBUG(("ti->saved_preempt_count (%#x) current->lockdep_depth (%d)\n",
 				ti->saved_preempt_count, current->lockdep_depth));
 			HDEBUG(("starting back towards user space (IOCTL_LAUNCH)...\n"));
-#endif
 			goto nr_exit;
 		}
 		current->okernel_status = OKERNEL_OFF;
