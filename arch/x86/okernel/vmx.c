@@ -1568,16 +1568,32 @@ void get_cpu_state(struct vmx_vcpu *vcpu, struct vmcs_cpu_state* cpu_state)
 	rdmsrl(MSR_FS_BASE, tmpl);
 	cpu_state->fs_base = tmpl;
 #endif
+#if 1
+	if(cloned_thread->msr_gs_base){
+		cpu_state->gs_base = cloned_thread->msr_gs_base;
+	} else {
+		rdmsrl(MSR_GS_BASE, tmpl);
+		cpu_state->gs_base = tmpl;
+	}
+#else
 	rdmsrl(MSR_GS_BASE, tmpl);
 	cpu_state->gs_base = tmpl;
-	
+#endif
 	/*Segment AR Bytes */
 
 	/* IDT, GDT, LDT */
+
+#if 0
+	cpu_state->idt_base = cloned_thread->idt_base;
+	cpu_state->idt_limit = cloned_thread->idt_limit;
+#else	
 	native_store_idt(&idt);
 	cpu_state->idt_base = idt.address;
-	//cpu_state->idt_limit = idt.size;
-	cpu_state->idt_limit = 0xFFFF;
+	cpu_state->idt_limit = idt.size;
+#endif
+	HDEBUG(("setting IDT values from native_store_idt: vaddr=%#lx, paddr=%#lx, size=%#x\n",
+		cpu_state->idt_base, __pa(cpu_state->idt_base), cpu_state->idt_limit));
+        //cpu_state->idt_limit = 0xFFFF;
 
 	
 	native_store_gdt(&gdt);
@@ -1587,6 +1603,7 @@ void get_cpu_state(struct vmx_vcpu *vcpu, struct vmcs_cpu_state* cpu_state)
 	//native_store_ldt(&ldt);
 	cpu_state->ldt_base = 0;
 	cpu_state->ldt_limit = 0;
+
 
 	tr = native_store_tr();
 	cpu_state->tr_base = tr;
@@ -1702,10 +1719,15 @@ static void vmx_setup_initial_guest_state(struct vmx_vcpu *vcpu)
 	vmcs_writel(GUEST_LDTR_BASE, 0);
 	vmcs_writel(GUEST_LDTR_LIMIT, 0);
 
+#if 0
 	vmcs_writel(GUEST_TR_BASE, current_cpu_state.tr_base);
 	vmcs_writel(GUEST_TR_LIMIT, current_cpu_state.tr_limit);
 	vmcs_writel(GUEST_TR_AR_BYTES, 0x0080 | AR_TYPE_BUSY_64_TSS);
-
+#else
+	vmcs_writel(GUEST_TR_BASE, vmx_read_tr_base());
+	vmcs_writel(GUEST_TR_AR_BYTES, 0x0080 | AR_TYPE_BUSY_64_TSS);
+	vmcs_writel(GUEST_TR_LIMIT, current_cpu_state.tr_limit);
+#endif
 	
 	// DO WE NEED CHANGE ANY OF THESE???
 	vmcs_writel(GUEST_DR7, 0);
@@ -1752,6 +1774,8 @@ static void vmx_setup_initial_guest_state(struct vmx_vcpu *vcpu)
  */
 static void vmx_setup_vmcs(struct vmx_vcpu *vcpu)
 {
+	unsigned int exception_bitmap;
+	
 	vmcs_write16(VIRTUAL_PROCESSOR_ID, vcpu->vpid);
 	vmcs_write64(VMCS_LINK_POINTER, -1ull); /* 22.3.1.5 */
 
@@ -1769,8 +1793,8 @@ static void vmx_setup_vmcs(struct vmx_vcpu *vcpu)
 
 	vmcs_write64(EPT_POINTER, vcpu->eptp);
 
-	vmcs_write32(PAGE_FAULT_ERROR_CODE_MASK, 0);
-	vmcs_write32(PAGE_FAULT_ERROR_CODE_MATCH, 0);
+	//vmcs_write32(PAGE_FAULT_ERROR_CODE_MASK, 0);
+	//vmcs_write32(PAGE_FAULT_ERROR_CODE_MATCH, 0);
 	vmcs_write32(CR3_TARGET_COUNT, 0);           /* 22.2.1 */
 
 	vmcs_write64(MSR_BITMAP, __pa(msr_bitmap));
@@ -1786,10 +1810,22 @@ static void vmx_setup_vmcs(struct vmx_vcpu *vcpu)
 	//kvm_write_tsc(&vmx->vcpu, 0);
 	vmcs_writel(TSC_OFFSET, 0);
 
-	/* Pass (page-faults) exceptions to the original thread */
+	
+#if 0
+	/* Handle (page-faults) exceptions in R-mode */
+	
 	vmcs_write32(VMCS_EXCEPTION_BMP, 0xFFFFFFFF);
         vmcs_writel(VMCS_PAGEFAULT_ERRCODE_MASK, 0);
         vmcs_writel(VMCS_PAGEFAULT_ERRCODE_MATCH, 0);
+#else
+	/* Handle (page-faults) exceptions in NR-mode */
+	//exception_bitmap = 0xFFFFFFFF;
+	//exection_bitmap = (exception_bitmap & ~(EXCEPTION_PF));
+	exception_bitmap = 0;
+	vmcs_write32(VMCS_EXCEPTION_BMP, exception_bitmap);
+	vmcs_writel(VMCS_PAGEFAULT_ERRCODE_MASK, 0);
+        vmcs_writel(VMCS_PAGEFAULT_ERRCODE_MATCH, 0);
+#endif
 	vmx_setup_constant_host_state();
 }
 
@@ -1926,7 +1962,7 @@ static void vmx_destroy_vcpu(struct vmx_vcpu *vcpu)
  * vmx_run_vcpu - launches the CPU into non-root mode
  * @vcpu: the vmx instance to launch
  */
-static int __noclone vmx_run_vcpu(struct vmx_vcpu *vcpu)
+static unsigned int __noclone vmx_run_vcpu(struct vmx_vcpu *vcpu)
 {
 	asm(
 		/* Store host registers */
@@ -2346,7 +2382,7 @@ int vmx_launch(unsigned int flags, struct nr_cloned_state *cloned_thread)
 	unsigned long fred = 7;
 	unsigned long r_stack_top;
 	unsigned long in_use;
-	int ret = 0;
+	unsigned int ret = 0;
 	unsigned long c_rip;	
 	struct vmx_vcpu *vcpu;
 	int schedule_ok = 0;
@@ -2519,7 +2555,7 @@ fast_path:
 			if(ret == EXIT_REASON_EXTERNAL_INTERRUPT){
 				goto fast_path;
 			} else {
-				HDEBUG(("non-timer fast_path exit with interrupts disabled (%d)\n", ret));
+				HDEBUG(("non-timer fast_path exit with interrupts disabled (%#x)\n", ret));
 			}
 		}
 		
@@ -2583,7 +2619,7 @@ fast_path:
 			}
 			done = 1;
 		} else if (ret != EXIT_REASON_EXTERNAL_INTERRUPT) {
-			printk(KERN_ERR "vmx_launch: unhandled exit: reason %d, exit qualification %lx\n",
+			printk(KERN_ERR "vmx_launch: unhandled exit: reason %#x, exit qualification %#lx\n",
 			       ret, vmcs_readl(EXIT_QUALIFICATION));
 			done = 1;
 		}

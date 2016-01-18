@@ -1119,6 +1119,9 @@ __do_page_fault(struct pt_regs *regs, unsigned long error_code,
 		 * Don't take the mm semaphore here. If we fixup a prefetch
 		 * fault we could otherwise deadlock:
 		 */
+		if(is_in_vmx_nr_mode()){
+			HDEBUG(("1.\n"));
+		}
 		bad_area_nosemaphore(regs, error_code, address);
 
 		return;
@@ -1132,6 +1135,9 @@ __do_page_fault(struct pt_regs *regs, unsigned long error_code,
 		pgtable_bad(regs, error_code, address);
 
 	if (unlikely(smap_violation(error_code, regs))) {
+		if(is_in_vmx_nr_mode()){
+			HDEBUG(("2.\n"));
+		}
 		bad_area_nosemaphore(regs, error_code, address);
 		return;
 	}
@@ -1140,9 +1146,24 @@ __do_page_fault(struct pt_regs *regs, unsigned long error_code,
 	 * If we're in an interrupt, have no user context or are running
 	 * in a region with pagefaults disabled then we must not take the fault
 	 */
-	if (unlikely(faulthandler_disabled() || !mm)) {
-		bad_area_nosemaphore(regs, error_code, address);
-		return;
+
+	if(is_in_vmx_nr_mode()){
+#if 0
+		HDEBUG(("3.\n"));
+		if(!mm){
+			HDEBUG(("!mm\n"));
+		}
+#endif
+		if (unlikely(faulthandler_disabled_nr() || !mm)) {
+			bad_area_nosemaphore(regs, error_code, address);
+			return;
+		}
+	} else {
+		if (unlikely(faulthandler_disabled() || !mm)) {
+			
+			bad_area_nosemaphore(regs, error_code, address);
+			return;
+		}
 	}
 
 	/*
@@ -1185,6 +1206,9 @@ __do_page_fault(struct pt_regs *regs, unsigned long error_code,
 	if (unlikely(!down_read_trylock(&mm->mmap_sem))) {
 		if ((error_code & PF_USER) == 0 &&
 		    !search_exception_tables(regs->ip)) {
+			if(is_in_vmx_nr_mode()){
+				HDEBUG(("4.\n"));
+			}
 			bad_area_nosemaphore(regs, error_code, address);
 			return;
 		}
@@ -1313,9 +1337,18 @@ do_page_fault(struct pt_regs *regs, unsigned long error_code)
 	 */
 
 	prev_state = exception_enter();
+	
+	if(is_in_vmx_nr_mode()){
+	        HDEBUG(("address=%#lx error_code=%#lx\n", address, error_code));
+		//BXMAGICBREAK;
+	}
+
 	__do_page_fault(regs, error_code, address);
+	
+
 	exception_exit(prev_state);
 }
+
 NOKPROBE_SYMBOL(do_page_fault);
 
 dotraplinkage void notrace

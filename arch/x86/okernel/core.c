@@ -234,6 +234,7 @@ asmlinkage void __noclone okernel_enter_fork(void)
 	cloned_thread->rip = tmpl;
 
 	cloned_thread->msr_fs_base = current->okernel_fork_fs_base;
+	cloned_thread->msr_gs_base = current->okernel_fork_gs_base;
 
 	asm volatile ("mov %%rsp,%0" : "=rm" (rsp));
 
@@ -354,6 +355,9 @@ int __noclone okernel_enter(unsigned long flags)
 	cloned_thread->rflags = rflags;
 	HDEBUG(("cloned thread rflags will be set to  (%#lx)\n", rflags));
 
+	cloned_thread->idt_base = (unsigned long)idt_table;
+	cloned_thread->idt_limit = 0x0FFF;
+	       
 	asm("mov $.Lc_rip_label, %0" : "=r"(tmpl));
 	HDEBUG(("cloned thread RIP will be set to: (%#lx)\n", tmpl));
 	cloned_thread->rip = tmpl;
@@ -404,12 +408,16 @@ static int ok_device_open(struct inode *inode, struct file *file)
 	return 0;
 }
 
+gate_desc nr_idt_table[NR_VECTORS] __page_aligned_bss;
 
 long ok_device_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 {
 	unsigned long val;
 	int ret;
 	struct thread_info *ti;
+	struct desc_ptr idt;
+	void* idt_p;
+	
 
 	HDEBUG(("called.\n"));
 	switch(cmd)
@@ -439,6 +447,32 @@ long ok_device_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 			BXMAGICBREAK;
 			HDEBUG(("Returning from okernel_enter (IOCTL_LAUNCH).\n"));
 			BXMAGICBREAK;
+
+			native_store_idt(&idt);
+			
+			HDEBUG(("have IDT values from native_store_idt: vaddr=%#lx, paddr=%#lx, size=%#x\n",
+				idt.address, __pa(idt.address), idt.size));
+
+			HDEBUG(("trying gto access idt_table (addr idt_table=%#lx phys=%#lx)\n",
+				(unsigned long)&idt_table, (unsigned long)__pa(&idt_table)));
+			BXMAGICBREAK;
+			memcpy(&nr_idt_table, &idt_table, IDT_ENTRIES * 16);
+
+			HDEBUG(("accessed idt_table ok (addr idt_table=%#lx phys=%#lx)\n",
+				(unsigned long)&idt_table, (unsigned long)__pa(&idt_table)));
+			BXMAGICBREAK;
+
+
+			HDEBUG(("trying gto access idt (addr idt=%#lx phys=%#lx)\n",
+				idt.address, __pa(idt.address)));
+			BXMAGICBREAK;
+			idt_p = (gate_desc*)(idt.address);
+			memcpy(&nr_idt_table, idt_p, IDT_ENTRIES * 16);
+
+			HDEBUG(("accessed idt ok.\n"));
+			
+			BXMAGICBREAK;
+			
 			ti = current_thread_info();
 			
 			HDEBUG(("initial state in return from okernel_enter (IOCTL_LAUNCH):\n"));
