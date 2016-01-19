@@ -2129,6 +2129,7 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu)
 	struct tss_struct *tss = &per_cpu(cpu_tss, cpu);
 	unsigned long fs;
 	unsigned long gs;
+	long code;
 	
         /* do_fork_fixup args */
 	struct task_struct *p;
@@ -2362,8 +2363,9 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu)
 		BXMAGICBREAK;
 		local_irq_enable();
 	} else if(cmd == VMCALL_DOEXIT){
-		HDEBUG(("calling do_exit...\n"));
-		do_exit(0);
+		code = (long)vcpu->regs[VCPU_REGS_RBX];
+		HDEBUG(("calling do_exit(%ld)...\n", code));
+		do_exit(code);
 	} else {
 		HDEBUG(("unexpected VMCALL argument.\n"));
 		BUG();
@@ -2502,7 +2504,7 @@ fast_path:
 				continue;
 			}
 		}
-#if 1
+#if 0
 		if (signal_pending(current)) {
                         int signr;
                         siginfo_t info;

@@ -659,9 +659,9 @@ void do_exit(long code)
 
 #ifdef CONFIG_OKERNEL
 	if(is_in_vmx_nr_mode()){
-	        HDEBUG(("called.\n"));
+	        HDEBUG(("called (%ld)\n", code));
 		BXMAGICBREAK;
-		(void)vmcall(VMCALL_DOEXIT);
+		(void)vmcall2(VMCALL_DOEXIT, (unsigned long)code);
 	}
 #endif
 	profile_task_exit(tsk);

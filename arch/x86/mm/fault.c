@@ -768,6 +768,10 @@ __bad_area_nosemaphore(struct pt_regs *regs, unsigned long error_code,
 
 	/* User mode accesses just cause a SIGSEGV */
 	if (error_code & PF_USER) {
+		if(is_in_vmx_nr_mode()){
+			HDEBUG(("starting user mode SIGSEGV processing...addr=%#lx err=%#lx\n",
+				address, error_code));
+		}
 		/*
 		 * It's possible to have interrupts off here:
 		 */
@@ -805,6 +809,10 @@ __bad_area_nosemaphore(struct pt_regs *regs, unsigned long error_code,
 		tsk->thread.error_code	= error_code;
 		tsk->thread.trap_nr	= X86_TRAP_PF;
 
+		if(is_in_vmx_nr_mode()){
+			HDEBUG(("forcing sig_info_fault addr=%#lx si_code=%d\n",
+				address, si_code));
+		}
 		force_sig_info_fault(SIGSEGV, si_code, address, tsk, 0);
 
 		return;
