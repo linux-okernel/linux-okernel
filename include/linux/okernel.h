@@ -99,7 +99,7 @@ int compat_do_execveat(int fd, struct filename *filename,
 #endif
 
 
-#define HPE_BREAKPOINTS_ENABLED
+//#define HPE_BREAKPOINTS_ENABLED
 #ifdef HPE_BREAKPOINTS_ENABLED
 #define BXMAGICBREAK asm volatile("xchg %bx,%bx")
 #define BXMAGICBREAK_ASM xchg %bx,%bx

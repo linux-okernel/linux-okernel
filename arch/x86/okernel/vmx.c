@@ -357,7 +357,8 @@ unsigned long* find_pd_entry(struct vmx_vcpu *vcpu, u64 paddr)
 
 	pml3_index = (paddr & (~(GIGABYTE -1))) >> GIGABYTE_SHIFT;
 
-	HDEBUG(("addr (%#lx) pml3 index (%i)\n", (unsigned long)paddr, pml3_index));
+	HDEBUG(("addr (%#lx) pml3 (%#lx) pml3_index (%i)\n",
+		(unsigned long)paddr, (unsigned long)pml3, pml3_index));
 	
 	pml2 = (epte_t *)epte_page_vaddr(pml3[pml3_index]);
 
@@ -368,13 +369,14 @@ unsigned long* find_pd_entry(struct vmx_vcpu *vcpu, u64 paddr)
 	pde = (epte_t *)epte_page_vaddr(pml2[pml2_index]);
 
 	pml2_p = &pml2[pml2_index];
-	HDEBUG(("addr (%#lx) pde (%#lx)\n", (unsigned long)paddr, (unsigned long)pde));
+	HDEBUG(("addr (%#lx) pde (%#lx) pml2 entry (%#lx)\n",
+		(unsigned long)paddr, (unsigned long)pde, (unsigned long)(*pml2_p)));
 	return pml2_p;
 }
 
 unsigned long* find_pt_entry(struct vmx_vcpu *vcpu, u64 paddr)
 {
-	/* Find index in a PD that maps a particular 2MB range containing a given address. */
+	/* Find index in a PT that maps a particular 4K range containing a given address. */
 
 	/* First need the PDP enty from a given PML4 root */
 	epte_t *pml3 = NULL;
@@ -748,6 +750,11 @@ u64 vt_ept_2M_init(void)
 			} else {
 				q[i] = ((i + k*n_entries) << 21) | EPT_R | EPT_W | EPT_X | EPT_2M_PAGE | EPT_CACHE_2 | EPT_CACHE_3;
 			}
+#if 0
+			if(k == 0){
+				HDEBUG(("pml2[k] entry %d=%#lx\n", i, (unsigned long)q[i]));
+			}
+#endif
 		}
 	}
 
@@ -1568,7 +1575,7 @@ void get_cpu_state(struct vmx_vcpu *vcpu, struct vmcs_cpu_state* cpu_state)
 	rdmsrl(MSR_FS_BASE, tmpl);
 	cpu_state->fs_base = tmpl;
 #endif
-#if 1
+#if 0
 	if(cloned_thread->msr_gs_base){
 		cpu_state->gs_base = cloned_thread->msr_gs_base;
 	} else {
@@ -2396,6 +2403,10 @@ int vmx_launch(unsigned int flags, struct nr_cloned_state *cloned_thread)
 	unsigned long err;
 	struct pt_regs regs;
 	unsigned long k_stack;
+	unsigned long gp_addr;
+	unsigned long gv_addr;
+	unsigned long qual;
+	unsigned long *pml2_e;
 
 	if(!cloned_thread)
 		return -EINVAL;
@@ -2537,6 +2548,12 @@ fast_path:
 		/**************************** GO FOR IT ***************************/
 		
 		ret = vmx_run_vcpu(vcpu);
+
+		if((ret & VMX_EXIT_REASONS_FAILED_VMENTRY)){
+			printk(KERN_ERR "vmentry failed (%#x)\n", ret);
+			break;
+		}
+			
 		
                 /*************************** GONE FOR IT! *************************/
 
@@ -2571,8 +2588,37 @@ fast_path:
 		}
 		else if (ret == EXIT_REASON_CPUID)
 			vmx_handle_cpuid(vcpu);
-		else if (ret == EXIT_REASON_EPT_VIOLATION)
+		else if (ret == EXIT_REASON_EPT_VIOLATION){
+			qual = vmcs_readl(EXIT_QUALIFICATION);
+			gp_addr = vmcs_readl(GUEST_PHYSICAL_ADDRESS);
+
+			HDEBUG(("ept violation exit - qualification=%#lx gpa=%#lx\n",
+				qual, gp_addr));
+
+			if(!(pml2_e =  find_pd_entry(vcpu, gp_addr))){
+				printk(KERN_ERR "okernel: NULL pml2 entry for gp_addr (%#lx)\n",
+				       gp_addr);
+			} else {
+				HDEBUG(("ept entry for gpa=%#lx is (%#lx)\n", gp_addr, *pml2_e));
+			}
+                        /* Bit 7 in exit qualification set if 'guest' virtual address valid */
+			if(qual & 0x80){
+				gv_addr = (u64)vmcs_readl(GUEST_LINEAR_ADDRESS);
+				HDEBUG(("gva=%#lx\n", gv_addr));
+			}
 			done = 1;
+		}
+		else if (ret == EXIT_REASON_EPT_MISCONFIG){
+			gp_addr = vmcs_readl(GUEST_PHYSICAL_ADDRESS);
+			HDEBUG(("ept misconfig exit - gpa=%#lx\n", gp_addr));
+			if(!(pml2_e =  find_pd_entry(vcpu, gp_addr))){
+				printk(KERN_ERR "okernel: NULL pml2 entry for gp_addr (%#lx)\n",
+				       gp_addr);
+			} else {
+				HDEBUG(("ept entry for gpa=%#lx is (%#lx)\n", gp_addr, *pml2_e));
+			}
+			done = 1;
+		}
 		else if (ret == EXIT_REASON_EXCEPTION_NMI) {
 			vmx_get_cpu(vcpu);
 			vii.v = vmcs_readl(VM_EXIT_INTR_INFO);
