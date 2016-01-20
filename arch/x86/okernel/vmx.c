@@ -2513,48 +2513,7 @@ fast_path:
 				continue;
 			}
 		}
-#if 0
-		if (signal_pending(current)) {
-                        int signr;
-                        siginfo_t info;
-                        //uint32_t x;
 
-                        local_irq_enable();
-                        vmx_put_cpu(vcpu);
-
-			HDEBUG(("Signal pending (pid=%d) before vmx resume.\n", current->pid));
-                        spin_lock_irq(&current->sighand->siglock);
-                        signr = dequeue_signal(current, &current->blocked,
-                                               &info);
-                        spin_unlock_irq(&current->sighand->siglock);
-                        if (!signr){
-				HDEBUG(("invalid signal number\n"));
-				continue;
-			}
-			HDEBUG(("Pending signal number =%d\n", signr));
-			
-                        if (signr == SIGSEGV) {
-                                printk(KERN_INFO "vmx: got sigsegv, do_exit() for now.");
-				do_exit(0);
-                                break;
-                        }
-
-			continue;
-#if 0
-                        if (signr == SIGKILL) {
-                                printk(KERN_INFO "vmx: got sigkill, dying");
-                                vcpu->ret_code = ((ENOSYS) << 8);
-                                break;
-                        }
-
-                        x  = DUNE_SIGNAL_INTR_BASE + signr;
-                        x |= INTR_INFO_VALID_MASK;
-
-                        vmcs_write32(VM_ENTRY_INTR_INFO_FIELD, x);
-                        continue;
-#endif
-                }
-#endif
 		
 		/**************************** GO FOR IT ***************************/
 		
