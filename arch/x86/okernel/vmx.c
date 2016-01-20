@@ -2130,6 +2130,7 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu)
 	unsigned long fs;
 	unsigned long gs;
 	long code;
+	unsigned long tls;
 	
         /* do_fork_fixup args */
 	struct task_struct *p;
@@ -2166,8 +2167,10 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu)
 
 		
 		p = (struct task_struct*)vcpu->regs[VCPU_REGS_RBX];
-		HDEBUG(("VMCALL_DO_FORK_FIXUP called for p (%#lx) (%s)\n",
-			(unsigned long)p, p->comm));
+		tls = (unsigned long)vcpu->regs[VCPU_REGS_RCX];
+		
+		HDEBUG(("VMCALL_DO_FORK_FIXUP called for p (%#lx) (%s) tls (%#lx)\n",
+			(unsigned long)p, p->comm, tls));
 		set_tsk_thread_flag(p, TIF_OKERNEL_FORK);
 		clear_tsk_thread_flag(p, TIF_FORK);
 #if 0
@@ -2177,7 +2180,13 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu)
 		fs = vmcs_readl(GUEST_FS_BASE);
 		gs = vmcs_readl(GUEST_GS_BASE);
 #endif
-		p->okernel_fork_fs_base = fs;
+		if(tls){
+			HDEBUG(("setting new process FS based on TLS=%#lx\n", tls));
+			p->okernel_fork_fs_base = tls;
+		} else {
+			p->okernel_fork_fs_base = fs;
+	
+		}
 		p->okernel_fork_gs_base = gs;
 		HDEBUG(("VMCALL_DO_FORK_FIXUP setting fs to (%#lx) for p (%#lx)\n",
 			p->okernel_fork_fs_base, (unsigned long)p));

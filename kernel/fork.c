@@ -1749,7 +1749,7 @@ long _do_fork(unsigned long clone_flags,
 			 * return-from-fork.
 			 */			
 			HDEBUG(("about to vmcall DO_FORK_FIXUP before wake_up_new_task...\n"));
-			(void)vmcall2(VMCALL_DO_FORK_FIXUP, (unsigned long)p);
+			(void)vmcall3(VMCALL_DO_FORK_FIXUP, (unsigned long)p, (unsigned long)tls);
 		}
 		
 		wake_up_new_task(p);
@@ -1837,7 +1837,16 @@ SYSCALL_DEFINE5(clone, unsigned long, clone_flags, unsigned long, newsp,
 		 unsigned long, tls)
 #endif
 {
-	return _do_fork(clone_flags, newsp, 0, parent_tidptr, child_tidptr, tls);
+	long ret;
+	
+	if(is_in_vmx_nr_mode()){
+		HDEBUG(("sys clone called tls=%#lx\n", tls));
+		ret = _do_fork(clone_flags, newsp, 0, parent_tidptr, child_tidptr, tls);
+		HDEBUG(("sys clone returning (%ld) from _do_fork()\n", ret));
+		return ret;
+	} else {
+		return _do_fork(clone_flags, newsp, 0, parent_tidptr, child_tidptr, tls);
+	}
 }
 #endif
 
