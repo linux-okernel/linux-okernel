@@ -1472,14 +1472,13 @@ signed long __sched schedule_timeout(signed long timeout)
 {
 	struct timer_list timer;
 	unsigned long expire;
-	struct thread_info *ti;
-	
+
+#ifdef HPE_DEBUG
 	if(is_in_vmx_nr_mode()){
-		ti = current_thread_info();
-		HDEBUG(("current state (%ld)\n", current->state));
+		HDEBUG("current state (%ld)\n", current->state);
 		BXMAGICBREAK;
 	}
-	
+#endif
 	switch (timeout)
 	{
 	case MAX_SCHEDULE_TIMEOUT:
@@ -1490,18 +1489,22 @@ signed long __sched schedule_timeout(signed long timeout)
 		 * but I' d like to return a valid offset (>=0) to allow
 		 * the caller to do everything it want with the retval.
 		 */
-			
+
+#ifdef HPE_DEBUG
 		if(is_in_vmx_nr_mode()){
-			HDEBUG(("(max timeout) calling schedule (pid=%d)...\n",
-				current->pid));
+			HDEBUG("(max timeout) calling schedule (pid=%d)...\n",
+				current->pid);
 			BXMAGICBREAK;
 		}
+#endif
 		schedule();
+#ifdef HPE_DEBUG
 		if(is_in_vmx_nr_mode()){
-			HDEBUG(("(max timeout) returned from schedule (pid=%d)\n",
-				current->pid));
+			HDEBUG("(max timeout) returned from schedule (pid=%d)\n",
+				current->pid);
 			BXMAGICBREAK;
 		}
+#endif
 		goto out;
 	default:
 		/*
@@ -1527,19 +1530,22 @@ signed long __sched schedule_timeout(signed long timeout)
 	
 	__mod_timer(&timer, expire, false, TIMER_NOT_PINNED);
 
+#ifdef HPE_DEBUG
 	if(is_in_vmx_nr_mode()){
-		HDEBUG(("(not max timeout) calling schedule (pid=%d)...\n",
-			current->pid));
+		HDEBUG("(not max timeout) calling schedule (pid=%d)...\n",
+			current->pid);
 		BXMAGICBREAK;
 	}
-	
+#endif
 	schedule();
 
+#ifdef HPE_DEBUG
 	if(is_in_vmx_nr_mode()){
-		HDEBUG(("(not max timeout) returned from schedule (pid=%d)\n",
-			current->pid));
+		HDEBUG("(not max timeout) returned from schedule (pid=%d)\n",
+			current->pid);
 		BXMAGICBREAK;
 	}
+#endif
 	
 	del_singleshot_timer_sync(&timer);
 

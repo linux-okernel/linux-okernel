@@ -769,8 +769,8 @@ __bad_area_nosemaphore(struct pt_regs *regs, unsigned long error_code,
 	/* User mode accesses just cause a SIGSEGV */
 	if (error_code & PF_USER) {
 		if(is_in_vmx_nr_mode()){
-			HDEBUG(("starting user mode SIGSEGV processing...addr=%#lx err=%#lx\n",
-				address, error_code));
+			HDEBUG("starting user mode SIGSEGV processing...addr=%#lx err=%#lx\n",
+				address, error_code);
 		}
 		/*
 		 * It's possible to have interrupts off here:
@@ -810,8 +810,8 @@ __bad_area_nosemaphore(struct pt_regs *regs, unsigned long error_code,
 		tsk->thread.trap_nr	= X86_TRAP_PF;
 
 		if(is_in_vmx_nr_mode()){
-			HDEBUG(("forcing sig_info_fault addr=%#lx si_code=%d\n",
-				address, si_code));
+			HDEBUG("forcing sig_info_fault addr=%#lx si_code=%d\n",
+				address, si_code);
 		}
 		force_sig_info_fault(SIGSEGV, si_code, address, tsk, 0);
 
@@ -1128,7 +1128,7 @@ __do_page_fault(struct pt_regs *regs, unsigned long error_code,
 		 * fault we could otherwise deadlock:
 		 */
 		if(is_in_vmx_nr_mode()){
-			HDEBUG(("1.\n"));
+			HDEBUG("1.\n");
 		}
 		bad_area_nosemaphore(regs, error_code, address);
 
@@ -1144,7 +1144,7 @@ __do_page_fault(struct pt_regs *regs, unsigned long error_code,
 
 	if (unlikely(smap_violation(error_code, regs))) {
 		if(is_in_vmx_nr_mode()){
-			HDEBUG(("2.\n"));
+			HDEBUG("2.\n");
 		}
 		bad_area_nosemaphore(regs, error_code, address);
 		return;
@@ -1157,9 +1157,9 @@ __do_page_fault(struct pt_regs *regs, unsigned long error_code,
 
 	if(is_in_vmx_nr_mode()){
 #if 0
-		HDEBUG(("3.\n"));
+		HDEBUG("3.\n");
 		if(!mm){
-			HDEBUG(("!mm\n"));
+			HDEBUG("!mm\n");
 		}
 #endif
 		if (unlikely(faulthandler_disabled_nr() || !mm)) {
@@ -1215,7 +1215,7 @@ __do_page_fault(struct pt_regs *regs, unsigned long error_code,
 		if ((error_code & PF_USER) == 0 &&
 		    !search_exception_tables(regs->ip)) {
 			if(is_in_vmx_nr_mode()){
-				HDEBUG(("4.\n"));
+				HDEBUG("4.\n");
 			}
 			bad_area_nosemaphore(regs, error_code, address);
 			return;
@@ -1233,14 +1233,14 @@ retry:
 
 	vma = find_vma(mm, address);
 	if (unlikely(!vma)) {
-		HDEBUG(("calling bad area 1\n"));
+		HDEBUG("calling bad area 1\n");
 		bad_area(regs, error_code, address);
 		return;
 	}
 	if (likely(vma->vm_start <= address))
 		goto good_area;
 	if (unlikely(!(vma->vm_flags & VM_GROWSDOWN))) {
-		HDEBUG(("calling bad area 2\n"));
+		HDEBUG("calling bad area 2\n");
 		bad_area(regs, error_code, address);
 		return;
 	}
@@ -1252,16 +1252,16 @@ retry:
 		 * 32 pointers and then decrements %sp by 65535.)
 		 */
 		if (unlikely(address + 65536 + 32 * sizeof(unsigned long) < regs->sp)) {
-			HDEBUG(("calling bad area 3 (regs->sp=%#lx)\n", regs->sp));
-			HDEBUG(("ptregs before do_page_fault_r call: \n"));
+			HDEBUG("calling bad area 3 (regs->sp=%#lx)\n", regs->sp);
+			HDEBUG("ptregs before do_page_fault_r call: \n");
 			show_regs(regs);
-			HDEBUG(("ptregs before do_page_fault_r done.\n"));
+			HDEBUG("ptregs before do_page_fault_r done.\n");
 			bad_area(regs, error_code, address);
 			return;
 		}
 	}
 	if (unlikely(expand_stack(vma, address))) {
-		HDEBUG(("calling bad area 4\n"));
+		HDEBUG("calling bad area 4\n");
 		bad_area(regs, error_code, address);
 		return;
 	}
@@ -1347,7 +1347,7 @@ do_page_fault(struct pt_regs *regs, unsigned long error_code)
 	prev_state = exception_enter();
 	
 	if(is_in_vmx_nr_mode()){
-	        HDEBUG(("address=%#lx error_code=%#lx\n", address, error_code));
+	        HDEBUG("address=%#lx error_code=%#lx\n", address, error_code);
 		//BXMAGICBREAK;
 	}
 

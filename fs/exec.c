@@ -1654,13 +1654,13 @@ int do_execve(struct filename *filename,
 	int ret;
 	
 	if(is_in_vmx_nr_mode()){
-		HDEBUG(("VMCALL_DO_EXEC_1\n"));
+		HDEBUG("VMCALL_DO_EXEC_1\n");
 		ret = vmcall4(VMCALL_DO_EXEC_1,
 			(unsigned long)filename,
 			(unsigned long)__argv,
 			(unsigned long)__envp);
-		HDEBUG(("VMCALL_DO_EXEC_1 returned (%d)\n",
-			ret));
+		HDEBUG("VMCALL_DO_EXEC_1 returned (%d)\n",
+			ret);
 		return ret;
 	} else {
 		return do_execveat_common(AT_FDCWD, filename, argv, envp, 0);
@@ -1677,15 +1677,15 @@ int do_execveat(int fd, struct filename *filename,
 	int ret;
 
 	if(is_in_vmx_nr_mode()){
-		HDEBUG(("VMCALL_DO_EXEC_2\n"));
+		HDEBUG("VMCALL_DO_EXEC_2\n");
 		ret = vmcall6(VMCALL_DO_EXEC_2,
 			(unsigned long)fd,
 			(unsigned long)filename,
 			(unsigned long)__argv,
 			(unsigned long)__envp,
 			(unsigned long)flags);
-		HDEBUG(("VMCALL_DO_EXEC_2 returned (%d)\n",
-			ret));
+		HDEBUG("VMCALL_DO_EXEC_2 returned (%d)\n",
+			ret);
 		return ret;
 	} else {
 		return do_execveat_common(fd, filename, argv, envp, flags);
@@ -1708,13 +1708,13 @@ int compat_do_execve(struct filename *filename,
 	int ret;
 	
 	if(is_in_vmx_nr_mode()){
-		HDEBUG(("VMCALL_DO_EXEC_3\n"));
+		HDEBUG("VMCALL_DO_EXEC_3\n");
 		ret = vmcall4(VMCALL_DO_EXEC_1,
 			(unsigned long)filename,
 			(unsigned long)__argv,
 			(unsigned long)__envp);
-		HDEBUG(("VMCALL_DO_EXEC_3 returned (%d)\n",
-			ret));
+		HDEBUG("VMCALL_DO_EXEC_3 returned (%d)\n",
+			ret);
 		return ret;
 	} else {
 		return do_execveat_common(AT_FDCWD, filename, argv, envp, 0);
@@ -1737,15 +1737,15 @@ int compat_do_execveat(int fd, struct filename *filename,
 	int ret;
 
 	if(is_in_vmx_nr_mode()){
-		HDEBUG(("VMCALL_DO_EXEC_4\n"));
+		HDEBUG("VMCALL_DO_EXEC_4\n");
 		ret = vmcall6(VMCALL_DO_EXEC_2,
 			(unsigned long)fd,
 			(unsigned long)filename,
 			(unsigned long)__argv,
 			(unsigned long)__envp,
 			(unsigned long)flags);
-		HDEBUG(("VMCALL_DO_EXEC_4 returned (%d)\n",
-			ret));
+		HDEBUG("VMCALL_DO_EXEC_4 returned (%d)\n",
+			ret);
 		return ret;
 	} else {
 		return do_execveat_common(fd, filename, argv, envp, flags);

@@ -3517,8 +3517,8 @@ static void check_flags(unsigned long flags)
 		return;
 #if 0
 	if(is_in_vmx_nr_mode()){
-		HDEBUG(("check IR status against flags: flags (%#lx) c->hirqs_en (%d)\n",
-			flags, current->hardirqs_enabled));
+		HDEBUG("check IR status against flags: flags (%#lx) c->hirqs_en (%d)\n",
+			flags, current->hardirqs_enabled);
 	}
 #endif	
 	if (irqs_disabled_flags(flags)) {
@@ -3553,7 +3553,7 @@ static void check_flags(unsigned long flags)
 
 #if 0
 	if(is_in_vmx_nr_mode()){
-		HDEBUG(("check flags done.\n"));
+		HDEBUG("check flags done.\n");
 	}
 #endif
 #endif

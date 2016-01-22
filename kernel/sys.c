@@ -830,10 +830,12 @@ change_okay:
  */
 SYSCALL_DEFINE0(getpid)
 {
+#ifdef HPE_DEBUG
 	if(is_in_vmx_nr_mode()){
-		HDEBUG(("called - returning (%d)\n",
-			task_tgid_vnr(current)));
+		HDEBUG("called - returning (%d)\n",
+			task_tgid_vnr(current));
 	}
+#endif
 	return task_tgid_vnr(current);
 }
 
@@ -852,16 +854,19 @@ SYSCALL_DEFINE0(gettid)
 SYSCALL_DEFINE0(getppid)
 {
 	int pid;
-
+#ifdef HPE_DEBUG
 	if(is_in_vmx_nr_mode()){
-		HDEBUG(("called.\n"));
+		HDEBUG("called.\n");
 	}
+#endif
 	rcu_read_lock();
 	pid = task_tgid_vnr(rcu_dereference(current->real_parent));
 	rcu_read_unlock();
+#ifdef HPE_DEBUG
 	if(is_in_vmx_nr_mode()){
-		HDEBUG(("getppid called - returning (%d)\n", pid));
+		HDEBUG("returning (%d)\n", pid);
 	}
+#endif
 	return pid;
 }
 

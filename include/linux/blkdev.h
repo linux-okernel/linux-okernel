@@ -1074,18 +1074,18 @@ static inline void blk_schedule_flush_plug(struct task_struct *tsk)
 {
 	struct blk_plug *plug = tsk->plug;
 
+#ifdef HPE_DEBUG
 	if(is_in_vmx_nr_mode()){
-		printk(KERN_ERR "N: blk_schedule_flush_plug 0.\n");
+	        HDEBUG("0.\n");
 	}
+#endif
 	if (plug){
+#ifdef HPE_DEBUG
 		if(is_in_vmx_nr_mode()){
-			printk(KERN_ERR "N: blk_schedule_flush_plug - something to do...\n");
+			HDEBUG("something to do...\n");
 		}
+#endif
 		blk_flush_plug_list(plug, true);
-	} else {
-		if(is_in_vmx_nr_mode()){
-			printk(KERN_ERR "N: blk_schedule_flush_plug - Nothing to do.\n");
-		}
 	}
 }
 

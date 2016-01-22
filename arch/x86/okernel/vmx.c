@@ -263,7 +263,7 @@ static unsigned long e820_end_paddr(unsigned long limit_pfn)
 	if (last_pfn > max_arch_pfn)
 		last_pfn = max_arch_pfn;
 
-	HDEBUG(("last_pfn = %#lx max_arch_pfn = %#lx\n", last_pfn, max_arch_pfn));
+	HDEBUG("last_pfn = %#lx max_arch_pfn = %#lx\n", last_pfn, max_arch_pfn);
 	return last_pfn << PAGE_SHIFT;
 }
 
@@ -357,20 +357,20 @@ unsigned long* find_pd_entry(struct vmx_vcpu *vcpu, u64 paddr)
 
 	pml3_index = (paddr & (~(GIGABYTE -1))) >> GIGABYTE_SHIFT;
 
-	HDEBUG(("addr (%#lx) pml3 (%#lx) pml3_index (%i)\n",
-		(unsigned long)paddr, (unsigned long)pml3, pml3_index));
+	HDEBUG("addr (%#lx) pml3 (%#lx) pml3_index (%i)\n",
+		(unsigned long)paddr, (unsigned long)pml3, pml3_index);
 	
 	pml2 = (epte_t *)epte_page_vaddr(pml3[pml3_index]);
 
 	pml2_index = ((paddr & (GIGABYTE -1)) >> PAGESIZE2M_SHIFT);
 
-	HDEBUG(("addr (%#lx) pml2 index (%i)\n", (unsigned long)paddr, pml2_index));
+	HDEBUG("addr (%#lx) pml2 index (%i)\n", (unsigned long)paddr, pml2_index);
 
 	pde = (epte_t *)epte_page_vaddr(pml2[pml2_index]);
 
 	pml2_p = &pml2[pml2_index];
-	HDEBUG(("addr (%#lx) pde (%#lx) pml2 entry (%#lx)\n",
-		(unsigned long)paddr, (unsigned long)pde, (unsigned long)(*pml2_p)));
+	HDEBUG("addr (%#lx) pde (%#lx) pml2 entry (%#lx)\n",
+	       (unsigned long)paddr, (unsigned long)pde, (unsigned long)(*pml2_p));
 	return pml2_p;
 }
 
@@ -393,25 +393,25 @@ unsigned long* find_pt_entry(struct vmx_vcpu *vcpu, u64 paddr)
 
 	pml3_index = (paddr & (~(GIGABYTE -1))) >> GIGABYTE_SHIFT;
 
-	HDEBUG(("addr (%#lx) pml3 index (%i)\n", (unsigned long)paddr, pml3_index));
+	HDEBUG("addr (%#lx) pml3 index (%i)\n", (unsigned long)paddr, pml3_index);
 	
 	pml2 = (epte_t *)epte_page_vaddr(pml3[pml3_index]);
 
 
 	pml2_index = ((paddr & (GIGABYTE -1)) >> PAGESIZE2M_SHIFT);
 
-	HDEBUG(("addr (%#lx) pml2 index (%i)\n", (unsigned long)paddr, pml2_index));
+	HDEBUG("addr (%#lx) pml2 index (%i)\n", (unsigned long)paddr, pml2_index);
 
 	pml1 = (epte_t *)epte_page_vaddr(pml2[pml2_index]);
 
-	HDEBUG(("check for 4k page mapping.\n"));
+	HDEBUG("check for 4k page mapping.\n");
 	BUG_ON(*pml1 & EPT_2M_PAGE);
 
 	pml1_index = ((paddr & (PAGESIZE2M-1)) >> PAGESIZE_SHIFT);
 
 	pml1_p = &pml1[pml1_index];
 	
-	HDEBUG(("addr (%#lx) pte (%#lx)\n", (unsigned long)paddr, (unsigned long)pml1));
+	HDEBUG("addr (%#lx) pte (%#lx)\n", (unsigned long)paddr, (unsigned long)pml1);
 	return pml1_p;
 }
 
@@ -440,8 +440,8 @@ int split_2M_mapping(struct vmx_vcpu* vcpu, u64 paddr)
 
 	/* check if 2M mapping or slpit already */
 	if(!(*pml2_e & EPT_2M_PAGE)){
-		HDEBUG(("paddr ept entry for 2MB region starting at phys addr (%#lx) already split.\n",
-			(unsigned long)paddr));
+		HDEBUG("paddr ept entry for 2MB region starting at phys addr (%#lx) already split.\n",
+			(unsigned long)paddr);
 		return 1;
 	}
 
@@ -449,8 +449,8 @@ int split_2M_mapping(struct vmx_vcpu* vcpu, u64 paddr)
 
 	p_base_addr = (*pml2_e & ~(PAGESIZE2M-1));
 
-	HDEBUG(("base EPT physical addr for table 2M split (%#lx) paddr (%#lx)\n",
-		(unsigned long)p_base_addr, (unsigned long)paddr));
+	HDEBUG("base EPT physical addr for table 2M split (%#lx) paddr (%#lx)\n",
+		(unsigned long)p_base_addr, (unsigned long)paddr);
 	
 	/* split the plm2_e into 4k ptes,i.e. have it point to a PML1 table */
 
@@ -466,7 +466,7 @@ int split_2M_mapping(struct vmx_vcpu* vcpu, u64 paddr)
 	}
 
 	memset(pt[0].virt, 0, PAGESIZE);
-	HDEBUG(("PML1 pt virt (%llX) pt phys (%llX)\n", (unsigned long long)pt[0].virt, pt[0].phys));
+	HDEBUG("PML1 pt virt (%llX) pt phys (%llX)\n", (unsigned long long)pt[0].virt, pt[0].phys);
 
 	/* Fill in eack of the 4k ptes for the PML1 */ 
 	q = pt[0].virt;
@@ -495,7 +495,7 @@ void* replace_ept_page(struct vmx_vcpu *vcpu, u64 paddr)
 
 	split_addr = (paddr & ~(PAGESIZE2M-1));
 	
-	HDEBUG(("Check or split 2M mapping at (%#lx)\n", (unsigned long)split_addr));
+	HDEBUG("Check or split 2M mapping at (%#lx)\n", (unsigned long)split_addr);
 	
 	if(!(split_2M_mapping(vcpu, split_addr))){
 		printk(KERN_ERR "okernel: couldn't split 2MB mapping for (%#lx)\n",
@@ -503,8 +503,8 @@ void* replace_ept_page(struct vmx_vcpu *vcpu, u64 paddr)
 		return NULL;
 	}
 
-	HDEBUG(("Split or check ok: looking for pte for paddr (%#lx)\n",
-		(unsigned long)paddr));
+	HDEBUG("Split or check ok: looking for pte for paddr (%#lx)\n",
+		(unsigned long)paddr);
 	
 	if(!(pml1_p = find_pt_entry(vcpu, paddr))){
 		printk(KERN_ERR "okernel: failed to find pte for (%#lx)\n",
@@ -512,8 +512,8 @@ void* replace_ept_page(struct vmx_vcpu *vcpu, u64 paddr)
 		return NULL;
 	}
 
-	HDEBUG(("pte val for paddr (%#lx) is (%#lx)\n",
-		(unsigned long)paddr, (unsigned long)*pml1_p)); 
+	HDEBUG("pte val for paddr (%#lx) is (%#lx)\n",
+		(unsigned long)paddr, (unsigned long)*pml1_p); 
 	
 	pt   = (pt_page*)kmalloc(sizeof(pt_page), GFP_KERNEL);
 
@@ -529,27 +529,27 @@ void* replace_ept_page(struct vmx_vcpu *vcpu, u64 paddr)
 
 	memset(pt[0].virt, 0, PAGESIZE);
 
-	HDEBUG(("Replacement page pt virt (%llX) pt phys (%llX)\n", (unsigned long long)pt[0].virt, pt[0].phys));
+	HDEBUG("Replacement page pt virt (%llX) pt phys (%llX)\n", (unsigned long long)pt[0].virt, pt[0].phys);
 
 	orig_paddr = (*pml1_p & ~(PAGESIZE-1));
 
-	HDEBUG(("orig paddr (%#lx)\n", (unsigned long)orig_paddr));
+	HDEBUG("orig paddr (%#lx)\n", (unsigned long)orig_paddr);
 	
 	if(orig_paddr != paddr){
 		printk(KERN_ERR "address mis-match in EPT tables.\n");
 		return NULL;
 	}
 	
-	HDEBUG(("Replacing (%#lx) as pte entry with (%#lx)\n",
-		(unsigned long)(*pml1_p), (unsigned long)(pt[0].phys | EPT_R | EPT_W | EPT_X | EPT_CACHE_2 | EPT_CACHE_3)));
+	HDEBUG("Replacing (%#lx) as pte entry with (%#lx)\n",
+		(unsigned long)(*pml1_p), (unsigned long)(pt[0].phys | EPT_R | EPT_W | EPT_X | EPT_CACHE_2 | EPT_CACHE_3));
 
 	*pml1_p = pt[0].phys | EPT_R | EPT_W | EPT_X | EPT_CACHE_2 | EPT_CACHE_3;
 
-	HDEBUG(("copying data from va (%#lx) to va of replacement physical (%#lx)\n",
-		(unsigned long)__va(orig_paddr), (unsigned long)pt[0].virt));
+	HDEBUG("copying data from va (%#lx) to va of replacement physical (%#lx)\n",
+		(unsigned long)__va(orig_paddr), (unsigned long)pt[0].virt);
 	
 	memcpy(pt[0].virt, __va(orig_paddr), PAGESIZE);
-	HDEBUG(("Done for pa (%#lx)\n", (unsigned long)paddr));
+	HDEBUG("Done for pa (%#lx)\n", (unsigned long)paddr);
 	return pt[0].virt;
 }
 
@@ -569,14 +569,14 @@ int clone_kstack2(struct vmx_vcpu *vcpu)
 
 	k_stack  = (unsigned long)current->stack;
 		
-	HDEBUG(("kernel thread_info (tsk->stack) vaddr (%#lx) paddr (%#lx) top of stack (%#lx)\n",
-		k_stack, __pa(k_stack), current_top_of_stack()));
+	HDEBUG("kernel thread_info (tsk->stack) vaddr (%#lx) paddr (%#lx) top of stack (%#lx)\n",
+		k_stack, __pa(k_stack), current_top_of_stack());
 
         //for(i = 0; i < n_pages; i++){
 
 	for(i = 0; i < 1; i++){
 		paddr = __pa(k_stack + i*PAGESIZE);
-		HDEBUG(("ept page clone on (%#lx)\n", (unsigned long)paddr));
+		HDEBUG("ept page clone on (%#lx)\n", (unsigned long)paddr);
 		/* also need replace_ept_contiguous_region */
 		if(!(vaddr = replace_ept_page(vcpu, paddr))){
 			printk(KERN_ERR "failed to clone page at (%#lx)\n",
@@ -605,17 +605,17 @@ int clone_tsk(struct vmx_vcpu *vcpu)
 	
 
 	/* Assumes tsk struct sits across contiguous physical pages */
-	HDEBUG(("cloning task struct (vaddr: %#lx)\n", (unsigned long)current));
+	HDEBUG("cloning task struct (vaddr: %#lx)\n", (unsigned long)current);
 
 	size = sizeof(struct task_struct);
 
 	n_pages = size / PAGESIZE +1;
 
-	HDEBUG(("Need to clone tsk_size (%d) n_pages (%d)\n", size, n_pages));
+	HDEBUG("Need to clone tsk_size (%d) n_pages (%d)\n", size, n_pages);
 
 	for(i = 0; i < n_pages; i++){
 		paddr = __pa((unsigned long)orig_tsk + i*PAGESIZE);
-		HDEBUG(("ept page clone on (%#lx)\n", (unsigned long)paddr));
+		HDEBUG("ept page clone on (%#lx)\n", (unsigned long)paddr);
 		/* also need replace_ept_contiguous_region */
 		if(!(vaddr = replace_ept_page(vcpu, paddr))){
 			printk(KERN_ERR "failed to clone page at (%#lx)\n",
@@ -666,13 +666,13 @@ u64 vt_ept_2M_init(void)
 	/* What range do the EPT tables need to cover (including areas like the APIC mapping)? */
 	mappingsize = e820_end_paddr(MAXMEM);
 
-	HDEBUG(("max physical address to map under EPT: %#lx\n", (unsigned long)mappingsize));
+	HDEBUG("max physical address to map under EPT: %#lx\n", (unsigned long)mappingsize);
 	
 	/* Round upp to closest Gigabyte of memory */
 	rounded_mappingsize = ((mappingsize + (GIGABYTE-1)) & (~(GIGABYTE-1)));      
 
-	HDEBUG(("Need EPT tables covering (%lu) Mb (%lu) bytes for Phys Mapping sz: %lu MB\n", 
-		rounded_mappingsize >> 20, rounded_mappingsize, mappingsize >> 20));
+	HDEBUG("Need EPT tables covering (%lu) Mb (%lu) bytes for Phys Mapping sz: %lu MB\n", 
+		rounded_mappingsize >> 20, rounded_mappingsize, mappingsize >> 20);
 
 	if((rounded_mappingsize >> GIGABYTE_SHIFT) >  PML4E_MAP_LIMIT){
 		/* Only setup one PDPTE entry for now so can map up to 512Gb */
@@ -693,7 +693,7 @@ u64 vt_ept_2M_init(void)
 	pd   = (pt_page*)kmalloc(sizeof(pt_page)* n_pd, GFP_KERNEL);
 	pt   = (pt_page*)kmalloc(sizeof(pt_page)* n_pt, GFP_KERNEL);
 	
-	HDEBUG(("Allocated (%u) pdpt (%u) pd (%u) pt tables.\n", n_pdpt, n_pd, n_pt));
+	HDEBUG("Allocated (%u) pdpt (%u) pd (%u) pt tables.\n", n_pdpt, n_pd, n_pt);
 
         /* Allocate the paging structures from bottom to top so we start
 	 * at the PT level (PML1) and finish with the PML4 table.
@@ -717,7 +717,7 @@ u64 vt_ept_2M_init(void)
 			return 0;
 		}
 		memset(pt[i].virt, 0, PAGESIZE);
-		HDEBUG(("n=(%d) PML1 pt virt (%llX) pt phys (%llX)\n", i, (unsigned long long)pt[i].virt, pt[i].phys));
+		HDEBUG("n=(%d) PML1 pt virt (%llX) pt phys (%llX)\n", i, (unsigned long long)pt[i].virt, pt[i].phys);
 	}
 
 	q = pt[0].virt;
@@ -738,7 +738,7 @@ u64 vt_ept_2M_init(void)
 			return 0;
 		}
 		memset(pd[i].virt, 0, PAGESIZE);
-		HDEBUG(("n=(%d) PML2 pd virt (%llX) pd phys (%llX)\n", i, (unsigned long long)pd[i].virt, pd[i].phys));
+		HDEBUG("n=(%d) PML2 pd virt (%llX) pd phys (%llX)\n", i, (unsigned long long)pd[i].virt, pd[i].phys);
 	}
 	/* XXXX todo cid: recheck correct CACHE / IPAT attribute setting. */
 	for(k = 0; k < n_pd; k++){
@@ -752,7 +752,7 @@ u64 vt_ept_2M_init(void)
 			}
 #if 0
 			if(k == 0){
-				HDEBUG(("pml2[k] entry %d=%#lx\n", i, (unsigned long)q[i]));
+				HDEBUG("pml2[k] entry %d=%#lx\n", i, (unsigned long)q[i]);
 			}
 #endif
 		}
@@ -773,8 +773,8 @@ u64 vt_ept_2M_init(void)
 			return 0;
 		}
 		memset(pdpt[i].virt, 0, PAGESIZE);
-		HDEBUG(("n=(%d) PML3 pdpt virt (%llX) pdpt phys (%llX)\n",
-			i, (u64)pdpt[i].virt, pdpt[i].phys));
+		HDEBUG("n=(%d) PML3 pdpt virt (%llX) pdpt phys (%llX)\n",
+			i, (u64)pdpt[i].virt, pdpt[i].phys);
 	}
 	/* And link to the PD (PML2) tables created earlier...*/
        for(k = 0; k < n_pdpt; k++){
@@ -799,9 +799,9 @@ u64 vt_ept_2M_init(void)
 	    q[i] = pdpt[i].phys + EPT_R + EPT_W + EPT_X;
        }
        
-       HDEBUG(("PML4 plm4_virt (%#lx) *plm4_virt (%#lx) pml4_phys (%#lx)\n", 
+       HDEBUG("PML4 plm4_virt (%#lx) *plm4_virt (%#lx) pml4_phys (%#lx)\n", 
 	       (unsigned long)pml4_virt, (unsigned long)*pml4_virt,
-	       (unsigned long)pml4_phys));
+	       (unsigned long)pml4_phys);
 	
        return pml4_phys;
 }
@@ -1257,10 +1257,10 @@ static void vmx_setup_constant_host_state(void)
 	vmcs_write16(HOST_GS_SELECTOR, 0);            /* 22.2.4 */
 
 	rdmsrl(MSR_FS_BASE, tmpl);
-	HDEBUG(("setting host MSR_FS_BASE=%#lx\n", tmpl));
+	HDEBUG("setting host MSR_FS_BASE=%#lx\n", tmpl);
 	vmcs_writel(HOST_FS_BASE, tmpl); /* 22.2.4 */
 	rdmsrl(MSR_GS_BASE, tmpl);
-	HDEBUG(("setting host MSR_GS_BASE=%#lx\n", tmpl));
+	HDEBUG("setting host MSR_GS_BASE=%#lx\n", tmpl);
 	vmcs_writel(HOST_GS_BASE, tmpl); /* 22.2.4 */
 }
 
@@ -1325,10 +1325,10 @@ static void __vmx_setup_cpu(void)
 	vmcs_writel(HOST_IA32_SYSENTER_ESP, sysenter_esp); /* 22.2.3 */
 
 	rdmsrl(MSR_FS_BASE, tmpl);
-	HDEBUG(("setting host MSR_FS_BASE=%#lx\n", tmpl));
+	HDEBUG("setting host MSR_FS_BASE=%#lx\n", tmpl);
 	vmcs_writel(HOST_FS_BASE, tmpl); /* 22.2.4 */
 	rdmsrl(MSR_GS_BASE, tmpl);
-	HDEBUG(("setting host MSR_GS_BASE=%#lx\n", tmpl));
+	HDEBUG("setting host MSR_GS_BASE=%#lx\n", tmpl);
 	vmcs_writel(HOST_GS_BASE, tmpl); /* 22.2.4 */
 }
 
@@ -1501,31 +1501,31 @@ struct vmcs_cpu_state {
 
 void show_cpu_state(struct vmcs_cpu_state state)
 {
-	HDEBUG(("Control regs / flags: \n"));
-	HDEBUG(("rsp     (%#lx)\n", state.rsp));
-	HDEBUG(("rbp     (%#lx)\n", state.rbp));
-	HDEBUG(("cr0     (%#lx)\n", state.cr0));
-	HDEBUG(("cr3     (%#lx)\n", state.cr3));
-	HDEBUG(("cr4     (%#lx)\n", state.cr4));	
-	HDEBUG(("rflags  (%#lx)\n", state.rflags));
-	HDEBUG(("efer    (%#lx)\n", state.efer));
+	HDEBUG("Control regs / flags: \n");
+	HDEBUG("rsp     (%#lx)\n", state.rsp);
+	HDEBUG("rbp     (%#lx)\n", state.rbp);
+	HDEBUG("cr0     (%#lx)\n", state.cr0);
+	HDEBUG("cr3     (%#lx)\n", state.cr3);
+	HDEBUG("cr4     (%#lx)\n", state.cr4);	
+	HDEBUG("rflags  (%#lx)\n", state.rflags);
+	HDEBUG("efer    (%#lx)\n", state.efer);
 
-	HDEBUG(("idt base (%#lx) limit (%#x)\n", state.idt_base, state.idt_limit));
-	HDEBUG(("gdt base (%#lx) limit (%#x)\n", state.gdt_base, state.gdt_limit));
-	HDEBUG(("ldt base (%#lx) limit (%#x)\n", state.ldt_base, state.ldt_limit));	
+	HDEBUG("idt base (%#lx) limit (%#x)\n", state.idt_base, state.idt_limit);
+	HDEBUG("gdt base (%#lx) limit (%#x)\n", state.gdt_base, state.gdt_limit);
+	HDEBUG("ldt base (%#lx) limit (%#x)\n", state.ldt_base, state.ldt_limit);	
 	
-	HDEBUG(("Selectors: \n"));
-	HDEBUG(("cs_s (%#x) ds_s (%#x) es_s (%#x) ss_s (%#x) tr_s (%#x)\n",
+	HDEBUG("Selectors: \n");
+	HDEBUG("cs_s (%#x) ds_s (%#x) es_s (%#x) ss_s (%#x) tr_s (%#x)\n",
 		state.cs_selector, state.ds_selector, state.es_selector,
-		state.ss_selector, state.tr_selector));
-	HDEBUG(("fs_s (%#x) gs_s (%#x)\n",
-		state.fs_selector, state.gs_selector));
+		state.ss_selector, state.tr_selector);
+	HDEBUG("fs_s (%#x) gs_s (%#x)\n",
+		state.fs_selector, state.gs_selector);
 
-	HDEBUG(("fs_base (%#lx) gs_base (%#lx)\n",
-		state.fs_base,state.gs_base));
+	HDEBUG("fs_base (%#lx) gs_base (%#lx)\n",
+		state.fs_base,state.gs_base);
 
-	HDEBUG(("sysenter_cs (%lx), systenter_esp (%lx) systenter_eip (%lx)\n",
-		state.sysenter_cs, state.sysenter_esp, state.sysenter_eip));
+	HDEBUG("sysenter_cs (%lx), systenter_esp (%lx) systenter_eip (%lx)\n",
+		state.sysenter_cs, state.sysenter_esp, state.sysenter_eip);
 	return;
 }
 
@@ -1598,8 +1598,8 @@ void get_cpu_state(struct vmx_vcpu *vcpu, struct vmcs_cpu_state* cpu_state)
 	cpu_state->idt_base = idt.address;
 	cpu_state->idt_limit = idt.size;
 #endif
-	HDEBUG(("setting IDT values from native_store_idt: vaddr=%#lx, paddr=%#lx, size=%#x\n",
-		cpu_state->idt_base, __pa(cpu_state->idt_base), cpu_state->idt_limit));
+	HDEBUG("setting IDT values from native_store_idt: vaddr=%#lx, paddr=%#lx, size=%#x\n",
+		cpu_state->idt_base, __pa(cpu_state->idt_base), cpu_state->idt_limit);
         //cpu_state->idt_limit = 0xFFFF;
 
 	
@@ -1670,9 +1670,9 @@ static void vmx_setup_initial_guest_state(struct vmx_vcpu *vcpu)
 	
 
 #if 0
-	HDEBUG(("----start of 'current' regs from __show_regs:\n"));
+	HDEBUG("----start of 'current' regs from __show_regs:\n");
 	__show_regs(regs, 1);
-	HDEBUG(("----end of 'current' regs from __show_regs.\n"));
+	HDEBUG("----end of 'current' regs from __show_regs.\n");
 #endif  
 	/* Most likely will need to adjust */
 	cr4 = current_cpu_state.cr4;
@@ -1743,10 +1743,10 @@ static void vmx_setup_initial_guest_state(struct vmx_vcpu *vcpu)
 	vmcs_writel(GUEST_CS_BASE, 0);
 	vmcs_writel(GUEST_DS_BASE, 0);
 	vmcs_writel(GUEST_ES_BASE, 0);
-	HDEBUG(("setting GUEST_GS_BASE=%#lx\n", current_cpu_state.gs_base));
+	HDEBUG("setting GUEST_GS_BASE=%#lx\n", current_cpu_state.gs_base);
 	vmcs_writel(GUEST_GS_BASE, current_cpu_state.gs_base);
 	vmcs_writel(GUEST_SS_BASE, 0);
-	HDEBUG(("setting GUEST_FS_BASE=%#lx\n", current_cpu_state.fs_base));
+	HDEBUG("setting GUEST_FS_BASE=%#lx\n", current_cpu_state.fs_base);
 	vmcs_writel(GUEST_FS_BASE, current_cpu_state.fs_base);
 
         /* guest segment access rights */
@@ -1925,7 +1925,7 @@ static struct vmx_vcpu * vmx_create_vcpu(struct nr_cloned_state* cloned_thread)
 	
 	if (cpu_has_vmx_ept_ad_bits()) {
 		vcpu->ept_ad_enabled = true;
-		HDEBUG(("enabled EPT A/D bits"));
+		HDEBUG("enabled EPT A/D bits");
 	}
 
 	return vcpu;
@@ -2149,18 +2149,18 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu)
 	       	
 	cmd = vcpu->regs[VCPU_REGS_RAX];
 						
-	HDEBUG2(("cmd (%lu) Rsaved preempt_c (%#x) NR saved (%#x)\n",
-		cmd, r_ti->saved_preempt_count, nr_ti->saved_preempt_count));
-	HDEBUG2(("in_atomic(): %d, irqs_disabled(): %d, pid: %d, name: %s\n",
-		 in_atomic(), irqs_disabled(), current->pid, current->comm));
-	HDEBUG2(("preempt_count (%d) rcu_preempt_depth (%d)\n",
-		preempt_count(), rcu_preempt_depth()));
-	HDEBUG2(("current->lockdep_depth (%d)\n", current->lockdep_depth));
+	HDEBUG2("cmd (%lu) Rsaved preempt_c (%#x) NR saved (%#x)\n",
+		cmd, r_ti->saved_preempt_count, nr_ti->saved_preempt_count);
+	HDEBUG2("in_atomic(): %d, irqs_disabled(): %d, pid: %d, name: %s\n",
+		 in_atomic(), irqs_disabled(), current->pid, current->comm);
+	HDEBUG2("preempt_count (%d) rcu_preempt_depth (%d)\n",
+		preempt_count(), rcu_preempt_depth());
+	HDEBUG2("current->lockdep_depth (%d)\n", current->lockdep_depth);
 
 	asm volatile ("mov %%rbp,%0" : "=rm" (rbp));
-	HDEBUG(("rbp currently  (%#lx)\n", rbp));
+	HDEBUG("rbp currently  (%#lx)\n", rbp);
 	asm volatile ("mov %%rsp,%0" : "=rm" (rsp));
-	HDEBUG(("rsp currently  (%#lx)\n", rsp));
+	HDEBUG("rsp currently  (%#lx)\n", rsp);
 
 	if(cmd == VMCALL_DO_FORK_FIXUP){
 		local_irq_disable();
@@ -2169,8 +2169,8 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu)
 		p = (struct task_struct*)vcpu->regs[VCPU_REGS_RBX];
 		tls = (unsigned long)vcpu->regs[VCPU_REGS_RCX];
 		
-		HDEBUG(("VMCALL_DO_FORK_FIXUP called for p (%#lx) (%s) tls (%#lx)\n",
-			(unsigned long)p, p->comm, tls));
+		HDEBUG("VMCALL_DO_FORK_FIXUP called for p (%#lx) (%s) tls (%#lx)\n",
+			(unsigned long)p, p->comm, tls);
 		set_tsk_thread_flag(p, TIF_OKERNEL_FORK);
 		clear_tsk_thread_flag(p, TIF_FORK);
 #if 0
@@ -2181,37 +2181,37 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu)
 		gs = vmcs_readl(GUEST_GS_BASE);
 #endif
 		if(tls){
-			HDEBUG(("setting new process FS based on TLS=%#lx\n", tls));
+			HDEBUG("setting new process FS based on TLS=%#lx\n", tls);
 			p->okernel_fork_fs_base = tls;
 		} else {
 			p->okernel_fork_fs_base = fs;
 	
 		}
 		p->okernel_fork_gs_base = gs;
-		HDEBUG(("VMCALL_DO_FORK_FIXUP setting fs to (%#lx) for p (%#lx)\n",
-			p->okernel_fork_fs_base, (unsigned long)p));
-		HDEBUG(("VMCALL_DO_FORK_FIXUP setting gs to (%#lx) for p (%#lx)\n",
-			p->okernel_fork_gs_base, (unsigned long)p));
+		HDEBUG("VMCALL_DO_FORK_FIXUP setting fs to (%#lx) for p (%#lx)\n",
+			p->okernel_fork_fs_base, (unsigned long)p);
+		HDEBUG("VMCALL_DO_FORK_FIXUP setting gs to (%#lx) for p (%#lx)\n",
+			p->okernel_fork_gs_base, (unsigned long)p);
 		local_irq_enable();
 		BXMAGICBREAK;
 		ret = 0;
 	} else if(cmd == VMCALL_DO_EXEC_1){
-		HDEBUG(("VMCALL_DO_EXEC_1 called.\n"));
+		HDEBUG("VMCALL_DO_EXEC_1 called.\n");
 		filename = (struct filename*)vcpu->regs[VCPU_REGS_RBX];
 		argv = (const char __user *const __user*)vcpu->regs[VCPU_REGS_RCX];
 		envp = (const char __user *const __user*)vcpu->regs[VCPU_REGS_R10];
 
-		HDEBUG(("do_exec1 filename(%s) current->mm pgd (%#lx) active_mm pgd (%#lx)\n",
+		HDEBUG("do_exec1 filename(%s) current->mm pgd (%#lx) active_mm pgd (%#lx)\n",
 		       filename->name,
 		       (unsigned long)current->mm->pgd,
-			(unsigned long)current->active_mm->pgd));
+		       (unsigned long)current->active_mm->pgd);
 		BXMAGICBREAK;
 		ret = do_execve(filename, argv, envp);
-		HDEBUG(("do_exec1 (%s) done: current->mm pgd (%#lx) active_mm pgd (%#lx) ret (%d)\n",
+		HDEBUG("do_exec1 (%s) done: current->mm pgd (%#lx) active_mm pgd (%#lx) ret (%d)\n",
 		       filename->name,
 		       (unsigned long)current->mm->pgd,
 		       (unsigned long)current->active_mm->pgd,
-		       ret));
+		       ret);
 		local_irq_disable();
 		vmx_get_cpu(vcpu);
 		vmcs_writel(HOST_CR3, __pa((unsigned long)current->mm->pgd));
@@ -2220,7 +2220,7 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu)
 		vmx_put_cpu(vcpu);
 		BXMAGICBREAK;
 	} else if(cmd == VMCALL_DO_EXEC_2){
-		HDEBUG(("VMCALL_DO_EXEC2 called.\n"));
+		HDEBUG("VMCALL_DO_EXEC2 called.\n");
 
 		fd = vcpu->regs[VCPU_REGS_RBX];
 		filename = (struct filename*)vcpu->regs[VCPU_REGS_RCX];
@@ -2228,8 +2228,8 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu)
 		envp = (const char __user *const __user*)vcpu->regs[VCPU_REGS_R11];
 		flags = vcpu->regs[VCPU_REGS_R12];
 
-		HDEBUG(("do_exec2 fd(%d) filename(%s)\n",
-			fd, filename->name));
+		HDEBUG("do_exec2 fd(%d) filename(%s)\n",
+			fd, filename->name);
 		BXMAGICBREAK;
 	      
 		ret = do_execveat(fd, filename, argv, envp, flags);
@@ -2240,28 +2240,28 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu)
 		vmcs_writel(GUEST_CR3, __pa((unsigned long)current->mm->pgd));
 		local_irq_enable();
 		vmx_put_cpu(vcpu);
-		HDEBUG(("do_exec2 (%s) done - ret(%d)\n",
-			filename->name, ret));
+		HDEBUG("do_exec2 (%s) done - ret(%d)\n",
+			filename->name, ret);
 		BXMAGICBREAK;
 			
 #ifdef CONFIG_COMPAT
 	} else if(cmd == VMCALL_DO_EXEC_3){
-		HDEBUG(("VMCALL_DO_EXEC_3 called.\n"));
+		HDEBUG("VMCALL_DO_EXEC_3 called.\n");
 		filename = (struct filename*)vcpu->regs[VCPU_REGS_RBX];
 		argv = (const compat_uptr_t __user*)vcpu->regs[VCPU_REGS_RCX];
 		envp = (const compat_uptr_t __user*)vcpu->regs[VCPU_REGS_R10];
 
-		HDEBUG(("do_exec3 filename(%s) current->mm pgd (%#lx) active_mm pgd (%#lx)\n",
+		HDEBUG("do_exec3 filename(%s) current->mm pgd (%#lx) active_mm pgd (%#lx)\n",
 			filename->name,
 			(unsigned long)current->mm->pgd,
-			(unsigned long)current->active_mm->pgd));
+			(unsigned long)current->active_mm->pgd);
 		BXMAGICBREAK;
 		compat_do_execve(filename, argv, envp);
-		HDEBUG(("do_exec3 (%s) done: current->mm pgd (%#lx) active_mm pgd (%#lx) ret (%d)\n",
+		HDEBUG("do_exec3 (%s) done: current->mm pgd (%#lx) active_mm pgd (%#lx) ret (%d)\n",
 			filename->name,
 			(unsigned long)current->mm->pgd,
 			(unsigned long)current->active_mm->pgd,
-			ret));
+			ret);
 		local_irq_disable();
 		vmx_get_cpu(vcpu);
 		vmcs_writel(HOST_CR3, __pa((unsigned long)current->mm->pgd));
@@ -2270,7 +2270,7 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu)
 		vmx_put_cpu(vcpu);
 		BXMAGICBREAK;
 	} else if(cmd == VMCALL_DO_EXEC_4){
-		HDEBUG(("VMCALL_DO_EXEC_4 called.\n"));
+		HDEBUG("VMCALL_DO_EXEC_4 called.\n");
 
 		fd = vcpu->regs[VCPU_REGS_RBX];
 		filename = (struct filename*)vcpu->regs[VCPU_REGS_RCX];
@@ -2278,8 +2278,8 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu)
 		envp = (const compat_uptr_t __user*)vcpu->regs[VCPU_REGS_R11];
 		flags = vcpu->regs[VCPU_REGS_R12];
 
-		HDEBUG(("do_exec4 fd(%d) filename(%s)\n",
-			fd, filename->name));
+		HDEBUG("do_exec4 fd(%d) filename(%s)\n",
+			fd, filename->name);
 		BXMAGICBREAK;
 	      
 		compat_do_execveat(fd, filename, argv, envp, flags);
@@ -2289,58 +2289,58 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu)
 		vmcs_writel(GUEST_CR3, __pa((unsigned long)current->mm->pgd));
 		local_irq_enable();
 		vmx_put_cpu(vcpu);
-		HDEBUG(("do_exec4 (%s) done - ret (%d)\n", filename->name, ret));
+		HDEBUG("do_exec4 (%s) done - ret (%d)\n", filename->name, ret);
 #endif
 	} else if (cmd == VMCALL_SCHED){
 		local_irq_disable();
 		cloned_tsk_state = vcpu->cloned_tsk->state;
 		
-		HDEBUG(("in VMCALL schedule - current state (%lu) cloned state (%u)\n",
-			current->state, cloned_tsk_state));
+		HDEBUG("in VMCALL schedule - current state (%lu) cloned state (%u)\n",
+			current->state, cloned_tsk_state);
 
 		switch(cloned_tsk_state){
 		case TASK_RUNNING:
-			HDEBUG(("cloned_task (TASK_RUNNING)\n"));
+			HDEBUG("cloned_task (TASK_RUNNING)\n");
 			break;
 		case TASK_INTERRUPTIBLE:
-			HDEBUG(("cloned_task (TASK_INTERRUPTIBLE)\n"));
+			HDEBUG("cloned_task (TASK_INTERRUPTIBLE)\n");
 			break;
 		case TASK_UNINTERRUPTIBLE:
-			HDEBUG(("cloned_task (TASK_UNINTERRUPTIBLE)\n"));
+			HDEBUG("cloned_task (TASK_UNINTERRUPTIBLE)\n");
 			break;
 		default:
-			HDEBUG(("cloned_task (OTHER STATE)\n"));
+			HDEBUG("cloned_task (OTHER STATE)\n");
 		}
 
 		switch(current->state){
 		case TASK_RUNNING:
-			HDEBUG(("current (TASK_RUNNING)\n"));
+			HDEBUG("current (TASK_RUNNING)\n");
 			break;
 		case TASK_INTERRUPTIBLE:
-			HDEBUG(("current (TASK_INTERRUPTIBLE)\n"));
+			HDEBUG("current (TASK_INTERRUPTIBLE)\n");
 			break;
 		case TASK_UNINTERRUPTIBLE:
-			HDEBUG(("current (TASK_UNINTERRUPTIBLE)\n"));
+			HDEBUG("current (TASK_UNINTERRUPTIBLE)\n");
 			break;
 		default:
-			HDEBUG(("current (OTHER STATE)\n"));
+			HDEBUG("current (OTHER STATE)\n");
 		}
 
-		HDEBUG(("state=%lx set at [<%p>] %pS\n",
+		HDEBUG("state=%lx set at [<%p>] %pS\n",
 			current->state,
 			(void *)current->task_state_change,
-			(void *)current->task_state_change));
+			(void *)current->task_state_change);
 
                 /* Re-sync cloned-thread thread_info */
 #if 1
-		HDEBUG(("syncing cloned thread_info state (NR->R) (original r_ti->flags=%#x)\n",
-			r_ti->flags));
+		HDEBUG("syncing cloned thread_info state (NR->R) (original r_ti->flags=%#x)\n",
+			r_ti->flags);
 		BXMAGICBREAK;
 		memcpy(r_ti, nr_ti, sizeof(struct thread_info));
 #endif
 		rdmsrl(MSR_FS_BASE, fs);
-		HDEBUG(("calling schedule_r (pid %d) cpu_cur_tos (%#lx) flgs (%#x) MSR_FS_BASE=%#lx\n",
-			current->pid, (unsigned long)tss->x86_tss.sp0, r_ti->flags, fs));
+		HDEBUG("calling schedule_r (pid %d) cpu_cur_tos (%#lx) flgs (%#x) MSR_FS_BASE=%#lx\n",
+			current->pid, (unsigned long)tss->x86_tss.sp0, r_ti->flags, fs);
 		BXMAGICBREAK;
 		local_irq_enable();
 		
@@ -2352,31 +2352,31 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu)
 		
 		tss = &per_cpu(cpu_tss, cpu);
 		rdmsrl(MSR_FS_BASE, fs);
-		HDEBUG(("returned schedule_r (pid %d) cpu_cur_tos (%#lx) flgs (%#x) MSR_FS_BASE=%#lx\n",
-			current->pid, (unsigned long)tss->x86_tss.sp0, r_ti->flags, fs));
-		HDEBUG(("syncing cloned thread_info state (R->NR)...\n"));
+		HDEBUG("returned schedule_r (pid %d) cpu_cur_tos (%#lx) flgs (%#x) MSR_FS_BASE=%#lx\n",
+			current->pid, (unsigned long)tss->x86_tss.sp0, r_ti->flags, fs);
+		HDEBUG("syncing cloned thread_info state (R->NR)...\n");
 		BXMAGICBREAK;
 		memcpy(nr_ti, r_ti, sizeof(struct thread_info));
 		//nr_ti->flags = 0;
-		HDEBUG(("synced cloned thread_info state (R->NR) (nr_ti->flags=%#x)\n",
-			nr_ti->flags));
+		HDEBUG("synced cloned thread_info state (R->NR) (nr_ti->flags=%#x)\n",
+			nr_ti->flags);
 		//clear_tsk_need_resched(current);
 #endif
-		HDEBUG(("returning from schedule Rsaved prempt_c (%#x) NR saved (%#x)\n",
-			r_ti->saved_preempt_count, nr_ti->saved_preempt_count));
-		HDEBUG(("ret from sched in_atomic(): %d, irqs_disabled(): %d, pid: %d, name: %s\n",
-		       in_atomic(), irqs_disabled(), current->pid, current->comm));
-		HDEBUG(("ret from preempt_count (%d) rcu_preempt_depth (%d)\n",
-		       preempt_count(), rcu_preempt_depth()));
-		HDEBUG(("current->lockdep_depth (%d)\n", current->lockdep_depth));
+		HDEBUG("returning from schedule Rsaved prempt_c (%#x) NR saved (%#x)\n",
+			r_ti->saved_preempt_count, nr_ti->saved_preempt_count);
+		HDEBUG("ret from sched in_atomic(): %d, irqs_disabled(): %d, pid: %d, name: %s\n",
+		       in_atomic(), irqs_disabled(), current->pid, current->comm);
+		HDEBUG("ret from preempt_count (%d) rcu_preempt_depth (%d)\n",
+		       preempt_count(), rcu_preempt_depth());
+		HDEBUG("current->lockdep_depth (%d)\n", current->lockdep_depth);
 		BXMAGICBREAK;
 		local_irq_enable();
 	} else if(cmd == VMCALL_DOEXIT){
 		code = (long)vcpu->regs[VCPU_REGS_RBX];
-		HDEBUG(("calling do_exit(%ld)...\n", code));
+		HDEBUG("calling do_exit(%ld)...\n", code);
 		do_exit(code);
 	} else {
-		HDEBUG(("unexpected VMCALL argument.\n"));
+		HDEBUG("unexpected VMCALL argument.\n");
 		BUG();
 		ret = -1;
 	}
@@ -2397,7 +2397,9 @@ int vmx_launch(unsigned int flags, struct nr_cloned_state *cloned_thread)
 	unsigned long new_rsp;
 	unsigned long new_rbp;
 	unsigned long current_frame_len;
+#ifdef HPE_DEBUG
 	unsigned long fred = 7;
+#endif
 	unsigned long r_stack_top;
 	unsigned long in_use;
 	unsigned int ret = 0;
@@ -2424,14 +2426,14 @@ int vmx_launch(unsigned int flags, struct nr_cloned_state *cloned_thread)
 	
 	c_rip = cloned_thread->rip;
 	
-	HDEBUG(("c_rip: (#%#lx)\n", c_rip));
+	HDEBUG("c_rip: (#%#lx)\n", c_rip);
 	
 	vcpu = vmx_create_vcpu(cloned_thread);
 	
 	if (!vcpu)
 		return -ENOMEM;
 	
-	HDEBUG(("created new VMX process context (VPID %d)\n", vcpu->vpid));
+	HDEBUG("created new VMX process context (VPID %d)\n", vcpu->vpid);
 
 #if 1
 	if(!clone_kstack2(vcpu)){
@@ -2446,18 +2448,18 @@ int vmx_launch(unsigned int flags, struct nr_cloned_state *cloned_thread)
 	
 	r_stack_top = k_stack + PAGE_SIZE;
 	
-	HDEBUG(("reset stack to top of bottom page for orig thread: in use (%lu) new top (%#lx)\n",
-		in_use, r_stack_top));
+	HDEBUG("reset stack to top of bottom page for orig thread: in use (%lu) new top (%#lx)\n",
+		in_use, r_stack_top);
 	
-	HDEBUG(("kernel thread_info (tsk->stack) vaddr (%#lx) paddr (%#lx) top of stack (%#lx)\n",
-		k_stack, __pa(k_stack), current_top_of_stack()));
+	HDEBUG("kernel thread_info (tsk->stack) vaddr (%#lx) paddr (%#lx) top of stack (%#lx)\n",
+		k_stack, __pa(k_stack), current_top_of_stack());
 	
-	HDEBUG(("sizeof(struct thread_info) (%lu)\n", sizeof(struct thread_info)));
+	HDEBUG("sizeof(struct thread_info) (%lu)\n", sizeof(struct thread_info));
 
 	asm volatile ("mov %%rbp,%0" : "=rm" (rbp));
-	HDEBUG(("original thread rbp currently  (%#lx)\n", rbp));
+	HDEBUG("original thread rbp currently  (%#lx)\n", rbp);
 	asm volatile ("mov %%rsp,%0" : "=rm" (rsp));
-	HDEBUG(("orginal thread rsp currently  (%#lx)\n", rsp));
+	HDEBUG("orginal thread rsp currently  (%#lx)\n", rsp);
 
 	/* 
 	 * Ok we want to clone the stack contents from
@@ -2465,18 +2467,18 @@ int vmx_launch(unsigned int flags, struct nr_cloned_state *cloned_thread)
 	 * to us 
 	 */
 	current_frame_len = rbp - rsp;
-	HDEBUG(("current stack from in use (%lu)\n", current_frame_len));
+	HDEBUG("current stack from in use (%lu)\n", current_frame_len);
 	new_rbp = r_stack_top;
 	new_rsp = new_rbp - current_frame_len;
 	memcpy((u64 *)new_rsp, (u64 *)rsp, current_frame_len);
 	
-	HDEBUG(("setting rsp to (%#lx) rbp to (%#lx)\n", new_rsp, new_rbp));
+	HDEBUG("setting rsp to (%#lx) rbp to (%#lx)\n", new_rsp, new_rbp);
 	asm volatile ("mov %0, %%rbp": : "r" (new_rbp));
 	asm volatile ("mov %0, %%rsp": : "r" (new_rsp));
 
 	BXMAGICBREAK;
 	/* can we still access fred? */
-	HDEBUG(("fred (%lu) address of fred (%#lx)\n", fred, (unsigned long)&fred));
+	HDEBUG("fred (%lu) address of fred (%#lx)\n", fred, (unsigned long)&fred);
 	BXMAGICBREAK;
 	
 #if 1
@@ -2490,10 +2492,10 @@ int vmx_launch(unsigned int flags, struct nr_cloned_state *cloned_thread)
 
 	schedule_ok = 0;
 
-	HDEBUG(("Before vmexit handling loop: in_atomic(): %d, irqs_disabled(): %d, pid: %d, name: %s\n",
-		in_atomic(), irqs_disabled(), current->pid, current->comm));
-	HDEBUG(("preempt_count (%d) rcu_preempt_depth (%d)\n",
-		preempt_count(), rcu_preempt_depth()));
+	HDEBUG("Before vmexit handling loop: in_atomic(): %d, irqs_disabled(): %d, pid: %d, name: %s\n",
+		in_atomic(), irqs_disabled(), current->pid, current->comm);
+	HDEBUG("preempt_count (%d) rcu_preempt_depth (%d)\n",
+		preempt_count(), rcu_preempt_depth());
 	
 	while (1) {
 		schedule_ok = 0;
@@ -2507,7 +2509,7 @@ fast_path:
 				/* should be safe to use printk here...*/
 				local_irq_enable();
 				vmx_put_cpu(vcpu);
-				HDEBUG(("cond_resched called.\n"));
+				HDEBUG("cond_resched called.\n");
 				cond_resched();
 				//clear_tsk_need_resched(current);
 				continue;
@@ -2542,7 +2544,7 @@ fast_path:
 			if(ret == EXIT_REASON_EXTERNAL_INTERRUPT){
 				goto fast_path;
 			} else {
-				HDEBUG(("non-timer fast_path exit with interrupts disabled (%#x)\n", ret));
+				HDEBUG("non-timer fast_path exit with interrupts disabled (%#x)\n", ret);
 			}
 		}
 		
@@ -2562,44 +2564,44 @@ fast_path:
 			qual = vmcs_readl(EXIT_QUALIFICATION);
 			gp_addr = vmcs_readl(GUEST_PHYSICAL_ADDRESS);
 
-			HDEBUG(("ept violation exit - qualification=%#lx gpa=%#lx\n",
-				qual, gp_addr));
+			HDEBUG("ept violation exit - qualification=%#lx gpa=%#lx\n",
+				qual, gp_addr);
 
 			if(!(pml2_e =  find_pd_entry(vcpu, gp_addr))){
 				printk(KERN_ERR "okernel: NULL pml2 entry for gp_addr (%#lx)\n",
 				       gp_addr);
 			} else {
-				HDEBUG(("ept entry for gpa=%#lx is (%#lx)\n", gp_addr, *pml2_e));
+				HDEBUG("ept entry for gpa=%#lx is (%#lx)\n", gp_addr, *pml2_e);
 			}
                         /* Bit 7 in exit qualification set if 'guest' virtual address valid */
 			if(qual & 0x80){
 				gv_addr = (u64)vmcs_readl(GUEST_LINEAR_ADDRESS);
-				HDEBUG(("gva=%#lx\n", gv_addr));
+				HDEBUG("gva=%#lx\n", gv_addr);
 			}
 			done = 1;
 		}
 		else if (ret == EXIT_REASON_EPT_MISCONFIG){
 			gp_addr = vmcs_readl(GUEST_PHYSICAL_ADDRESS);
-			HDEBUG(("ept misconfig exit - gpa=%#lx\n", gp_addr));
+			HDEBUG("ept misconfig exit - gpa=%#lx\n", gp_addr);
 			if(!(pml2_e =  find_pd_entry(vcpu, gp_addr))){
 				printk(KERN_ERR "okernel: NULL pml2 entry for gp_addr (%#lx)\n",
 				       gp_addr);
 			} else {
-				HDEBUG(("ept entry for gpa=%#lx is (%#lx)\n", gp_addr, *pml2_e));
+				HDEBUG("ept entry for gpa=%#lx is (%#lx)\n", gp_addr, *pml2_e);
 			}
 			done = 1;
 		}
 		else if (ret == EXIT_REASON_EXCEPTION_NMI) {
 			vmx_get_cpu(vcpu);
 			vii.v = vmcs_readl(VM_EXIT_INTR_INFO);
-			HDEBUG(("recieved EXCEPTION or NMI\n"));
+			HDEBUG("recieved EXCEPTION or NMI\n");
 			if(vii.s.valid == INTR_INFO_VALID_VALID){
 				if(vii.s.vector == EXCEPTION_PF){
 					err = (u64)vmcs_readl(VMCS_VMEXIT_INTR_ERRCODE);
 					cr2 = (u64)vmcs_readl(EXIT_QUALIFICATION);
 
-					HDEBUG(("Got pagefault - address (%#lx) err (%#lx)\n",
-						cr2, err));
+					HDEBUG("Got pagefault - address (%#lx) err (%#lx)\n",
+						cr2, err);
 					copy_vcpu_to_ptregs(vcpu, &regs);
 					regs.flags = cloned_rflags;
 					regs.ip = vmcs_readl(GUEST_RIP);
@@ -2611,9 +2613,9 @@ fast_path:
 					regs.orig_ax = err;
 					//printk("R: ptregs before do_page_fault_r call: \n");
 					//show_regs(&regs);
-					HDEBUG(("calling do_page_fault_r...\n"));
+					HDEBUG("calling do_page_fault_r...\n");
 					do_page_fault_r(&regs, err, cr2);
-					HDEBUG(("returned from do_page_fault_r.\n"));
+					HDEBUG("returned from do_page_fault_r.\n");
 					//BXMAGICBREAK;
 					schedule_ok = 1;
 					continue;
@@ -2621,15 +2623,15 @@ fast_path:
 					err = (u64)vmcs_readl(VMCS_VMEXIT_INTR_ERRCODE);
 					cr2 = (u64)vmcs_readl(EXIT_QUALIFICATION);
 					
-					HDEBUG(("Got GP error - exit qualification (%#lx) err (%#lx)\n",
-						cr2, err));
-					HDEBUG(("Guest rip (%#lx)\n", vmcs_readl(GUEST_RIP)));
-					HDEBUG(("can't handle for now...just BUG()\n"));
+					HDEBUG("Got GP error - exit qualification (%#lx) err (%#lx)\n",
+						cr2, err);
+					HDEBUG("Guest rip (%#lx)\n", vmcs_readl(GUEST_RIP));
+					HDEBUG("can't handle for now...just BUG()\n");
 					BUG();
 				} else {
 					vmx_put_cpu(vcpu);				
-					HDEBUG(("unhandled exception/NMI: ret (%d) vector (%d), exit qual (%lx)\n",
-						ret, vii.s.vector, vmcs_readl(EXIT_QUALIFICATION)));
+					HDEBUG("unhandled exception/NMI: ret (%d) vector (%d), exit qual (%lx)\n",
+					       ret, vii.s.vector, vmcs_readl(EXIT_QUALIFICATION));
 					BUG();
 				}
 			}
@@ -2649,8 +2651,8 @@ fast_path:
 	 * fault - we will have inconsistent kernel state we will need
 	 * to sort out.*/
 	
-        HDEBUG(("leaving vmexit() loop (VPID %d) - ret (%x) - trigger BUG() for now...\n",
-		vcpu->vpid, ret));
+        HDEBUG("leaving vmexit() loop (VPID %d) - ret (%x) - trigger BUG() for now...\n",
+		vcpu->vpid, ret);
 	BUG();
 	//*ret_code = vcpu->ret_code;
 	//vmx_destroy_vcpu(vcpu);
@@ -2692,7 +2694,7 @@ static __init int __vmx_enable(struct vmcs *vmxon_buf)
 			return -1;
 		}
 	} else { /* try enable since feature not locked */
-		HDEBUG(("__vmx_enable trying to enable VMXON.\n"));
+		HDEBUG("__vmx_enable trying to enable VMXON.\n");
 		old |= FEATURE_CONTROL_VMXON_ENABLED_OUTSIDE_SMX;
 		old |= FEATURE_CONTROL_LOCKED;
 		wrmsrl(MSR_IA32_FEATURE_CONTROL, old);
@@ -2702,7 +2704,7 @@ static __init int __vmx_enable(struct vmcs *vmxon_buf)
 			printk(KERN_ERR "okernel: __vmx_enable failed to enable VXMON.\n");
 			return -1;
 		}
-		HDEBUG(("__vmx_enable VMXON enabled.\n"));
+		HDEBUG("__vmx_enable VMXON enabled.\n");
 	}
 #endif
 #if 1
@@ -2715,7 +2717,7 @@ static __init int __vmx_enable(struct vmcs *vmxon_buf)
 	*/
 	if ((old & test_bits) != test_bits) {
 		/* enable and lock */
-	        HDEBUG(("VMX_FEATURE_CONTROL NOT ENABLED - fixing...\n"));
+	        HDEBUG("VMX_FEATURE_CONTROL NOT ENABLED - fixing...\n");
 		wrmsrl(MSR_IA32_FEATURE_CONTROL, old | test_bits);
 	}
 #endif

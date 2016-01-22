@@ -3066,14 +3066,17 @@ static int submit_bh_wbc(int rw, struct buffer_head *bh,
 		rw |= REQ_META;
 	if (buffer_prio(bh))
 		rw |= REQ_PRIO;
-
+#ifdef HPE_DEBUG
 	if(is_in_vmx_nr_mode()){
-		printk(KERN_ERR "N: submit_bio bh (%#lx)\n", (unsigned long)bio->bi_private);
+		HDEBUG(" (%#lx)\n", (unsigned long)bio->bi_private);
 	}
+#endif
 	submit_bio(rw, bio);
+#ifdef HPE_DEBUG
 	if(is_in_vmx_nr_mode()){
-		printk(KERN_ERR "N: submit_bio bh (%#lx) done.\n", (unsigned long)bio->bi_private);
+		HDEBUG(" (%#lx) done.\n", (unsigned long)bio->bi_private);
 	}
+#endif
 	return 0;
 }
 
@@ -3426,12 +3429,11 @@ int bh_submit_read(struct buffer_head *bh)
 {
 	BUG_ON(!buffer_locked(bh));
 
-
+#ifdef HPE_DEBUG
 	if(is_in_vmx_nr_mode()){
-		printk(KERN_ERR "bh_submit_read (%#lx)\n",
-		       (unsigned long)bh);
+		HDEBUG(" (%#lx)\n", (unsigned long)bh);
 	}
-	
+#endif
 	if (buffer_uptodate(bh)) {
 		unlock_buffer(bh);
 		return 0;
@@ -3441,12 +3443,12 @@ int bh_submit_read(struct buffer_head *bh)
 	bh->b_end_io = end_buffer_read_sync;
 	submit_bh(READ, bh);
 	wait_on_buffer(bh);
-
+	
+#ifdef HPE_DEBUG
 	if(is_in_vmx_nr_mode()){
-		printk(KERN_ERR "bh_submit_read (%#lx) done.\n",
-		       (unsigned long)bh);
+		HDEBUG(" (%#lx) done.\n", (unsigned long)bh);
 	}
-
+#endif
 
 	if (buffer_uptodate(bh))
 		return 0;
