@@ -768,10 +768,12 @@ __bad_area_nosemaphore(struct pt_regs *regs, unsigned long error_code,
 
 	/* User mode accesses just cause a SIGSEGV */
 	if (error_code & PF_USER) {
+#ifdef HPE_DEBUG
 		if(is_in_vmx_nr_mode()){
 			HDEBUG("starting user mode SIGSEGV processing...addr=%#lx err=%#lx\n",
 				address, error_code);
 		}
+#endif
 		/*
 		 * It's possible to have interrupts off here:
 		 */
@@ -808,11 +810,12 @@ __bad_area_nosemaphore(struct pt_regs *regs, unsigned long error_code,
 		tsk->thread.cr2		= address;
 		tsk->thread.error_code	= error_code;
 		tsk->thread.trap_nr	= X86_TRAP_PF;
-
+#ifdef HPE_DEBUG
 		if(is_in_vmx_nr_mode()){
 			HDEBUG("forcing sig_info_fault addr=%#lx si_code=%d\n",
 				address, si_code);
 		}
+#endif
 		force_sig_info_fault(SIGSEGV, si_code, address, tsk, 0);
 
 		return;
@@ -1127,9 +1130,11 @@ __do_page_fault(struct pt_regs *regs, unsigned long error_code,
 		 * Don't take the mm semaphore here. If we fixup a prefetch
 		 * fault we could otherwise deadlock:
 		 */
+#ifdef HPE_DEBUG
 		if(is_in_vmx_nr_mode()){
 			HDEBUG("1.\n");
 		}
+#endif
 		bad_area_nosemaphore(regs, error_code, address);
 
 		return;
@@ -1143,9 +1148,11 @@ __do_page_fault(struct pt_regs *regs, unsigned long error_code,
 		pgtable_bad(regs, error_code, address);
 
 	if (unlikely(smap_violation(error_code, regs))) {
+#ifdef HPE_DEBUG
 		if(is_in_vmx_nr_mode()){
 			HDEBUG("2.\n");
 		}
+#endif
 		bad_area_nosemaphore(regs, error_code, address);
 		return;
 	}
@@ -1154,14 +1161,7 @@ __do_page_fault(struct pt_regs *regs, unsigned long error_code,
 	 * If we're in an interrupt, have no user context or are running
 	 * in a region with pagefaults disabled then we must not take the fault
 	 */
-
 	if(is_in_vmx_nr_mode()){
-#if 0
-		HDEBUG("3.\n");
-		if(!mm){
-			HDEBUG("!mm\n");
-		}
-#endif
 		if (unlikely(faulthandler_disabled_nr() || !mm)) {
 			bad_area_nosemaphore(regs, error_code, address);
 			return;
@@ -1173,7 +1173,6 @@ __do_page_fault(struct pt_regs *regs, unsigned long error_code,
 			return;
 		}
 	}
-
 	/*
 	 * It's safe to allow irq's after cr2 has been saved and the
 	 * vmalloc fault has been handled.
@@ -1214,9 +1213,11 @@ __do_page_fault(struct pt_regs *regs, unsigned long error_code,
 	if (unlikely(!down_read_trylock(&mm->mmap_sem))) {
 		if ((error_code & PF_USER) == 0 &&
 		    !search_exception_tables(regs->ip)) {
+#ifdef HPE_DEBUG
 			if(is_in_vmx_nr_mode()){
 				HDEBUG("4.\n");
 			}
+#endif
 			bad_area_nosemaphore(regs, error_code, address);
 			return;
 		}
@@ -1345,11 +1346,13 @@ do_page_fault(struct pt_regs *regs, unsigned long error_code)
 	 */
 
 	prev_state = exception_enter();
-	
+
+#ifdef HPE_DEBUG
 	if(is_in_vmx_nr_mode()){
 	        HDEBUG("address=%#lx error_code=%#lx\n", address, error_code);
 		//BXMAGICBREAK;
 	}
+#endif
 
 	__do_page_fault(regs, error_code, address);
 	
