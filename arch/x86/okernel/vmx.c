@@ -1971,7 +1971,7 @@ static void vmx_destroy_vcpu(struct vmx_vcpu *vcpu)
  */
 static unsigned int __noclone vmx_run_vcpu(struct vmx_vcpu *vcpu)
 {
-	nr_preempt_count_set(1);
+	nr_preempt_count_set_offset(1);
 	
 	asm(
 		/* Store host registers */
@@ -2079,7 +2079,7 @@ static unsigned int __noclone vmx_run_vcpu(struct vmx_vcpu *vcpu)
 #endif
 	);
 
-	nr_preempt_count_set(0);
+	nr_preempt_count_set_offset(0);
 	
 	vcpu->launched = 1;
 

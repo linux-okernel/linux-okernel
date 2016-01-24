@@ -604,7 +604,7 @@ struct task_cputime_atomic {
  * before the scheduler is active -- see should_resched().
  */
 #define INIT_PREEMPT_COUNT	(PREEMPT_DISABLED + PREEMPT_ACTIVE)
-#define INIT_NR_PREEMPT_COUNT	0
+#define INIT_NR_PREEMPT_COUNT_OFFSET	0
 
 /**
  * struct thread_group_cputimer - thread group interval timer counts

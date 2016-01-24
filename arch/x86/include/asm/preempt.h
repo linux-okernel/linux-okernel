@@ -6,7 +6,7 @@
 #include <linux/thread_info.h>
 
 DECLARE_PER_CPU(int, __preempt_count);
-DECLARE_PER_CPU(int, __nr_preempt_count);
+DECLARE_PER_CPU(int, __nr_preempt_count_offset);
 
 /*
  * We use the PREEMPT_NEED_RESCHED bit as an inverted NEED_RESCHED such
@@ -28,14 +28,14 @@ static __always_inline void preempt_count_set(int pc)
 	raw_cpu_write_4(__preempt_count, pc);
 }
 
-static __always_inline int nr_preempt_count(void)
+static __always_inline int nr_preempt_count_offset(void)
 {
-	return raw_cpu_read_4(__nr_preempt_count);
+	return raw_cpu_read_4(__nr_preempt_count_offset);
 }
 
-static __always_inline void nr_preempt_count_set(int pc)
+static __always_inline void nr_preempt_count_set_offset(int pc)
 {
-	raw_cpu_write_4(__nr_preempt_count, pc);
+	raw_cpu_write_4(__nr_preempt_count_offset, pc);
 }
 
 /*
