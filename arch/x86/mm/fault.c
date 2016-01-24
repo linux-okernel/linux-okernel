@@ -1161,6 +1161,7 @@ __do_page_fault(struct pt_regs *regs, unsigned long error_code,
 	 * If we're in an interrupt, have no user context or are running
 	 * in a region with pagefaults disabled then we must not take the fault
 	 */
+#if 0
 	if(is_in_vmx_nr_mode()){
 		if (unlikely(faulthandler_disabled_nr() || !mm)) {
 			bad_area_nosemaphore(regs, error_code, address);
@@ -1173,6 +1174,14 @@ __do_page_fault(struct pt_regs *regs, unsigned long error_code,
 			return;
 		}
 	}
+#endif
+#if 1
+	if (unlikely(faulthandler_disabled() || !mm)) {
+		
+		bad_area_nosemaphore(regs, error_code, address);
+		return;
+	}
+#endif
 	/*
 	 * It's safe to allow irq's after cr2 has been saved and the
 	 * vmalloc fault has been handled.
