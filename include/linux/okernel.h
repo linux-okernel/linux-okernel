@@ -85,7 +85,7 @@ int compat_do_execveat(int fd, struct filename *filename,
 
 
 
-//#define HPE_DEBUG
+#define HPE_DEBUG
 #ifdef HPE_DEBUG
 #define HDEBUG(fmt, args...)  printk( KERN_ERR "%s: cpu(%d) pid(%d) %s: " fmt , vmx_nr_mode()?"NR":"R ", raw_smp_processor_id(), current->pid,__func__, ## args)
 #else
@@ -109,7 +109,7 @@ int compat_do_execveat(int fd, struct filename *filename,
 #endif
 
 
-
+DECLARE_PER_CPU(int, __nr_mode);
 
 
 
