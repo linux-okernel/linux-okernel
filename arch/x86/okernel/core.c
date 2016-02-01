@@ -442,7 +442,12 @@ long ok_device_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 				preempt_count(), rcu_preempt_depth());
 			HDEBUG("ti->saved_preempt_count (%#x) current->lockdep_depth (%d)\n",
 				ti->saved_preempt_count, current->lockdep_depth);
-			current->lockdep_depth = 0;
+#ifdef CONFIG_LOCKDEP
+			/* As in fork.c */ 
+			current->lockdep_depth = 0; 
+			current->curr_chain_key = 0;
+			current->lockdep_recursion = 0;
+#endif
 			local_irq_enable();
 			HDEBUG("------------------------------------------------------------------\n");
 			HDEBUG("set state for return through kernel to upace from okernel_enter:\n");
