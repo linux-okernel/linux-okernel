@@ -358,7 +358,7 @@ int __noclone okernel_enter(unsigned long flags)
 	HDEBUG("cloned thread r15 will be set to  (%#lx)\n", r15);
 	cloned_thread->r15 = r15;
 
-	rflags = 0x002;
+	rflags = 0x202;
 	cloned_thread->rflags = rflags;
 	HDEBUG("cloned thread rflags will be set to  (%#lx)\n", rflags);
 
@@ -428,6 +428,7 @@ long ok_device_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 
 		if(is_in_vmx_nr_mode()){
 			BXMAGICBREAK;
+
 			HDEBUG("Returning from okernel_enter (IOCTL_LAUNCH).\n");
 			BXMAGICBREAK;
 
@@ -442,13 +443,7 @@ long ok_device_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 				preempt_count(), rcu_preempt_depth());
 			HDEBUG("ti->saved_preempt_count (%#x) current->lockdep_depth (%d)\n",
 				ti->saved_preempt_count, current->lockdep_depth);
-#ifdef CONFIG_LOCKDEP
-			/* As in fork.c */ 
-			current->lockdep_depth = 0; 
-			current->curr_chain_key = 0;
-			current->lockdep_recursion = 0;
-#endif
-			local_irq_enable();
+
 			HDEBUG("------------------------------------------------------------------\n");
 			HDEBUG("set state for return through kernel to upace from okernel_enter:\n");
 			HDEBUG("current->h_irqs_en (%d)\n",

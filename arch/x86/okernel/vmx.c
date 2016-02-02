@@ -1972,7 +1972,7 @@ static void vmx_destroy_vcpu(struct vmx_vcpu *vcpu)
 static unsigned int __noclone vmx_run_vcpu(struct vmx_vcpu *vcpu)
 {
 	nr_preempt_count_set_offset(1);
-	
+			
 	asm(
 		/* Store host registers */
 		"push %%"R"dx; push %%"R"bp;"
@@ -2090,13 +2090,6 @@ static unsigned int __noclone vmx_run_vcpu(struct vmx_vcpu *vcpu)
 	}
 
 	return vmcs_read32(VM_EXIT_REASON);
-
-#if 0
-	vmx->idt_vectoring_info = vmcs_read32(IDT_VECTORING_INFO_FIELD);
-	vmx_complete_atomic_exit(vmx);
-	vmx_recover_nmi_blocking(vmx);
-	vmx_complete_interrupts(vmx);
-#endif
 }
 
 
@@ -2410,7 +2403,7 @@ int vmx_launch(unsigned int flags, struct nr_cloned_state *cloned_thread)
 	unsigned long c_rip;	
 	struct vmx_vcpu *vcpu;
 	int schedule_ok = 0;
-	unsigned long cloned_rflags;
+	unsigned long saved_irqs_on;
 	int done = 0;
 	union {
 		struct intr_info s;
@@ -2495,14 +2488,15 @@ int vmx_launch(unsigned int flags, struct nr_cloned_state *cloned_thread)
 #endif
 
 	schedule_ok = 0;
+       
+	saved_irqs_on = (cloned_thread->rflags & RFLAGS_IF_BIT);
 
 	HDEBUG("Before vmexit handling loop: in_atomic(): %d, irqs_disabled(): %d, pid: %d, name: %s\n",
 		in_atomic(), irqs_disabled(), current->pid, current->comm);
-	HDEBUG("preempt_count (%d) rcu_preempt_depth (%d)\n",
-		preempt_count(), rcu_preempt_depth());
+	HDEBUG("preempt_count (%d) rcu_preempt_depth (%d) cloned rflags (%lu) saved_irqs_on (%#lx)\n",
+	       preempt_count(), rcu_preempt_depth(), cloned_thread->rflags, saved_irqs_on);
 	
 	while (1) {
-		schedule_ok = 0;
 		vmx_get_cpu(vcpu);
 		local_irq_disable();
 
@@ -2515,16 +2509,22 @@ fast_path:
 				vmx_put_cpu(vcpu);
 				HDEBUG("cond_resched called.\n");
 				cond_resched();
-				//clear_tsk_need_resched(current);
 				continue;
 			}
 		}
 
 		
 		/**************************** GO FOR IT ***************************/
+
+		/* Fix-up irq on/off debug logging */
+		if(saved_irqs_on){
+			trace_hardirqs_nr_on();
+		}
 		
 		ret = vmx_run_vcpu(vcpu);
 
+	
+		
 		if((ret & VMX_EXIT_REASONS_FAILED_VMENTRY)){
 			printk(KERN_ERR "vmentry failed (%#x)\n", ret);
 			break;
@@ -2533,18 +2533,25 @@ fast_path:
 		
                 /*************************** GONE FOR IT! *************************/
 
-   		cloned_rflags = vmcs_readl(GUEST_RFLAGS);
+		
+   		saved_irqs_on = vmcs_readl(GUEST_RFLAGS) & RFLAGS_IF_BIT;
 
-		if(cloned_rflags & RFLAGS_IF_BIT){
-			if((preempt_count() < 2) && (rcu_preempt_depth() !=0 )){
+		if(saved_irqs_on){
+			if((preempt_count() < 2)){
 				schedule_ok = 1;
 			}
+			/* NR-mode may have enabled IRQs */
+			//trace_hardirqs_on();
 			local_irq_enable();
 		} else {
 			/* Need to keep control: cloned thread has
 			 * (most likely) exited due to the timer tick
 			 * but not through an explicit call to
 			 * schedule. */
+
+                        /* Fix-up irq on/off debug logging */
+			//trace_hardirqs_nr_off();
+
 			if(ret == EXIT_REASON_EXTERNAL_INTERRUPT){
 				goto fast_path;
 			} else {
@@ -2601,13 +2608,15 @@ fast_path:
 			HDEBUG("recieved EXCEPTION or NMI\n");
 			if(vii.s.valid == INTR_INFO_VALID_VALID){
 				if(vii.s.vector == EXCEPTION_PF){
+					/* Not used at present: we handle PFs in NR-mode... */
 					err = (u64)vmcs_readl(VMCS_VMEXIT_INTR_ERRCODE);
 					cr2 = (u64)vmcs_readl(EXIT_QUALIFICATION);
 
 					HDEBUG("Got pagefault - address (%#lx) err (%#lx)\n",
 						cr2, err);
 					copy_vcpu_to_ptregs(vcpu, &regs);
-					regs.flags = cloned_rflags;
+					/* could avoid reading this twice */
+					regs.flags = vmcs_readl(GUEST_RFLAGS);
 					regs.ip = vmcs_readl(GUEST_RIP);
 					regs.cs = vmcs_readl(GUEST_CS_SELECTOR);
 					regs.ss = vmcs_readl(GUEST_SS_SELECTOR);
