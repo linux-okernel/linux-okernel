@@ -10,6 +10,7 @@
 #include <linux/ftrace.h>
 #include <linux/delay.h>
 #include <linux/export.h>
+#include <linux/okernel.h>
 
 #include <asm/apic.h>
 #include <asm/io_apic.h>
@@ -216,6 +217,9 @@ __visible unsigned int __irq_entry do_IRQ(struct pt_regs *regs)
 	unsigned vector = ~regs->orig_ax;
 	unsigned irq;
 
+	if(is_in_vmx_nr_mode()){
+		HDEBUG("called.\n");
+	}
 	entering_irq();
 
 	irq = __this_cpu_read(vector_irq[vector]);

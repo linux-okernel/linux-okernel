@@ -1073,6 +1073,8 @@ static __init int setup_vmcs_config(struct vmcs_config *vmcs_conf)
 	u32 _vmexit_control = 0;
 	u32 _vmentry_control = 0;
 
+	//min = PIN_BASED_EXT_INTR_MASK | PIN_BASED_NMI_EXITING;
+	//min = PIN_BASED_NMI_EXITING;
 	min = PIN_BASED_EXT_INTR_MASK | PIN_BASED_NMI_EXITING;
 	opt = PIN_BASED_VIRTUAL_NMIS;
 	if (adjust_vmx_controls(min, opt, MSR_IA32_VMX_PINBASED_CTLS,
@@ -2501,6 +2503,7 @@ int vmx_launch(unsigned int flags, struct nr_cloned_state *cloned_thread)
 		local_irq_disable();
 
 fast_path:
+#if 0
 		if(schedule_ok){
 			schedule_ok = 0;
 			if (need_resched()) {
@@ -2512,53 +2515,50 @@ fast_path:
 				continue;
 			}
 		}
-
-		
-		/**************************** GO FOR IT ***************************/
+#endif
 
 		/* Fix-up irq on/off debug logging */
 		if(saved_irqs_on){
 			trace_hardirqs_nr_on();
 		}
-		
-		ret = vmx_run_vcpu(vcpu);
 
-	
+		/**************************** GO FOR IT ***************************/
+		ret = vmx_run_vcpu(vcpu);
+		/*************************** GONE FOR IT! *************************/
+
+		/* If we enable interrupts directly now,, and the exit
+		 * code was caused by an external interrupt, the
+		 * interrupt handler will be invoked in R-mode as
+		 * normal. Check that we are preemptible though from
+		 * an NR-perspective (count offset by 1 since R-mode
+		 * has preempt disabled and that NR-mode has
+		 * interrupts enabled.*/
+		
+		saved_irqs_on = vmcs_readl(GUEST_RFLAGS) & RFLAGS_IF_BIT;
+
+		if((ret == EXIT_REASON_EXTERNAL_INTERRUPT) && !saved_irqs_on){
+			/* Might want to watch-dog this...*/
+			goto fast_path;
+		}
+
+#if 0
+		if((saved_irqs_on) && (preempt_count() < 2)){
+			local_irq_enable();
+			/* Any external interrupts should be processed now...*/
+		}
+
+		
+#endif				
+		if(saved_irqs_on){
+			local_irq_enable();
+			/* Any external interrupts should be processed now...*/
+		}
 		
 		if((ret & VMX_EXIT_REASONS_FAILED_VMENTRY)){
 			printk(KERN_ERR "vmentry failed (%#x)\n", ret);
 			break;
 		}
 			
-		
-                /*************************** GONE FOR IT! *************************/
-
-		
-   		saved_irqs_on = vmcs_readl(GUEST_RFLAGS) & RFLAGS_IF_BIT;
-
-		if(saved_irqs_on){
-			if((preempt_count() < 2)){
-				schedule_ok = 1;
-			}
-			/* NR-mode may have enabled IRQs */
-			//trace_hardirqs_on();
-			local_irq_enable();
-		} else {
-			/* Need to keep control: cloned thread has
-			 * (most likely) exited due to the timer tick
-			 * but not through an explicit call to
-			 * schedule. */
-
-                        /* Fix-up irq on/off debug logging */
-			//trace_hardirqs_nr_off();
-
-			if(ret == EXIT_REASON_EXTERNAL_INTERRUPT){
-				goto fast_path;
-			} else {
-				HDEBUG("non-timer fast_path exit with interrupts disabled (%#x)\n", ret);
-			}
-		}
-		
 		if (ret == EXIT_REASON_VMCALL || ret == EXIT_REASON_CPUID) {
 			vmx_step_instruction();
 		}
