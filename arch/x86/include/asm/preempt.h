@@ -20,8 +20,12 @@ DECLARE_PER_CPU(int, __nr_preempt_count_offset);
  */
 static __always_inline int preempt_count(void)
 {
-	return raw_cpu_read_4(__preempt_count) & ~PREEMPT_NEED_RESCHED;
+	int r_count = raw_cpu_read_4(__preempt_count);
+	int nr_count = raw_cpu_read_4(__nr_preempt_count_offset);
+
+	return ((r_count - nr_count) & ~PREEMPT_NEED_RESCHED);
 }
+
 
 static __always_inline void preempt_count_set(int pc)
 {
@@ -93,6 +97,8 @@ static __always_inline void __preempt_count_sub(int val)
  * a decrement which hits zero means we have no preempt_count and should
  * reschedule.
  */
+
+/* XXXX - cid: need to fix this for NR mode... */
 static __always_inline bool __preempt_count_dec_and_test(void)
 {
 	GEN_UNARY_RMWcc("decl", __preempt_count, __percpu_arg(0), "e");
@@ -103,7 +109,13 @@ static __always_inline bool __preempt_count_dec_and_test(void)
  */
 static __always_inline bool should_resched(void)
 {
-	return unlikely(!raw_cpu_read_4(__preempt_count));
+	int nr_offset = raw_cpu_read_4(__nr_preempt_count_offset);
+
+	
+	if(nr_offset){
+		printk("NR should_resched called.\n");
+	}
+	return unlikely(!(raw_cpu_read_4(__preempt_count)-nr_offset));
 }
 
 #ifdef CONFIG_PREEMPT
