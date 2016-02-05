@@ -7595,23 +7595,22 @@ void ___might_sleep(const char *file, int line, int preempt_offset)
 
 	rcu_sleep_check(); /* WARN_ON_ONCE() by default, no rate limit reqd. */
 
-	
-	//if(is_in_vmx_nr_mode()){
-	//	/* We keep the task with preempt enabled in NR mode
-	//	 * (preempt count held at 1 in the vmexit handler
-	//	 * loop. And even if irqs are disabled, we still get a
-	//	 * vmexit on timer interrupts */
-//
-//		if (((preempt_count() < 2) && !irqs_disabled() &&
-//		     !is_idle_task(current)) ||
-//		    system_state != SYSTEM_RUNNING || oops_in_progress)
-//			return;
-//	} else {
-	if ((preempt_count_equals(preempt_offset) && !irqs_disabled() &&
-		!is_idle_task(current)) ||
-		system_state != SYSTEM_RUNNING || oops_in_progress)
-		return;
-	//}
+	if(is_in_vmx_nr_mode()){
+		/* We keep the task with preempt enabled in NR mode
+		 * (preempt count held at 1 in the vmexit handler
+		 * loop. And even if irqs are disabled, we still get a
+		 * vmexit on timer interrupts */
+
+		if (((preempt_count() < 2) && !irqs_disabled() &&
+		     !is_idle_task(current)) ||
+		    system_state != SYSTEM_RUNNING || oops_in_progress)
+			return;
+	} else {
+		if ((preempt_count_equals(preempt_offset) && !irqs_disabled() &&
+		     !is_idle_task(current)) ||
+		    system_state != SYSTEM_RUNNING || oops_in_progress)
+			return;
+	}
 	if (time_before(jiffies, prev_jiffy + HZ) && prev_jiffy)
 		return;
 	prev_jiffy = jiffies;
