@@ -2115,7 +2115,7 @@ static void vmx_handle_cpuid(struct vmx_vcpu *vcpu)
 }
 
 
-void vmx_handle_vmcall(struct vmx_vcpu *vcpu)
+void vmx_handle_vmcall(struct vmx_vcpu *vcpu, int schedule_ok)
 {
 	int ret = 0;
 	unsigned long cmd;
@@ -2291,6 +2291,7 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu)
 		HDEBUG("do_exec4 (%s) done - ret (%d)\n", filename->name, ret);
 #endif
 	} else if (cmd == VMCALL_SCHED){
+		BUG_ON(schedule_ok == 0);
 		local_irq_disable();
 		cloned_tsk_state = vcpu->cloned_tsk->state;
 		
@@ -2501,7 +2502,6 @@ int vmx_launch(unsigned int flags, struct nr_cloned_state *cloned_thread)
 	while (1) {
 		vmx_get_cpu(vcpu);
 		local_irq_disable();
-
 fast_path:
 #if 0
 		if(schedule_ok){
@@ -2553,6 +2553,10 @@ fast_path:
 			local_irq_enable();
 			/* Any external interrupts should be processed now...*/
 		}
+
+		if((preempt_count() < 2)){
+			schedule_ok = 1;
+		}
 		
 		if((ret & VMX_EXIT_REASONS_FAILED_VMENTRY)){
 			printk(KERN_ERR "vmentry failed (%#x)\n", ret);
@@ -2566,8 +2570,8 @@ fast_path:
 		vmx_put_cpu(vcpu);
 
 		if (ret == EXIT_REASON_VMCALL){
-			vmx_handle_vmcall(vcpu);
-			schedule_ok = 1;
+			vmx_handle_vmcall(vcpu, schedule_ok);
+			//schedule_ok = 1;
 		}
 		else if (ret == EXIT_REASON_CPUID)
 			vmx_handle_cpuid(vcpu);
