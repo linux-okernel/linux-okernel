@@ -117,6 +117,7 @@
 #include <linux/static_key.h>
 #include <linux/memcontrol.h>
 #include <linux/prefetch.h>
+#include <linux/okernel.h>
 
 #include <asm/uaccess.h>
 
@@ -1949,8 +1950,13 @@ static void __release_sock(struct sock *sk)
 			 * This is safe to do because we've taken the backlog
 			 * queue private:
 			 */
+			if(is_in_vmx_nr_mode()){
+				HDEBUG("calling cond_resched_softirq...\n");
+			}
 			cond_resched_softirq();
-
+			if(is_in_vmx_nr_mode()){
+				HDEBUG("donw calling cond_resched_softirq.\n");
+			}
 			skb = next;
 		} while (skb != NULL);
 
