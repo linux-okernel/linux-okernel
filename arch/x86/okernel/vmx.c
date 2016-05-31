@@ -224,17 +224,35 @@ int vmcall6(unsigned int cmd, unsigned long arg1, unsigned long arg2, unsigned l
 }	
 
 
-/* Need to fix this...adjust dynamically based on real physical regions */
+#if 1
+/* This is currently 8560p specific obviously Need to fix this...adjust dynamically based on real physical regions */
+#define END_PHYSICAL 0x3FFFFFFFF /* with 1GB physical memory */
+static int
+no_cache_region(u64 addr, u64 size)
+{
+	if (((addr >= 0x1000) && (addr < 0x8F000)) ||
+	    ((addr >= 0x90000) && (addr < 0xa0000)) ||
+		((addr >= 0x100000) && (addr < END_PHYSICAL))){
+		return 0;
+	}
+	return 1;
+}
+#endif
+
+#if 0 // Bochs
 #define END_PHYSICAL 0x3FFEFFFFF /* with 1GB physical memory */
 
 static int
 no_cache_region(u64 addr, u64 size)
 {
-	if (((addr >= 0) && (addr < 0x9F00))||((addr >= BIOS_END) && (addr < END_PHYSICAL))){
+	if (((addr >= 0x0) && (addr < 0x9F00))||((addr >= BIOS_END) && (addr < END_PHYSICAL))){
 		return 0;
 	}
 	return 1;
 }
+#endif
+
+
 /* Adapted from e820_end_pfn */
 static unsigned long e820_end_paddr(unsigned long limit_pfn)
 {
@@ -725,9 +743,9 @@ u64 vt_ept_2M_init(void)
 	for(i = 0; i < n_entries; i++){
 		addr = i << 12;
 		if(no_cache_region(addr, PAGESIZE)){
-			q[i] = (i << 12) | EPT_R | EPT_W | EPT_X;
+			q[i] = (u64)((i << 12) | EPT_R | EPT_W | EPT_X);
 		} else {
-			q[i] = (i << 12) | EPT_R | EPT_W | EPT_X | EPT_CACHE_2 | EPT_CACHE_3;
+			q[i] = (u64)((i << 12) | EPT_R | EPT_W | EPT_X | EPT_CACHE_2 | EPT_CACHE_3);
 		}
 	}
 	
@@ -744,16 +762,17 @@ u64 vt_ept_2M_init(void)
 	for(k = 0; k < n_pd; k++){
 		q = pd[k].virt;
 		for(i = 0; i < n_entries; i++){
-			addr = ((i + k*n_entries) << 21);
+			addr = (((u64)(i + k*n_entries)) << 21);
+#if 0
+			HDEBUG("calculated addr (i=%d) (k=%d) (n_entries=%d) (%#llx)\n", i, k, n_entries, addr);
+#endif
 			if(no_cache_region(addr,  PAGESIZE2M)){
-				q[i] = ((i + k*n_entries) << 21) | EPT_R | EPT_W | EPT_X | EPT_2M_PAGE;
+				q[i] = (((u64)(i + k*n_entries)) << 21) | EPT_R | EPT_W | EPT_X | EPT_2M_PAGE;
 			} else {
-				q[i] = ((i + k*n_entries) << 21) | EPT_R | EPT_W | EPT_X | EPT_2M_PAGE | EPT_CACHE_2 | EPT_CACHE_3;
+				q[i] = (((u64)(i + k*n_entries)) << 21) | EPT_R | EPT_W | EPT_X | EPT_2M_PAGE | EPT_CACHE_2 | EPT_CACHE_3;
 			}
 #if 0
-			if(k == 0){
-				HDEBUG("pml2[k] entry %d=%#lx\n", i, (unsigned long)q[i]);
-			}
+			HDEBUG("pml2[%d] entry %d=%#llx\n", k, i, q[i]);
 #endif
 		}
 	}
@@ -763,7 +782,7 @@ u64 vt_ept_2M_init(void)
 	 * page entry, not a PT table. 
 	 */
 	q = pd[0].virt;
-	q[0] = pt[0].phys + EPT_R + EPT_W + EPT_X;
+	q[0] = (u64)(pt[0].phys + EPT_R + EPT_W + EPT_X);
 
 
 	/* Now the PDPT (PML3) tables */
@@ -781,7 +800,7 @@ u64 vt_ept_2M_init(void)
 	    q = pdpt[k].virt;
 	    for(i = 0; i < n_pd; i++){
 		// These are the PDPTE entries - just 4 at present to map 4GB
-		q[i] = pd[i].phys + EPT_R + EPT_W + EPT_X;
+		    q[i] = (u64)(pd[i].phys + EPT_R + EPT_W + EPT_X);
 	    }
        }
 
@@ -796,7 +815,7 @@ u64 vt_ept_2M_init(void)
        
        /* Link to the PDPT table above.These are the PML4E entries - just one at present */
        for(i = 0; i < n_pdpt; i++){
-	    q[i] = pdpt[i].phys + EPT_R + EPT_W + EPT_X;
+	       q[i] = (u64)(pdpt[i].phys + EPT_R + EPT_W + EPT_X);
        }
        
        HDEBUG("PML4 plm4_virt (%#lx) *plm4_virt (%#lx) pml4_phys (%#lx)\n", 
@@ -1076,7 +1095,9 @@ static __init int setup_vmcs_config(struct vmcs_config *vmcs_conf)
 	//min = PIN_BASED_EXT_INTR_MASK | PIN_BASED_NMI_EXITING;
 	//min = PIN_BASED_NMI_EXITING;
 	min = PIN_BASED_EXT_INTR_MASK | PIN_BASED_NMI_EXITING;
-	opt = PIN_BASED_VIRTUAL_NMIS;
+	//min = PIN_BASED_EXT_INTR_MASK;
+	opt = 0;
+	//opt = PIN_BASED_VIRTUAL_NMIS;
 	if (adjust_vmx_controls(min, opt, MSR_IA32_VMX_PINBASED_CTLS,
 				&_pin_based_exec_control) < 0)
 		return -EIO;
@@ -2358,6 +2379,7 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu, int schedule_ok)
 		BXMAGICBREAK;
 		memcpy(nr_ti, r_ti, sizeof(struct thread_info));
 		//nr_ti->flags = 0;
+		barrier();
 		HDEBUG("synced cloned thread_info state (R->NR) (nr_ti->flags=%#x)\n",
 			nr_ti->flags);
 		//clear_tsk_need_resched(current);
@@ -2389,6 +2411,7 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu, int schedule_ok)
 /*
  * vmx_launch - the main loop for a cloned VMX okernel process (thread)
  */
+
 
 int vmx_launch(unsigned int flags, struct nr_cloned_state *cloned_thread)
 {
@@ -2498,8 +2521,18 @@ int vmx_launch(unsigned int flags, struct nr_cloned_state *cloned_thread)
 		in_atomic(), irqs_disabled(), current->pid, current->comm);
 	HDEBUG("preempt_count (%d) rcu_preempt_depth (%d) cloned rflags (%lu) saved_irqs_on (%#lx)\n",
 	       preempt_count(), rcu_preempt_depth(), cloned_thread->rflags, saved_irqs_on);
-	
-	while (1) {
+
+	HDEBUG("current->lockdep_depth (%d)\n", current->lockdep_depth);
+
+	debug_show_all_locks();
+
+	HDEBUG("About to enter vmx handler while loop...\n");
+
+#if 1
+	while(1){
+#else
+	while (!flags) {
+#endif
 		vmx_get_cpu(vcpu);
 		local_irq_disable();
 fast_path:
@@ -2534,13 +2567,38 @@ fast_path:
 		 * has preempt disabled and that NR-mode has
 		 * interrupts enabled.*/
 		
+
+		if(ret==VMX_EXIT_REASONS_FAILED_VMENTRY){
+			/* Need to try tidy up here... */
+			if(saved_irqs_on){
+				local_irq_enable();
+			}
+			vmx_put_cpu(vcpu);
+			printk(KERN_ERR "vmentry failed (%#x)\n", ret);
+			break;
+		}
+			
 		saved_irqs_on = vmcs_readl(GUEST_RFLAGS) & RFLAGS_IF_BIT;
 
-		if((ret == EXIT_REASON_EXTERNAL_INTERRUPT) && !saved_irqs_on){
+		if((ret == EXIT_REASON_EXTERNAL_INTERRUPT) &&
+		   (!saved_irqs_on)){
 			/* Might want to watch-dog this...*/
 			goto fast_path;
 		}
-
+#if 0
+		// Finish this...
+		if(current->lockdep_depth){
+			BUG();
+		}
+		if(preempt_count()){
+			BUG();
+		}
+#endif
+		
+		HDEBUG("current->lockdep_depth (%d) preemt_count (%d) locks held:\n",
+		       current->lockdep_depth, preempt_count());
+		debug_show_all_locks();
+		HDEBUG("done locks held.\n");
 #if 0
 		if((saved_irqs_on) && (preempt_count() < 2)){
 			local_irq_enable();
@@ -2551,18 +2609,14 @@ fast_path:
 #endif				
 		if(saved_irqs_on){
 			local_irq_enable();
+			HDEBUG("allowing interrupts to be processed...\n");
 			/* Any external interrupts should be processed now...*/
 		}
 
-		if((preempt_count() < 2)){
+		if((preempt_count() < 2) && (current->lockdep_depth == 0)){
 			schedule_ok = 1;
 		}
 		
-		if((ret & VMX_EXIT_REASONS_FAILED_VMENTRY)){
-			printk(KERN_ERR "vmentry failed (%#x)\n", ret);
-			break;
-		}
-			
 		if (ret == EXIT_REASON_VMCALL || ret == EXIT_REASON_CPUID) {
 			vmx_step_instruction();
 		}

@@ -850,7 +850,7 @@ void activate_task(struct rq *rq, struct task_struct *p, int flags)
 		rq->nr_uninterruptible--;
 
 	if(p->okernel_status == OKERNEL_ON){
-		HDEBUG("About to enqueue OKERNEL process.\n");
+		HDEBUG("About to enqueue OKERNEL process (pid=%d)\n", p->pid);
 	}
 	enqueue_task(rq, p, flags);
 }

@@ -1476,6 +1476,8 @@ signed long __sched schedule_timeout(signed long timeout)
 #ifdef HPE_DEBUG
 	if(is_in_vmx_nr_mode()){
 		HDEBUG("current state (%ld)\n", current->state);
+		BUG();
+		dump_stack();
 		BXMAGICBREAK;
 	}
 #endif

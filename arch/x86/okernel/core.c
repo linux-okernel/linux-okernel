@@ -410,6 +410,12 @@ long ok_device_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 		val = arg;
 		HDEBUG("cmd is OKERNEL_ON_CMD with arg (%lu) for pid (%d)\n",
 			val, current->pid);
+
+		HDEBUG("resetting lock dependency tracking.\n");
+		
+		lockdep_reset();
+
+		
 		if(val != 1){
 			HDEBUG("OKERNEL_ON_CMD arg not 1.\n");
 			return -EINVAL;
