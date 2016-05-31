@@ -110,6 +110,7 @@ int compat_do_execveat(int fd, struct filename *filename,
 
 
 DECLARE_PER_CPU(int, __nr_mode);
+DECLARE_PER_CPU(int, __r_mode);
 
 
 
