@@ -2531,6 +2531,334 @@ int vmx_launch(unsigned int flags, struct nr_cloned_state *cloned_thread)
 
 	HDEBUG("About to enter vmx handler while loop...\n");
 
+	while(1){
+		vmx_get_cpu(vcpu);
+		local_irq_disable();
+fast_path:
+#if 0
+		if(schedule_ok){
+			schedule_ok = 0;
+			if (need_resched()) {
+				/* should be safe to use printk here...*/
+				local_irq_enable();
+				vmx_put_cpu(vcpu);
+				HDEBUG("cond_resched called.\n");
+				cond_resched();
+				continue;
+			}
+		}
+#endif
+
+		/* Fix-up irq on/off debug logging */
+		if(saved_irqs_on){
+			trace_hardirqs_nr_on();
+		}
+
+		/**************************** GO FOR IT ***************************/
+		ret = vmx_run_vcpu(vcpu);
+		/*************************** GONE FOR IT! *************************/
+
+		/* If we enable interrupts directly now,, and the exit
+		 * code was caused by an external interrupt, the
+		 * interrupt handler will be invoked in R-mode as
+		 * normal. Check that we are preemptible though from
+		 * an NR-perspective (count offset by 1 since R-mode
+		 * has preempt disabled and that NR-mode has
+		 * interrupts enabled.*/
+		
+
+		if(ret==VMX_EXIT_REASONS_FAILED_VMENTRY){
+			/* Need to try tidy up here... */
+			if(saved_irqs_on){
+				local_irq_enable();
+			}
+			vmx_put_cpu(vcpu);
+			printk(KERN_ERR "vmentry failed (%#x)\n", ret);
+			break;
+		}
+
+		// Do not exit except for vmcalls as an experiment
+		
+		saved_irqs_on = (vmcs_readl(GUEST_RFLAGS) & RFLAGS_IF_BIT);
+
+#if 0
+		if((ret != EXIT_REASON_VMCALL)){
+			goto fast_path;
+		}
+#endif
+		if((ret == EXIT_REASON_EXTERNAL_INTERRUPT) && !saved_irqs_on){
+			/* Might want to watch-dog this...*/
+			goto fast_path;
+		}
+
+#if 0
+		HDEBUG("current->lockdep_depth (%d) preemt_count (%d) locks held:\n",
+		       current->lockdep_depth, preempt_count());
+		debug_show_all_locks();
+		HDEBUG("done locks held.\n");
+#endif
+#if 0
+		if((saved_irqs_on) && (preempt_count() < 2)){
+			local_irq_enable();
+			/* Any external interrupts should be processed now...*/
+		}
+
+		
+#endif				
+		if(saved_irqs_on){
+			local_irq_enable();
+			//HDEBUG("allowing interrupts to be processed...\n");
+			/* Any external interrupts should be processed now...*/
+		}
+
+#if 0
+		if((preempt_count() < 2) && (current->lockdep_depth == 0)){
+			schedule_ok = 1;
+		}
+#endif
+#if 1
+		if((preempt_count() < 2)){
+			schedule_ok = 1;
+		}
+#endif
+		
+		if (ret == EXIT_REASON_VMCALL || ret == EXIT_REASON_CPUID) {
+			vmx_step_instruction();
+		}
+		
+		vmx_put_cpu(vcpu);
+
+		if (ret == EXIT_REASON_VMCALL){
+			vmx_handle_vmcall(vcpu, schedule_ok);
+			//schedule_ok = 1;
+		}
+		else if (ret == EXIT_REASON_CPUID)
+			vmx_handle_cpuid(vcpu);
+		else if (ret == EXIT_REASON_EPT_VIOLATION){
+			qual = vmcs_readl(EXIT_QUALIFICATION);
+			gp_addr = vmcs_readl(GUEST_PHYSICAL_ADDRESS);
+
+			HDEBUG("ept violation exit - qualification=%#lx gpa=%#lx\n",
+				qual, gp_addr);
+
+			if(!(pml2_e =  find_pd_entry(vcpu, gp_addr))){
+				printk(KERN_ERR "okernel: NULL pml2 entry for gp_addr (%#lx)\n",
+				       gp_addr);
+			} else {
+				HDEBUG("ept entry for gpa=%#lx is (%#lx)\n", gp_addr, *pml2_e);
+			}
+                        /* Bit 7 in exit qualification set if 'guest' virtual address valid */
+			if(qual & 0x80){
+				gv_addr = (u64)vmcs_readl(GUEST_LINEAR_ADDRESS);
+				HDEBUG("gva=%#lx\n", gv_addr);
+			}
+			done = 1;
+		}
+		else if (ret == EXIT_REASON_EPT_MISCONFIG){
+			gp_addr = vmcs_readl(GUEST_PHYSICAL_ADDRESS);
+			HDEBUG("ept misconfig exit - gpa=%#lx\n", gp_addr);
+			if(!(pml2_e =  find_pd_entry(vcpu, gp_addr))){
+				printk(KERN_ERR "okernel: NULL pml2 entry for gp_addr (%#lx)\n",
+				       gp_addr);
+			} else {
+				HDEBUG("ept entry for gpa=%#lx is (%#lx)\n", gp_addr, *pml2_e);
+			}
+			done = 1;
+		}
+		else if (ret == EXIT_REASON_EXCEPTION_NMI) {
+			vmx_get_cpu(vcpu);
+			vii.v = vmcs_readl(VM_EXIT_INTR_INFO);
+			HDEBUG("recieved EXCEPTION or NMI\n");
+			if(vii.s.valid == INTR_INFO_VALID_VALID){
+				if(vii.s.vector == EXCEPTION_PF){
+					/* Not used at present: we handle PFs in NR-mode... */
+					err = (u64)vmcs_readl(VMCS_VMEXIT_INTR_ERRCODE);
+					cr2 = (u64)vmcs_readl(EXIT_QUALIFICATION);
+
+					HDEBUG("Got pagefault - address (%#lx) err (%#lx)\n",
+						cr2, err);
+					copy_vcpu_to_ptregs(vcpu, &regs);
+					/* could avoid reading this twice */
+					regs.flags = vmcs_readl(GUEST_RFLAGS);
+					regs.ip = vmcs_readl(GUEST_RIP);
+					regs.cs = vmcs_readl(GUEST_CS_SELECTOR);
+					regs.ss = vmcs_readl(GUEST_SS_SELECTOR);
+					regs.sp = vmcs_readl(GUEST_RSP);
+					
+					vmx_put_cpu(vcpu);
+					regs.orig_ax = err;
+					//printk("R: ptregs before do_page_fault_r call: \n");
+					//show_regs(&regs);
+					HDEBUG("calling do_page_fault_r...\n");
+					do_page_fault_r(&regs, err, cr2);
+					HDEBUG("returned from do_page_fault_r.\n");
+					//BXMAGICBREAK;
+					schedule_ok = 1;
+					continue;
+				} else if(vii.s.vector == EXCEPTION_GP){
+					err = (u64)vmcs_readl(VMCS_VMEXIT_INTR_ERRCODE);
+					cr2 = (u64)vmcs_readl(EXIT_QUALIFICATION);
+					
+					HDEBUG("Got GP error - exit qualification (%#lx) err (%#lx)\n",
+						cr2, err);
+					HDEBUG("Guest rip (%#lx)\n", vmcs_readl(GUEST_RIP));
+					HDEBUG("can't handle for now...just BUG()\n");
+					BUG();
+				} else {
+					vmx_put_cpu(vcpu);				
+					HDEBUG("unhandled exception/NMI: ret (%d) vector (%d), exit qual (%lx)\n",
+					       ret, vii.s.vector, vmcs_readl(EXIT_QUALIFICATION));
+					BUG();
+				}
+			}
+			done = 1;
+		} else if (ret != EXIT_REASON_EXTERNAL_INTERRUPT) {
+			printk(KERN_ERR "vmx_launch: unhandled exit: reason %#x, exit qualification %#lx\n",
+			       ret, vmcs_readl(EXIT_QUALIFICATION));
+			done = 1;
+		}
+		
+		if (done)
+			break;
+	}
+
+        /* (Likely) this may (will) cause a problem if irqs were
+	 * disabled / locks held, etc. in cloned thread on vmexit
+	 * fault - we will have inconsistent kernel state we will need
+	 * to sort out.*/
+	
+        HDEBUG("leaving vmexit() loop (VPID %d) - ret (%x) - trigger BUG() for now...\n",
+		vcpu->vpid, ret);
+	BUG();
+	//*ret_code = vcpu->ret_code;
+	//vmx_destroy_vcpu(vcpu);
+	return 0;
+}
+
+#if 0
+	
+/* keep original whilst hacking about...*/
+	
+/*
+ * vmx_launch - the main loop for a cloned VMX okernel process (thread)
+ */
+
+
+int vmx_launch(unsigned int flags, struct nr_cloned_state *cloned_thread)
+{
+	unsigned long rsp;
+	unsigned long rbp;
+	unsigned long new_rsp;
+	unsigned long new_rbp;
+	unsigned long current_frame_len;
+#ifdef HPE_DEBUG
+	unsigned long fred = 7;
+#endif
+	unsigned long r_stack_top;
+	unsigned long in_use;
+	unsigned int ret = 0;
+	unsigned long c_rip;	
+	struct vmx_vcpu *vcpu;
+	int schedule_ok = 0;
+	unsigned long saved_irqs_on;
+	int done = 0;
+	union {
+		struct intr_info s;
+		ulong v;
+	} vii;
+	unsigned long cr2;
+	unsigned long err;
+	struct pt_regs regs;
+	unsigned long k_stack;
+	unsigned long gp_addr;
+	unsigned long gv_addr;
+	unsigned long qual;
+	unsigned long *pml2_e;
+
+	if(!cloned_thread)
+		return -EINVAL;
+	
+	c_rip = cloned_thread->rip;
+	
+	HDEBUG("c_rip: (#%#lx)\n", c_rip);
+	
+	vcpu = vmx_create_vcpu(cloned_thread);
+	
+	if (!vcpu)
+		return -ENOMEM;
+	
+	HDEBUG("created new VMX process context (VPID %d)\n", vcpu->vpid);
+
+#if 1
+	if(!clone_kstack2(vcpu)){
+		printk(KERN_ERR "okernel: clone kstack failed.\n");
+		return -ENOMEM;
+	}
+#endif
+	/* To do: Need to take a copy of the orignal stack contents, restore when/if we leave */
+	in_use = current_top_of_stack() - current_stack_pointer();
+
+	k_stack = (unsigned long)current->stack;
+	
+	r_stack_top = k_stack + PAGE_SIZE;
+	
+	HDEBUG("reset stack to top of bottom page for orig thread: in use (%lu) new top (%#lx)\n",
+		in_use, r_stack_top);
+	
+	HDEBUG("kernel thread_info (tsk->stack) vaddr (%#lx) paddr (%#lx) top of stack (%#lx)\n",
+		k_stack, __pa(k_stack), current_top_of_stack());
+	
+	HDEBUG("sizeof(struct thread_info) (%lu)\n", sizeof(struct thread_info));
+
+	asm volatile ("mov %%rbp,%0" : "=rm" (rbp));
+	HDEBUG("original thread rbp currently  (%#lx)\n", rbp);
+	asm volatile ("mov %%rsp,%0" : "=rm" (rsp));
+	HDEBUG("orginal thread rsp currently  (%#lx)\n", rsp);
+
+	/* 
+	 * Ok we want to clone the stack contents from
+	 * old rsp->old rbp so the local variables are still available
+	 * to us 
+	 */
+	current_frame_len = rbp - rsp;
+	HDEBUG("current stack from in use (%lu)\n", current_frame_len);
+	new_rbp = r_stack_top;
+	new_rsp = new_rbp - current_frame_len;
+	memcpy((u64 *)new_rsp, (u64 *)rsp, current_frame_len);
+	
+	HDEBUG("setting rsp to (%#lx) rbp to (%#lx)\n", new_rsp, new_rbp);
+	asm volatile ("mov %0, %%rbp": : "r" (new_rbp));
+	asm volatile ("mov %0, %%rsp": : "r" (new_rsp));
+
+	BXMAGICBREAK;
+	/* can we still access fred? */
+	HDEBUG("fred (%lu) address of fred (%#lx)\n", fred, (unsigned long)&fred);
+	BXMAGICBREAK;
+	
+#if 1
+	vcpu->cloned_tsk = current;
+#else
+	if(!(clone_tsk(vcpu))){
+		printk(KERN_ERR "okernel: clone tsk failed.\n");
+		return 0;
+	}
+#endif
+
+	schedule_ok = 0;
+       
+	saved_irqs_on = (cloned_thread->rflags & RFLAGS_IF_BIT);
+
+	HDEBUG("Before vmexit handling loop: in_atomic(): %d, irqs_disabled(): %d, pid: %d, name: %s\n",
+		in_atomic(), irqs_disabled(), current->pid, current->comm);
+	HDEBUG("preempt_count (%d) rcu_preempt_depth (%d) cloned rflags (%lu) saved_irqs_on (%#lx)\n",
+	       preempt_count(), rcu_preempt_depth(), cloned_thread->rflags, saved_irqs_on);
+
+	HDEBUG("current->lockdep_depth (%d)\n", current->lockdep_depth);
+
+	debug_show_all_locks();
+
+	HDEBUG("About to enter vmx handler while loop...\n");
+
 #if 1
 	while(1){
 #else
@@ -2580,6 +2908,8 @@ fast_path:
 			printk(KERN_ERR "vmentry failed (%#x)\n", ret);
 			break;
 		}
+
+
 			
 		saved_irqs_on = vmcs_readl(GUEST_RFLAGS) & RFLAGS_IF_BIT;
 
@@ -2588,15 +2918,8 @@ fast_path:
 			/* Might want to watch-dog this...*/
 			goto fast_path;
 		}
-#if 0
-		// Finish this...
-		if(current->lockdep_depth){
-			BUG();
-		}
-		if(preempt_count()){
-			BUG();
-		}
-#endif
+
+		
 		
 		HDEBUG("current->lockdep_depth (%d) preemt_count (%d) locks held:\n",
 		       current->lockdep_depth, preempt_count());
@@ -2732,7 +3055,7 @@ fast_path:
 	//vmx_destroy_vcpu(vcpu);
 	return 0;
 }
-
+#endif
 	
 /*-------------------------------------------------------------------------------------*/
 /*  end: vmx__launch releated code                                                     */
