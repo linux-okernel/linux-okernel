@@ -16,6 +16,7 @@
 #define _LINUX_OKERNEL_H
 #include <linux/compat.h>
 #include <asm/special_insns.h>
+#include <asm/percpu.h>
 
 /* 
  * Flags to control initial vmx non-root mode setup from user-space 
@@ -123,6 +124,21 @@ static inline bool vmx_nr_mode(void)
 	if(cr4 & X86_CR4_VMXE)
 		return false;
 	return true;
+}
+
+static inline void set_vmx_r_mode(void)
+{
+	raw_cpu_write_4(__r_mode, 1);
+}
+
+static inline void unset_vmx_r_mode(void)
+{
+	raw_cpu_write_4(__r_mode, 0);
+}
+
+static inline bool vmx_r_mode(void)
+{
+	return raw_cpu_read_4(__r_mode);
 }
 
 int is_in_vmx_nr_mode(void);

@@ -407,14 +407,15 @@ long ok_device_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 	switch(cmd)
 	{
 	case OKERNEL_ON_CMD:
+		set_vmx_r_mode();
 		val = arg;
+
 		HDEBUG("cmd is OKERNEL_ON_CMD with arg (%lu) for pid (%d)\n",
 			val, current->pid);
 
 		HDEBUG("resetting lock dependency tracking.\n");
 		
 		lockdep_reset();
-
 		
 		if(val != 1){
 			HDEBUG("OKERNEL_ON_CMD arg not 1.\n");
@@ -470,6 +471,7 @@ long ok_device_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 			       current->pid, (unsigned long)ret);
 		}
 		HDEBUG("outer kernel off for <%d>\n", current->pid);
+		unset_vmx_r_mode();
 		break;
 	default:
 	

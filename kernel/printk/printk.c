@@ -2162,8 +2162,14 @@ static int console_cpu_notify(struct notifier_block *self,
  */
 void console_lock(void)
 {
-#if 1
+#if 0
 	if(is_in_vmx_nr_mode()){
+		return;
+                //asm volatile("xchg %bx, %bx");
+	}
+#endif
+#if 0
+	if(vmx_r_mode()){
 		return;
                 //asm volatile("xchg %bx, %bx");
 	}
@@ -2188,8 +2194,15 @@ EXPORT_SYMBOL(console_lock);
  */
 int console_trylock(void)
 {
-#if 1
+#if 0
 	if(is_in_vmx_nr_mode()){
+		return 1;
+		//asm volatile("xchg %bx, %bx");
+	}
+
+#endif
+#if 0
+	if(vmx_r_mode()){
 		return 1;
 		//asm volatile("xchg %bx, %bx");
 	}
@@ -2264,8 +2277,14 @@ void console_unlock(void)
 	bool wake_klogd = false;
 	bool retry;
 
-#if 1
+#if 0
 	if(is_in_vmx_nr_mode()){
+		return;
+                //asm volatile("xchg %bx, %bx");
+	}
+#endif
+#if 0
+	if(vmx_r_mode()){
 		return;
                 //asm volatile("xchg %bx, %bx");
 	}

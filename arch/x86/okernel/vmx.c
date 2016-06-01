@@ -1995,6 +1995,7 @@ static void vmx_destroy_vcpu(struct vmx_vcpu *vcpu)
 static unsigned int __noclone vmx_run_vcpu(struct vmx_vcpu *vcpu)
 {
 	nr_preempt_count_set_offset(1);
+	unset_vmx_r_mode();
 			
 	asm(
 		/* Store host registers */
@@ -2102,6 +2103,7 @@ static unsigned int __noclone vmx_run_vcpu(struct vmx_vcpu *vcpu)
 #endif
 	);
 
+	set_vmx_r_mode();
 	nr_preempt_count_set_offset(0);
 	
 	vcpu->launched = 1;
@@ -2364,8 +2366,9 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu, int schedule_ok)
 			current->pid, (unsigned long)tss->x86_tss.sp0, r_ti->flags, fs);
 		BXMAGICBREAK;
 		local_irq_enable();
-		
+		unset_vmx_r_mode();
 		schedule_r_mode();
+		set_vmx_r_mode();
 		barrier();
 		local_irq_disable();
 #if 1
