@@ -50,9 +50,12 @@
 #define VMCALL_DO_EXEC_1 5 /* execve */
 #define VMCALL_DO_EXEC_2 6 /* execveat */
 #ifdef CONFIG_COMPAT
-#define VMCALL_DO_EXEC_3 5 /* compat_execve */
-#define VMCALL_DO_EXEC_4 6 /* compat_execveat */
+#define VMCALL_DO_EXEC_3 7 /* compat_execve */
+#define VMCALL_DO_EXEC_4 8 /* compat_execveat */
+#define VMCALL_DO_EXEC_FIXUP 9
+#define VMCALL_DO_EXEC_FIXUP_HOST 10
 #endif
+
 
 int vmcall(unsigned int cmd);
 int vmcall2(unsigned int cmd, unsigned long arg1);

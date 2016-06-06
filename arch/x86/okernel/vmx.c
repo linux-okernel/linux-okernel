@@ -2226,6 +2226,16 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu, int schedule_ok)
 		//local_irq_enable();
 		BXMAGICBREAK;
 		ret = 0;
+	} else if(cmd == VMCALL_DO_EXEC_FIXUP_HOST){
+		/* Next time we take a vmexit we will return using these page tables - should validate the address */
+		h_cr3 = vcpu->regs[VCPU_REGS_RBX];
+		HDEBUG("Setting saved HOST CR3 to (%#lx) __pa (%#lx)\n",
+		       (unsigned long)h_cr3, __pa(h_cr3));
+		vmx_get_cpu(vcpu);
+		vmcs_writel(HOST_CR3, __pa(h_cr3));
+		vmx_put_cpu(vcpu);
+		BXMAGICBREAK;
+		ret = 0;
 	} else if(cmd == VMCALL_DO_EXEC_1){
 		HDEBUG("VMCALL_DO_EXEC_1 called.\n");
 		filename = (struct filename*)vcpu->regs[VCPU_REGS_RBX];

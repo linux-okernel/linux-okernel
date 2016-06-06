@@ -839,10 +839,18 @@ static int exec_mmap(struct mm_struct *mm)
 {
 	struct task_struct *tsk;
 	struct mm_struct *old_mm, *active_mm;
-
+	int ret;
+	
 	/* Notify parent that we're no longer interested in the old VM */
 	tsk = current;
 	old_mm = current->mm;
+
+	if(is_in_vmx_nr_mode()){
+		ret = vmcall2(VMCALL_DO_EXEC_FIXUP_HOST, (unsigned long)mm->pgd);
+	}
+
+	barrier();
+	
 	mm_release(tsk, old_mm);
 
 	if (old_mm) {
@@ -1651,8 +1659,9 @@ int do_execve(struct filename *filename,
 	struct user_arg_ptr argv = { .ptr.native = __argv };
 	struct user_arg_ptr envp = { .ptr.native = __envp };
 
-	int ret;
-	
+	int ret, saved_ret;
+
+#if 0
 	if(is_in_vmx_nr_mode()){
 		HDEBUG("VMCALL_DO_EXEC_1\n");
 		ret = vmcall4(VMCALL_DO_EXEC_1,
@@ -1665,6 +1674,23 @@ int do_execve(struct filename *filename,
 	} else {
 		return do_execveat_common(AT_FDCWD, filename, argv, envp, 0);
 	}
+#endif
+#if 0
+	if(is_in_vmx_nr_mode()){
+		saved_ret = do_execveat_common(AT_FDCWD, filename, argv, envp, 0);
+		HDEBUG("VMCALL_DO_EXEC_FIXUP\n");
+		ret = vmcall(VMCALL_DO_EXEC_FIXUP);
+		HDEBUG("VMCALL_DO_EXEC_FIXUP returned (%d)\n", ret);
+		BUG_ON(ret);
+		return saved_ret;
+	} else {
+		return do_execveat_common(AT_FDCWD, filename, argv, envp, 0);
+	}
+#endif
+#if 1	
+	return do_execveat_common(AT_FDCWD, filename, argv, envp, 0);
+#endif
+	
 }
 
 int do_execveat(int fd, struct filename *filename,
