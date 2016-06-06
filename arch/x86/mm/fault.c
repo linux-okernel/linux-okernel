@@ -1083,6 +1083,9 @@ __do_page_fault(struct pt_regs *regs, unsigned long error_code,
 	int fault, major = 0;
 	unsigned int flags = FAULT_FLAG_ALLOW_RETRY | FAULT_FLAG_KILLABLE;
 
+	int count = 0;
+	//struct vm_area_struct *vma;
+
 	tsk = current;
 	mm = tsk->mm;
 
@@ -1251,6 +1254,21 @@ retry:
 		goto good_area;
 	if (unlikely(!(vma->vm_flags & VM_GROWSDOWN))) {
 		HDEBUG("calling bad area 2\n");
+		if(is_in_vmx_nr_mode()){
+			HDEBUG("Current mm vma mappings: \n");
+			for(vma = mm->mmap; vma; vma=vma->vm_next){
+				HDEBUG("\nVMA Number %d: \n", ++count);
+				HDEBUG("  Starts at 0x%lx, Ends at 0x%lx\n",
+				       vma->vm_start, vma->vm_end);
+			}
+			HDEBUG("\nCode  Segment start = 0x%lx, end = 0x%lx \n"
+			       "Data  Segment start = 0x%lx, end = 0x%lx\n"
+			       "Stack Segment start = 0x%lx\n",
+			       mm->start_code, mm->end_code,
+			       mm->start_data, mm->end_data,
+			       mm->start_stack);
+			HDEBUG("Current mm vma mappings done.\n");
+		}
 		bad_area(regs, error_code, address);
 		return;
 	}

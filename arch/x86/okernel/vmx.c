@@ -2151,6 +2151,10 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu, int schedule_ok)
 	struct tss_struct *tss = &per_cpu(cpu_tss, cpu);
 	unsigned long fs;
 	unsigned long gs;
+
+	unsigned long g_cr3 = 0;
+	unsigned long h_cr3 = 0;
+	
 	long code;
 	unsigned long tls;
 	
@@ -2163,11 +2167,16 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu, int schedule_ok)
 	struct filename *filename;
 	const void *argv;
 	const void *envp;
+
+	struct mm_struct *mm;
+	struct vm_area_struct *vma;
+	int count = 0;
+
 	
 	nr_ti = vcpu->cloned_thread_info;
 	r_ti = current_thread_info();
 		
-	BUG_ON(irqs_disabled());
+	//BUG_ON(irqs_disabled());
 	       	
 	cmd = vcpu->regs[VCPU_REGS_RAX];
 						
@@ -2185,7 +2194,7 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu, int schedule_ok)
 	HDEBUG("rsp currently  (%#lx)\n", rsp);
 
 	if(cmd == VMCALL_DO_FORK_FIXUP){
-		local_irq_disable();
+		//local_irq_disable();
 
 		
 		p = (struct task_struct*)vcpu->regs[VCPU_REGS_RBX];
@@ -2214,7 +2223,7 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu, int schedule_ok)
 			p->okernel_fork_fs_base, (unsigned long)p);
 		HDEBUG("VMCALL_DO_FORK_FIXUP setting gs to (%#lx) for p (%#lx)\n",
 			p->okernel_fork_gs_base, (unsigned long)p);
-		local_irq_enable();
+		//local_irq_enable();
 		BXMAGICBREAK;
 		ret = 0;
 	} else if(cmd == VMCALL_DO_EXEC_1){
@@ -2227,18 +2236,64 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu, int schedule_ok)
 		       filename->name,
 		       (unsigned long)current->mm->pgd,
 		       (unsigned long)current->active_mm->pgd);
+		HDEBUG("current mm mappings: \n");
+		mm = current->mm;
+		for(vma = mm->mmap; vma; vma=vma->vm_next){
+			HDEBUG("\nVMA Number %d: \n", ++count);
+			HDEBUG("  Starts at 0x%lx, Ends at 0x%lx\n",
+			       vma->vm_start, vma->vm_end);
+		}
+#if 0
+		HDEBUG("\nCode  Segment start = 0x%lx, end = 0x%lx \n"
+			       "Data  Segment start = 0x%lx, end = 0x%lx\n"
+		       "Stack Segment start = 0x%lx\n",
+		       mm->start_code, mm->end_code,
+		       mm->start_data, mm->end_data,
+		       mm->start_stack);
+#endif
+		HDEBUG("current mm vma mappings done.\n");
 		BXMAGICBREAK;
+		local_irq_enable();
 		ret = do_execve(filename, argv, envp);
+		local_irq_disable();
+
+		barrier();
+		flush_cache_mm(current->mm);
+		flush_tlb_mm(current->mm);
+		
 		HDEBUG("do_exec1 (%s) done: current->mm pgd (%#lx) active_mm pgd (%#lx) ret (%d)\n",
 		       filename->name,
 		       (unsigned long)current->mm->pgd,
 		       (unsigned long)current->active_mm->pgd,
 		       ret);
-		local_irq_disable();
+
+		HDEBUG("active mm mappings: \n");
+		mm = current->active_mm;
+		for(vma = mm->mmap; vma; vma=vma->vm_next){
+			HDEBUG("\nVMA Number %d: \n", ++count);
+			HDEBUG("  Starts at 0x%lx, Ends at 0x%lx\n",
+			       vma->vm_start, vma->vm_end);
+		}
+#if 0
+		HDEBUG("\nCode  Segment start = 0x%lx, end = 0x%lx \n"
+			       "Data  Segment start = 0x%lx, end = 0x%lx\n"
+		       "Stack Segment start = 0x%lx\n",
+		       mm->start_code, mm->end_code,
+		       mm->start_data, mm->end_data,
+		       mm->start_stack);
+#endif
+		HDEBUG("active mm vma mappings done.\n");
+		
 		vmx_get_cpu(vcpu);
+
+		HDEBUG("Setting G/H CR3 to current->mm pgd (%#lx) __pa (%#lx)\n",
+		       (unsigned long)current->mm->pgd, __pa((unsigned long)current->mm->pgd));
 		vmcs_writel(HOST_CR3, __pa((unsigned long)current->mm->pgd));
 		vmcs_writel(GUEST_CR3, __pa((unsigned long)current->mm->pgd));
-		local_irq_enable();
+		g_cr3 = vmcs_readl(GUEST_CR3);
+		h_cr3 = vmcs_readl(HOST_CR3);
+		HDEBUG("Set G/H CR3 to current->mm pgd (%#lx) __pa (%#lx)\n",
+		       g_cr3, h_cr3);
 		vmx_put_cpu(vcpu);
 		BXMAGICBREAK;
 	} else if(cmd == VMCALL_DO_EXEC_2){
@@ -2253,14 +2308,16 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu, int schedule_ok)
 		HDEBUG("do_exec2 fd(%d) filename(%s)\n",
 			fd, filename->name);
 		BXMAGICBREAK;
-	      
-		ret = do_execveat(fd, filename, argv, envp, flags);
 
+		local_irq_enable();
+		ret = do_execveat(fd, filename, argv, envp, flags);
 		local_irq_disable();
+
+		barrier();
 		vmx_get_cpu(vcpu);
 		vmcs_writel(HOST_CR3, __pa((unsigned long)current->mm->pgd));
 		vmcs_writel(GUEST_CR3, __pa((unsigned long)current->mm->pgd));
-		local_irq_enable();
+		//local_irq_enable();
 		vmx_put_cpu(vcpu);
 		HDEBUG("do_exec2 (%s) done - ret(%d)\n",
 			filename->name, ret);
@@ -2278,17 +2335,22 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu, int schedule_ok)
 			(unsigned long)current->mm->pgd,
 			(unsigned long)current->active_mm->pgd);
 		BXMAGICBREAK;
+
+		local_irq_enable();
 		compat_do_execve(filename, argv, envp);
+		local_irq_disable();
+		
 		HDEBUG("do_exec3 (%s) done: current->mm pgd (%#lx) active_mm pgd (%#lx) ret (%d)\n",
 			filename->name,
 			(unsigned long)current->mm->pgd,
 			(unsigned long)current->active_mm->pgd,
 			ret);
-		local_irq_disable();
+
+		barrier();
 		vmx_get_cpu(vcpu);
 		vmcs_writel(HOST_CR3, __pa((unsigned long)current->mm->pgd));
 		vmcs_writel(GUEST_CR3, __pa((unsigned long)current->mm->pgd));
-		local_irq_enable();
+
 		vmx_put_cpu(vcpu);
 		BXMAGICBREAK;
 	} else if(cmd == VMCALL_DO_EXEC_4){
@@ -2303,19 +2365,21 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu, int schedule_ok)
 		HDEBUG("do_exec4 fd(%d) filename(%s)\n",
 			fd, filename->name);
 		BXMAGICBREAK;
-	      
+
+		local_irq_enable();
 		compat_do_execveat(fd, filename, argv, envp, flags);
 		local_irq_disable();
+
+		barrier();
 		vmx_get_cpu(vcpu);
 		vmcs_writel(HOST_CR3, __pa((unsigned long)current->mm->pgd));
 		vmcs_writel(GUEST_CR3, __pa((unsigned long)current->mm->pgd));
-		local_irq_enable();
 		vmx_put_cpu(vcpu);
 		HDEBUG("do_exec4 (%s) done - ret (%d)\n", filename->name, ret);
 #endif
 	} else if (cmd == VMCALL_SCHED){
-		BUG_ON(schedule_ok == 0);
-		local_irq_disable();
+		//BUG_ON(schedule_ok == 0);
+		//local_irq_disable();
 		cloned_tsk_state = vcpu->cloned_tsk->state;
 		
 		HDEBUG("in VMCALL schedule - current state (%lu) cloned state (%u)\n",
@@ -2395,10 +2459,11 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu, int schedule_ok)
 		       preempt_count(), rcu_preempt_depth());
 		HDEBUG("current->lockdep_depth (%d)\n", current->lockdep_depth);
 		BXMAGICBREAK;
-		local_irq_enable();
+		//local_irq_enable();
 	} else if(cmd == VMCALL_DOEXIT){
 		code = (long)vcpu->regs[VCPU_REGS_RBX];
 		HDEBUG("calling do_exit(%ld)...\n", code);
+		local_irq_enable();
 		do_exit(code);
 	} else {
 		HDEBUG("unexpected VMCALL argument.\n");
@@ -2535,25 +2600,12 @@ int vmx_launch(unsigned int flags, struct nr_cloned_state *cloned_thread)
 		vmx_get_cpu(vcpu);
 		local_irq_disable();
 fast_path:
-#if 0
-		if(schedule_ok){
-			schedule_ok = 0;
-			if (need_resched()) {
-				/* should be safe to use printk here...*/
-				local_irq_enable();
-				vmx_put_cpu(vcpu);
-				HDEBUG("cond_resched called.\n");
-				cond_resched();
-				continue;
-			}
-		}
-#endif
-#if 1
+
 		/* Fix-up irq on/off debug logging */
 		if(saved_irqs_on){
 			trace_hardirqs_nr_on();
 		}
-#endif
+
 		/**************************** GO FOR IT ***************************/
 		ret = vmx_run_vcpu(vcpu);
 		/*************************** GONE FOR IT! *************************/
@@ -2577,59 +2629,35 @@ fast_path:
 			break;
 		}
 
-		// Do not exit except for vmcalls as an experiment
-		
+#if 0
 		saved_irqs_on = (vmcs_readl(GUEST_RFLAGS) & RFLAGS_IF_BIT);
 
-#if 0
-		if((ret != EXIT_REASON_VMCALL)){
-			goto fast_path;
-		}
 #endif
-
-#if 0
+		
 		if((ret == EXIT_REASON_EXTERNAL_INTERRUPT)){
-			/* Might want to watch-dog this...*/
-			goto fast_path;
+			BUG();
 		}
-#endif
-#if 1
-		if((ret == EXIT_REASON_EXTERNAL_INTERRUPT) && !saved_irqs_on){
-			/* Might want to watch-dog this...*/
-			goto fast_path;
-		}
-#endif
+
 		
 #if 0
 		HDEBUG("current->lockdep_depth (%d) preemt_count (%d) locks held:\n",
 		       current->lockdep_depth, preempt_count());
-		//debug_show_all_locks();
-		HDEBUG("done locks held.\n");
-#endif
-#if 0
-		if((saved_irqs_on) && (preempt_count() < 2)){
-			local_irq_enable();
-			/* Any external interrupts should be processed now...*/
-		}
 
+#endif
 		
-#endif				
+#if 0
+		// Don't need to enable interrupts
 		if(saved_irqs_on){
 			local_irq_enable();
 			//HDEBUG("allowing interrupts to be processed...\n");
 			/* Any external interrupts should be processed now...*/
 		}
 
-#if 0
-		if((preempt_count() < 2) && (current->lockdep_depth == 0)){
-			schedule_ok = 1;
-		}
-#endif
-#if 1
 		if((preempt_count() < 2)){
 			schedule_ok = 1;
 		}
 #endif
+
 		
 		if (ret == EXIT_REASON_VMCALL || ret == EXIT_REASON_CPUID) {
 			vmx_step_instruction();
@@ -2638,8 +2666,7 @@ fast_path:
 		vmx_put_cpu(vcpu);
 
 		if (ret == EXIT_REASON_VMCALL){
-			vmx_handle_vmcall(vcpu, schedule_ok);
-			//schedule_ok = 1;
+			vmx_handle_vmcall(vcpu, 0);
 		}
 		else if (ret == EXIT_REASON_CPUID)
 			vmx_handle_cpuid(vcpu);
@@ -2738,6 +2765,7 @@ fast_path:
 	
         HDEBUG("leaving vmexit() loop (VPID %d) - ret (%x) - trigger BUG() for now...\n",
 		vcpu->vpid, ret);
+	local_irq_enable();
 	BUG();
 	//*ret_code = vcpu->ret_code;
 	//vmx_destroy_vcpu(vcpu);
