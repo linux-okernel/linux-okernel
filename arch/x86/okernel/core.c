@@ -374,7 +374,7 @@ int __noclone okernel_enter(unsigned long flags)
 	HDEBUG("cloned thread rsp will be set to  (%#lx)\n", rsp);
 	cloned_thread->rsp = rsp;	
 	
-	barrier();
+	//barrier();
 	
 	ret = vmx_launch(flags, cloned_thread);
 	
@@ -437,8 +437,9 @@ long ok_device_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 			BXMAGICBREAK;
 
 			HDEBUG("Returning from okernel_enter (IOCTL_LAUNCH).\n");
+			
+			//dump_stack();
 			BXMAGICBREAK;
-
 			ti = current_thread_info();
 			
 			HDEBUG("initial state in return from okernel_enter (IOCTL_LAUNCH):\n");

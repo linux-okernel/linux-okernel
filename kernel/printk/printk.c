@@ -2388,9 +2388,15 @@ skip:
 
 	if (retry && console_trylock())
 		goto again;
-
+#if 0
+	if(!is_in_vmx_nr_mode()){
+		if (wake_klogd)
+			wake_up_klogd();
+	}
+#else
 	if (wake_klogd)
 		wake_up_klogd();
+#endif
 }
 EXPORT_SYMBOL(console_unlock);
 

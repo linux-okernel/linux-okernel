@@ -1473,11 +1473,12 @@ signed long __sched schedule_timeout(signed long timeout)
 	struct timer_list timer;
 	unsigned long expire;
 
+
 #ifdef HPE_DEBUG
 	if(is_in_vmx_nr_mode()){
 		HDEBUG("current state (%ld)\n", current->state);
-		BUG();
-		dump_stack();
+		//BUG();
+		//dump_stack();
 		BXMAGICBREAK;
 	}
 #endif

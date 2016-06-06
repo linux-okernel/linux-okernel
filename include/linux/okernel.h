@@ -88,13 +88,13 @@ int compat_do_execveat(int fd, struct filename *filename,
 
 #define HPE_DEBUG
 #ifdef HPE_DEBUG
-#define HDEBUG(fmt, args...)  printk( KERN_ERR "%s: cpu(%d) pid(%d) %s: " fmt , vmx_nr_mode()?"NR":"R ", raw_smp_processor_id(), current->pid,__func__, ## args)
+#define HDEBUG(fmt, args...)  trace_printk( KERN_ERR "%s: cpu(%d) pid(%d) %s: " fmt , vmx_nr_mode()?"NR":"R ", raw_smp_processor_id(), current->pid,__func__, ## args)
 #else
 #define HDEBUG(fmt, args...) 
 #endif
 //#define HPL_DEBUG2
 #ifdef HPE_DEBUG2
-#define HDEBUG2(fmt, args...) printk( KERN_ERR "%s: cpu(%d) pid(%d) %s: " fmt, vmx_nr_mode()?"NR":"R ", raw_smp_processor_id(), current->pid,__func__, ## args)
+#define HDEBUG2(fmt, args...) trace_printk( KERN_ERR "%s: cpu(%d) pid(%d) %s: " fmt, vmx_nr_mode()?"NR":"R ", raw_smp_processor_id(), current->pid,__func__, ## args)
 #else
 #define HDEBUG2(fmt, args...)
 #endif
