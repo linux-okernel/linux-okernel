@@ -2271,12 +2271,13 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu)
 		HDEBUG("calling schedule_r (pid %d) cpu_cur_tos (%#lx) flgs (%#x) MSR_FS_BASE=%#lx\n",
 			current->pid, (unsigned long)tss->x86_tss.sp0, r_ti->flags, fs);
 		BXMAGICBREAK;
-		//local_irq_enable();
+
 		unset_vmx_r_mode();
+		local_irq_enable();
 		schedule_r_mode();
+		local_irq_disable();
 		set_vmx_r_mode();
 		barrier();
-		//local_irq_disable();
 #if 1
                 /* Re-sync cloned-thread thread_info */
 		
@@ -2301,7 +2302,6 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu)
 		       preempt_count(), rcu_preempt_depth());
 		HDEBUG("current->lockdep_depth (%d)\n", current->lockdep_depth);
 		BXMAGICBREAK;
-		//local_irq_enable();
 	} else if(cmd == VMCALL_DOEXIT){
 		code = (long)vcpu->regs[VCPU_REGS_RBX];
 		HDEBUG("calling do_exit(%ld)...\n", code);
@@ -2423,8 +2423,10 @@ int vmx_launch(unsigned int flags, struct nr_cloned_state *cloned_thread)
 	}
 #endif
 
-       
+	local_irq_disable();
 	saved_irqs_on = (cloned_thread->rflags & RFLAGS_IF_BIT);
+
+
 
 	HDEBUG("Before vmexit handling loop: in_atomic(): %d, irqs_disabled(): %d, pid: %d, name: %s\n",
 		in_atomic(), irqs_disabled(), current->pid, current->comm);
@@ -2434,12 +2436,13 @@ int vmx_launch(unsigned int flags, struct nr_cloned_state *cloned_thread)
 	HDEBUG("current->lockdep_depth (%d)\n", current->lockdep_depth);
 
 	HDEBUG("About to enter vmx handler while loop...\n");
-
+	
 	while(1){
 		vmx_get_cpu(vcpu);
-		local_irq_disable();
 
-		/* Fix-up irq on/off debug logging */
+		/* If the NR-mode code will start/re-launch with interrupts on, adjust the accounting
+		   since at this point in R-mode current->hardirqs_enabled should be 0 
+		*/
 		if(saved_irqs_on){
 			trace_hardirqs_nr_on();
 		}
@@ -2448,20 +2451,21 @@ int vmx_launch(unsigned int flags, struct nr_cloned_state *cloned_thread)
 		ret = vmx_run_vcpu(vcpu);
 		/*************************** GONE FOR IT! *************************/
 
-		/* If we enable interrupts directly now,, and the exit
-		 * code was caused by an external interrupt, the
-		 * interrupt handler will be invoked in R-mode as
-		 * normal. Check that we are preemptible though from
-		 * an NR-perspective (count offset by 1 since R-mode
-		 * has preempt disabled and that NR-mode has
-		 * interrupts enabled.*/
-		
+
+		BUG_ON(!irqs_disabled());
+
+
+		/* Record the current NR-mode interrupt state as this will be restored via
+		   above trace_hardirqs_nr_on() call above to fix-up the accounting - should 
+		   make this check onditional on irq tracing being configured in the kernel.
+		*/
+		if((saved_irqs_on = vmcs_readl(GUEST_RFLAGS) & RFLAGS_IF_BIT)){
+			trace_hardirqs_nr_off();
+		}
 
 		if(ret==VMX_EXIT_REASONS_FAILED_VMENTRY){
 			/* Need to try tidy up here... */
-			if(saved_irqs_on){
-				local_irq_enable();
-			}
+			local_irq_enable();
 			vmx_put_cpu(vcpu);
 			HDEBUG("vmentry failed (%#x)\n", ret);
 			break;
@@ -2490,6 +2494,7 @@ int vmx_launch(unsigned int flags, struct nr_cloned_state *cloned_thread)
 			HDEBUG("ept violation exit - qualification=%#lx gpa=%#lx\n",
 				qual, gp_addr);
 
+						
 			if(!(pml2_e =  find_pd_entry(vcpu, gp_addr))){
 				printk(KERN_ERR "okernel: NULL pml2 entry for gp_addr (%#lx)\n",
 				       gp_addr);
@@ -2539,8 +2544,10 @@ int vmx_launch(unsigned int flags, struct nr_cloned_state *cloned_thread)
 					//printk("R: ptregs before do_page_fault_r call: \n");
 					//show_regs(&regs);
 					HDEBUG("calling do_page_fault_r...\n");
+					local_irq_enable();
 					do_page_fault_r(&regs, err, cr2);
 					HDEBUG("returned from do_page_fault_r.\n");
+					local_irq_disable();
 					//BXMAGICBREAK;
 					continue;
 				} else if(vii.s.vector == EXCEPTION_GP){
@@ -2560,7 +2567,7 @@ int vmx_launch(unsigned int flags, struct nr_cloned_state *cloned_thread)
 				}
 			}
 			done = 1;
-		} else if (ret != EXIT_REASON_EXTERNAL_INTERRUPT) {
+		} else {
 			printk(KERN_ERR "vmx_launch: unhandled exit: reason %#x, exit qualification %#lx\n",
 			       ret, vmcs_readl(EXIT_QUALIFICATION));
 			done = 1;

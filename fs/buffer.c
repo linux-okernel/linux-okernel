@@ -3066,17 +3066,8 @@ static int submit_bh_wbc(int rw, struct buffer_head *bh,
 		rw |= REQ_META;
 	if (buffer_prio(bh))
 		rw |= REQ_PRIO;
-#ifdef HPE_DEBUG
-	if(is_in_vmx_nr_mode()){
-		HDEBUG(" (%#lx)\n", (unsigned long)bio->bi_private);
-	}
-#endif
+
 	submit_bio(rw, bio);
-#ifdef HPE_DEBUG
-	if(is_in_vmx_nr_mode()){
-		HDEBUG(" (%#lx) done.\n", (unsigned long)bio->bi_private);
-	}
-#endif
 	return 0;
 }
 
@@ -3429,11 +3420,6 @@ int bh_submit_read(struct buffer_head *bh)
 {
 	BUG_ON(!buffer_locked(bh));
 
-#ifdef HPE_DEBUG
-	if(is_in_vmx_nr_mode()){
-		HDEBUG(" (%#lx)\n", (unsigned long)bh);
-	}
-#endif
 	if (buffer_uptodate(bh)) {
 		unlock_buffer(bh);
 		return 0;
@@ -3444,12 +3430,6 @@ int bh_submit_read(struct buffer_head *bh)
 	submit_bh(READ, bh);
 	wait_on_buffer(bh);
 	
-#ifdef HPE_DEBUG
-	if(is_in_vmx_nr_mode()){
-		HDEBUG(" (%#lx) done.\n", (unsigned long)bh);
-	}
-#endif
-
 	if (buffer_uptodate(bh))
 		return 0;
 	return -EIO;

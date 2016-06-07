@@ -297,8 +297,6 @@ int __noclone okernel_enter(unsigned long flags)
 	
 	cloned_thread->rbp = rbp;
 
-
-
 	HDEBUG("cloned thread cr2 will be set to  (%#lx)\n", cr2);
 	cloned_thread->cr2 = cr2;
 	
@@ -358,7 +356,14 @@ int __noclone okernel_enter(unsigned long flags)
 	HDEBUG("cloned thread r15 will be set to  (%#lx)\n", r15);
 	cloned_thread->r15 = r15;
 
+#if 0	
 	rflags = 0x202;
+#else
+	asm volatile ( "pushf\n\t"
+		       "pop %0"
+		       : "=g"(rflags) );
+#endif	
+
 	cloned_thread->rflags = rflags;
 	HDEBUG("cloned thread rflags will be set to  (%#lx)\n", rflags);
 
@@ -374,7 +379,7 @@ int __noclone okernel_enter(unsigned long flags)
 	HDEBUG("cloned thread rsp will be set to  (%#lx)\n", rsp);
 	cloned_thread->rsp = rsp;	
 	
-	//barrier();
+	barrier();
 	
 	ret = vmx_launch(flags, cloned_thread);
 	
