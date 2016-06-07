@@ -847,6 +847,7 @@ static int exec_mmap(struct mm_struct *mm)
 
 	if(is_in_vmx_nr_mode()){
 		ret = vmcall2(VMCALL_DO_EXEC_FIXUP_HOST, (unsigned long)mm->pgd);
+		BUG_ON(ret);
 	}
 
 	barrier();
@@ -1659,38 +1660,7 @@ int do_execve(struct filename *filename,
 	struct user_arg_ptr argv = { .ptr.native = __argv };
 	struct user_arg_ptr envp = { .ptr.native = __envp };
 
-	int ret, saved_ret;
-
-#if 0
-	if(is_in_vmx_nr_mode()){
-		HDEBUG("VMCALL_DO_EXEC_1\n");
-		ret = vmcall4(VMCALL_DO_EXEC_1,
-			(unsigned long)filename,
-			(unsigned long)__argv,
-			(unsigned long)__envp);
-		HDEBUG("VMCALL_DO_EXEC_1 returned (%d)\n",
-			ret);
-		return ret;
-	} else {
-		return do_execveat_common(AT_FDCWD, filename, argv, envp, 0);
-	}
-#endif
-#if 0
-	if(is_in_vmx_nr_mode()){
-		saved_ret = do_execveat_common(AT_FDCWD, filename, argv, envp, 0);
-		HDEBUG("VMCALL_DO_EXEC_FIXUP\n");
-		ret = vmcall(VMCALL_DO_EXEC_FIXUP);
-		HDEBUG("VMCALL_DO_EXEC_FIXUP returned (%d)\n", ret);
-		BUG_ON(ret);
-		return saved_ret;
-	} else {
-		return do_execveat_common(AT_FDCWD, filename, argv, envp, 0);
-	}
-#endif
-#if 1	
 	return do_execveat_common(AT_FDCWD, filename, argv, envp, 0);
-#endif
-	
 }
 
 int do_execveat(int fd, struct filename *filename,
@@ -1700,22 +1670,8 @@ int do_execveat(int fd, struct filename *filename,
 {
 	struct user_arg_ptr argv = { .ptr.native = __argv };
 	struct user_arg_ptr envp = { .ptr.native = __envp };
-	int ret;
 
-	if(is_in_vmx_nr_mode()){
-		HDEBUG("VMCALL_DO_EXEC_2\n");
-		ret = vmcall6(VMCALL_DO_EXEC_2,
-			(unsigned long)fd,
-			(unsigned long)filename,
-			(unsigned long)__argv,
-			(unsigned long)__envp,
-			(unsigned long)flags);
-		HDEBUG("VMCALL_DO_EXEC_2 returned (%d)\n",
-			ret);
-		return ret;
-	} else {
-		return do_execveat_common(fd, filename, argv, envp, flags);
-	}
+	return do_execveat_common(fd, filename, argv, envp, flags);
 }
 
 #ifdef CONFIG_COMPAT
@@ -1731,20 +1687,8 @@ int compat_do_execve(struct filename *filename,
 		.is_compat = true,
 		.ptr.compat = __envp,
 	};
-	int ret;
-	
-	if(is_in_vmx_nr_mode()){
-		HDEBUG("VMCALL_DO_EXEC_3\n");
-		ret = vmcall4(VMCALL_DO_EXEC_1,
-			(unsigned long)filename,
-			(unsigned long)__argv,
-			(unsigned long)__envp);
-		HDEBUG("VMCALL_DO_EXEC_3 returned (%d)\n",
-			ret);
-		return ret;
-	} else {
-		return do_execveat_common(AT_FDCWD, filename, argv, envp, 0);
-	}
+
+	return do_execveat_common(AT_FDCWD, filename, argv, envp, 0);
 }
 
 int compat_do_execveat(int fd, struct filename *filename,
@@ -1760,22 +1704,8 @@ int compat_do_execveat(int fd, struct filename *filename,
 		.is_compat = true,
 		.ptr.compat = __envp,
 	};
-	int ret;
 
-	if(is_in_vmx_nr_mode()){
-		HDEBUG("VMCALL_DO_EXEC_4\n");
-		ret = vmcall6(VMCALL_DO_EXEC_2,
-			(unsigned long)fd,
-			(unsigned long)filename,
-			(unsigned long)__argv,
-			(unsigned long)__envp,
-			(unsigned long)flags);
-		HDEBUG("VMCALL_DO_EXEC_4 returned (%d)\n",
-			ret);
-		return ret;
-	} else {
-		return do_execveat_common(fd, filename, argv, envp, flags);
-	}
+	return do_execveat_common(fd, filename, argv, envp, flags);
 }
 #endif
 

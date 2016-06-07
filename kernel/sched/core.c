@@ -3144,7 +3144,6 @@ static void  __sched okernel_schedule(void)
 {
 	if(is_in_vmx_nr_mode()){
 		/* Return control to the original process running in root-mode VMX */
-		//okernel_schedule_helper();
 		BXMAGICBREAK;
 		printk(KERN_ERR "NR: okernel_scheduled called - shouldn't get here!\n");
 		BUG();
@@ -3203,7 +3202,6 @@ asmlinkage __visible void __sched schedule(void)
 			current->hardirqs_enabled);
 		HDEBUG("current->lockdep_depth (%d)\n", current->lockdep_depth);
 		
-		//dump_stack();
 		sched_submit_work(tsk);
 		
 		(void)vmcall(VMCALL_SCHED);

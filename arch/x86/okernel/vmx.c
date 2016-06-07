@@ -2138,7 +2138,7 @@ static void vmx_handle_cpuid(struct vmx_vcpu *vcpu)
 }
 
 
-void vmx_handle_vmcall(struct vmx_vcpu *vcpu, int schedule_ok)
+void vmx_handle_vmcall(struct vmx_vcpu *vcpu)
 {
 	int ret = 0;
 	unsigned long cmd;
@@ -2152,7 +2152,6 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu, int schedule_ok)
 	unsigned long fs;
 	unsigned long gs;
 
-	unsigned long g_cr3 = 0;
 	unsigned long h_cr3 = 0;
 	
 	long code;
@@ -2161,22 +2160,10 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu, int schedule_ok)
         /* do_fork_fixup args */
 	struct task_struct *p;
         
-        /* do_exec args*/
-	int fd;
-	int flags;
-	struct filename *filename;
-	const void *argv;
-	const void *envp;
-
-	struct mm_struct *mm;
-	struct vm_area_struct *vma;
-	int count = 0;
-
-	
-	nr_ti = vcpu->cloned_thread_info;
+       	nr_ti = vcpu->cloned_thread_info;
 	r_ti = current_thread_info();
 		
-	//BUG_ON(irqs_disabled());
+
 	       	
 	cmd = vcpu->regs[VCPU_REGS_RAX];
 						
@@ -2194,9 +2181,7 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu, int schedule_ok)
 	HDEBUG("rsp currently  (%#lx)\n", rsp);
 
 	if(cmd == VMCALL_DO_FORK_FIXUP){
-		//local_irq_disable();
-
-		
+				
 		p = (struct task_struct*)vcpu->regs[VCPU_REGS_RBX];
 		tls = (unsigned long)vcpu->regs[VCPU_REGS_RCX];
 		
@@ -2223,7 +2208,6 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu, int schedule_ok)
 			p->okernel_fork_fs_base, (unsigned long)p);
 		HDEBUG("VMCALL_DO_FORK_FIXUP setting gs to (%#lx) for p (%#lx)\n",
 			p->okernel_fork_gs_base, (unsigned long)p);
-		//local_irq_enable();
 		BXMAGICBREAK;
 		ret = 0;
 	} else if(cmd == VMCALL_DO_EXEC_FIXUP_HOST){
@@ -2236,160 +2220,8 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu, int schedule_ok)
 		vmx_put_cpu(vcpu);
 		BXMAGICBREAK;
 		ret = 0;
-	} else if(cmd == VMCALL_DO_EXEC_1){
-		HDEBUG("VMCALL_DO_EXEC_1 called.\n");
-		filename = (struct filename*)vcpu->regs[VCPU_REGS_RBX];
-		argv = (const char __user *const __user*)vcpu->regs[VCPU_REGS_RCX];
-		envp = (const char __user *const __user*)vcpu->regs[VCPU_REGS_R10];
-
-		HDEBUG("do_exec1 filename(%s) current->mm pgd (%#lx) active_mm pgd (%#lx)\n",
-		       filename->name,
-		       (unsigned long)current->mm->pgd,
-		       (unsigned long)current->active_mm->pgd);
-		HDEBUG("current mm mappings: \n");
-		mm = current->mm;
-		for(vma = mm->mmap; vma; vma=vma->vm_next){
-			HDEBUG("\nVMA Number %d: \n", ++count);
-			HDEBUG("  Starts at 0x%lx, Ends at 0x%lx\n",
-			       vma->vm_start, vma->vm_end);
-		}
-#if 0
-		HDEBUG("\nCode  Segment start = 0x%lx, end = 0x%lx \n"
-			       "Data  Segment start = 0x%lx, end = 0x%lx\n"
-		       "Stack Segment start = 0x%lx\n",
-		       mm->start_code, mm->end_code,
-		       mm->start_data, mm->end_data,
-		       mm->start_stack);
-#endif
-		HDEBUG("current mm vma mappings done.\n");
-		BXMAGICBREAK;
-		local_irq_enable();
-		ret = do_execve(filename, argv, envp);
-		local_irq_disable();
-
-		barrier();
-		flush_cache_mm(current->mm);
-		flush_tlb_mm(current->mm);
-		
-		HDEBUG("do_exec1 (%s) done: current->mm pgd (%#lx) active_mm pgd (%#lx) ret (%d)\n",
-		       filename->name,
-		       (unsigned long)current->mm->pgd,
-		       (unsigned long)current->active_mm->pgd,
-		       ret);
-
-		HDEBUG("active mm mappings: \n");
-		mm = current->active_mm;
-		for(vma = mm->mmap; vma; vma=vma->vm_next){
-			HDEBUG("\nVMA Number %d: \n", ++count);
-			HDEBUG("  Starts at 0x%lx, Ends at 0x%lx\n",
-			       vma->vm_start, vma->vm_end);
-		}
-#if 0
-		HDEBUG("\nCode  Segment start = 0x%lx, end = 0x%lx \n"
-			       "Data  Segment start = 0x%lx, end = 0x%lx\n"
-		       "Stack Segment start = 0x%lx\n",
-		       mm->start_code, mm->end_code,
-		       mm->start_data, mm->end_data,
-		       mm->start_stack);
-#endif
-		HDEBUG("active mm vma mappings done.\n");
-		
-		vmx_get_cpu(vcpu);
-
-		HDEBUG("Setting G/H CR3 to current->mm pgd (%#lx) __pa (%#lx)\n",
-		       (unsigned long)current->mm->pgd, __pa((unsigned long)current->mm->pgd));
-		vmcs_writel(HOST_CR3, __pa((unsigned long)current->mm->pgd));
-		vmcs_writel(GUEST_CR3, __pa((unsigned long)current->mm->pgd));
-		g_cr3 = vmcs_readl(GUEST_CR3);
-		h_cr3 = vmcs_readl(HOST_CR3);
-		HDEBUG("Set G/H CR3 to current->mm pgd (%#lx) __pa (%#lx)\n",
-		       g_cr3, h_cr3);
-		vmx_put_cpu(vcpu);
-		BXMAGICBREAK;
-	} else if(cmd == VMCALL_DO_EXEC_2){
-		HDEBUG("VMCALL_DO_EXEC2 called.\n");
-
-		fd = vcpu->regs[VCPU_REGS_RBX];
-		filename = (struct filename*)vcpu->regs[VCPU_REGS_RCX];
-		argv = (const char __user *const __user*)vcpu->regs[VCPU_REGS_R10];
-		envp = (const char __user *const __user*)vcpu->regs[VCPU_REGS_R11];
-		flags = vcpu->regs[VCPU_REGS_R12];
-
-		HDEBUG("do_exec2 fd(%d) filename(%s)\n",
-			fd, filename->name);
-		BXMAGICBREAK;
-
-		local_irq_enable();
-		ret = do_execveat(fd, filename, argv, envp, flags);
-		local_irq_disable();
-
-		barrier();
-		vmx_get_cpu(vcpu);
-		vmcs_writel(HOST_CR3, __pa((unsigned long)current->mm->pgd));
-		vmcs_writel(GUEST_CR3, __pa((unsigned long)current->mm->pgd));
-		//local_irq_enable();
-		vmx_put_cpu(vcpu);
-		HDEBUG("do_exec2 (%s) done - ret(%d)\n",
-			filename->name, ret);
-		BXMAGICBREAK;
-			
-#ifdef CONFIG_COMPAT
-	} else if(cmd == VMCALL_DO_EXEC_3){
-		HDEBUG("VMCALL_DO_EXEC_3 called.\n");
-		filename = (struct filename*)vcpu->regs[VCPU_REGS_RBX];
-		argv = (const compat_uptr_t __user*)vcpu->regs[VCPU_REGS_RCX];
-		envp = (const compat_uptr_t __user*)vcpu->regs[VCPU_REGS_R10];
-
-		HDEBUG("do_exec3 filename(%s) current->mm pgd (%#lx) active_mm pgd (%#lx)\n",
-			filename->name,
-			(unsigned long)current->mm->pgd,
-			(unsigned long)current->active_mm->pgd);
-		BXMAGICBREAK;
-
-		local_irq_enable();
-		compat_do_execve(filename, argv, envp);
-		local_irq_disable();
-		
-		HDEBUG("do_exec3 (%s) done: current->mm pgd (%#lx) active_mm pgd (%#lx) ret (%d)\n",
-			filename->name,
-			(unsigned long)current->mm->pgd,
-			(unsigned long)current->active_mm->pgd,
-			ret);
-
-		barrier();
-		vmx_get_cpu(vcpu);
-		vmcs_writel(HOST_CR3, __pa((unsigned long)current->mm->pgd));
-		vmcs_writel(GUEST_CR3, __pa((unsigned long)current->mm->pgd));
-
-		vmx_put_cpu(vcpu);
-		BXMAGICBREAK;
-	} else if(cmd == VMCALL_DO_EXEC_4){
-		HDEBUG("VMCALL_DO_EXEC_4 called.\n");
-
-		fd = vcpu->regs[VCPU_REGS_RBX];
-		filename = (struct filename*)vcpu->regs[VCPU_REGS_RCX];
-		argv = (const compat_uptr_t __user*)vcpu->regs[VCPU_REGS_R10];
-		envp = (const compat_uptr_t __user*)vcpu->regs[VCPU_REGS_R11];
-		flags = vcpu->regs[VCPU_REGS_R12];
-
-		HDEBUG("do_exec4 fd(%d) filename(%s)\n",
-			fd, filename->name);
-		BXMAGICBREAK;
-
-		local_irq_enable();
-		compat_do_execveat(fd, filename, argv, envp, flags);
-		local_irq_disable();
-
-		barrier();
-		vmx_get_cpu(vcpu);
-		vmcs_writel(HOST_CR3, __pa((unsigned long)current->mm->pgd));
-		vmcs_writel(GUEST_CR3, __pa((unsigned long)current->mm->pgd));
-		vmx_put_cpu(vcpu);
-		HDEBUG("do_exec4 (%s) done - ret (%d)\n", filename->name, ret);
-#endif
 	} else if (cmd == VMCALL_SCHED){
-		//BUG_ON(schedule_ok == 0);
-		//local_irq_disable();
+
 		cloned_tsk_state = vcpu->cloned_tsk->state;
 		
 		HDEBUG("in VMCALL schedule - current state (%lu) cloned state (%u)\n",
@@ -2439,12 +2271,12 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu, int schedule_ok)
 		HDEBUG("calling schedule_r (pid %d) cpu_cur_tos (%#lx) flgs (%#x) MSR_FS_BASE=%#lx\n",
 			current->pid, (unsigned long)tss->x86_tss.sp0, r_ti->flags, fs);
 		BXMAGICBREAK;
-		local_irq_enable();
+		//local_irq_enable();
 		unset_vmx_r_mode();
 		schedule_r_mode();
 		set_vmx_r_mode();
 		barrier();
-		local_irq_disable();
+		//local_irq_disable();
 #if 1
                 /* Re-sync cloned-thread thread_info */
 		
@@ -2493,6 +2325,7 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu, int schedule_ok)
 
 int vmx_launch(unsigned int flags, struct nr_cloned_state *cloned_thread)
 {
+	/* Do we need to do anything about FPU state? */
 	unsigned long rsp;
 	unsigned long rbp;
 	unsigned long new_rsp;
@@ -2506,7 +2339,6 @@ int vmx_launch(unsigned int flags, struct nr_cloned_state *cloned_thread)
 	unsigned int ret = 0;
 	unsigned long c_rip;	
 	struct vmx_vcpu *vcpu;
-	int schedule_ok = 0;
 	unsigned long saved_irqs_on;
 	int done = 0;
 	union {
@@ -2591,7 +2423,6 @@ int vmx_launch(unsigned int flags, struct nr_cloned_state *cloned_thread)
 	}
 #endif
 
-	schedule_ok = 0;
        
 	saved_irqs_on = (cloned_thread->rflags & RFLAGS_IF_BIT);
 
@@ -2602,14 +2433,11 @@ int vmx_launch(unsigned int flags, struct nr_cloned_state *cloned_thread)
 
 	HDEBUG("current->lockdep_depth (%d)\n", current->lockdep_depth);
 
-	//debug_show_all_locks();
-
 	HDEBUG("About to enter vmx handler while loop...\n");
 
 	while(1){
 		vmx_get_cpu(vcpu);
 		local_irq_disable();
-fast_path:
 
 		/* Fix-up irq on/off debug logging */
 		if(saved_irqs_on){
@@ -2639,36 +2467,11 @@ fast_path:
 			break;
 		}
 
-#if 0
-		saved_irqs_on = (vmcs_readl(GUEST_RFLAGS) & RFLAGS_IF_BIT);
-
-#endif
-		
 		if((ret == EXIT_REASON_EXTERNAL_INTERRUPT)){
+			/* We should be handling interrupts in NR-mode at the moment...*/
 			BUG();
 		}
 
-		
-#if 0
-		HDEBUG("current->lockdep_depth (%d) preemt_count (%d) locks held:\n",
-		       current->lockdep_depth, preempt_count());
-
-#endif
-		
-#if 0
-		// Don't need to enable interrupts
-		if(saved_irqs_on){
-			local_irq_enable();
-			//HDEBUG("allowing interrupts to be processed...\n");
-			/* Any external interrupts should be processed now...*/
-		}
-
-		if((preempt_count() < 2)){
-			schedule_ok = 1;
-		}
-#endif
-
-		
 		if (ret == EXIT_REASON_VMCALL || ret == EXIT_REASON_CPUID) {
 			vmx_step_instruction();
 		}
@@ -2676,7 +2479,7 @@ fast_path:
 		vmx_put_cpu(vcpu);
 
 		if (ret == EXIT_REASON_VMCALL){
-			vmx_handle_vmcall(vcpu, 0);
+			vmx_handle_vmcall(vcpu);
 		}
 		else if (ret == EXIT_REASON_CPUID)
 			vmx_handle_cpuid(vcpu);
@@ -2739,7 +2542,6 @@ fast_path:
 					do_page_fault_r(&regs, err, cr2);
 					HDEBUG("returned from do_page_fault_r.\n");
 					//BXMAGICBREAK;
-					schedule_ok = 1;
 					continue;
 				} else if(vii.s.vector == EXCEPTION_GP){
 					err = (u64)vmcs_readl(VMCS_VMEXIT_INTR_ERRCODE);

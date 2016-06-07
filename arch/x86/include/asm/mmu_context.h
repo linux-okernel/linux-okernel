@@ -96,17 +96,9 @@ static inline void enter_lazy_tlb(struct mm_struct *mm, struct task_struct *tsk)
 static inline void switch_mm(struct mm_struct *prev, struct mm_struct *next,
 			     struct task_struct *tsk)
 {
-	int ret;
 	unsigned cpu = smp_processor_id();
 
 
-#if 0
-	if(is_in_vmx_nr_mode()){
-		ret = vmcall2(VMCALL_DO_EXEC_FIXUP_HOST, (unsigned long)next->pgd);
-	}
-#endif		
-
-	
 	if (likely(prev != next)) {
 #ifdef CONFIG_SMP
 		this_cpu_write(cpu_tlbstate.state, TLBSTATE_OK);
