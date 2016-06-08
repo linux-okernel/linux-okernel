@@ -39,7 +39,7 @@
 # define trace_softirqs_off(ip)		do { } while (0)
 #ifdef CONFIG_OKERNEL
 # define trace_hardirqs_nr_on()		do { } while (0)
-# define trace_hardirqs_nr_off()		do { } while (0)
+# define trace_hardirqs_nr_off()        do { } while (0)
 #endif
 # define trace_hardirq_context(p)	0
 # define trace_softirq_context(p)	0

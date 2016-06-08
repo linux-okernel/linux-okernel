@@ -418,9 +418,6 @@ long ok_device_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 		HDEBUG("cmd is OKERNEL_ON_CMD with arg (%lu) for pid (%d)\n",
 			val, current->pid);
 
-		HDEBUG("resetting lock dependency tracking.\n");
-		
-		lockdep_reset();
 		
 		if(val != 1){
 			HDEBUG("OKERNEL_ON_CMD arg not 1.\n");
@@ -454,8 +451,7 @@ long ok_device_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 				in_atomic(), irqs_disabled(), current->pid, current->comm);
 			HDEBUG("preempt_count (%#x) rcu_preempt_depth (%#x)\n",
 				preempt_count(), rcu_preempt_depth());
-			HDEBUG("ti->saved_preempt_count (%#x) current->lockdep_depth (%d)\n",
-				ti->saved_preempt_count, current->lockdep_depth);
+			HDEBUG("ti->saved_preempt_count (%#x)\n", ti->saved_preempt_count);
 
 			HDEBUG("------------------------------------------------------------------\n");
 			HDEBUG("set state for return through kernel to upace from okernel_enter:\n");
@@ -465,8 +461,7 @@ long ok_device_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 				in_atomic(), irqs_disabled(), current->pid, current->comm);
 			HDEBUG("preempt_count (%#x) rcu_preempt_depth (%#x) saved preempt (%#x)\n",
 				preempt_count(), rcu_preempt_depth(), ti->saved_preempt_count);
-			HDEBUG("ti->saved_preempt_count (%#x) current->lockdep_depth (%d)\n",
-				ti->saved_preempt_count, current->lockdep_depth);
+			HDEBUG("ti->saved_preempt_count (%#x)\n", ti->saved_preempt_count);
 			HDEBUG("starting back towards user space (IOCTL_LAUNCH)...\n");
 			goto nr_exit;
 		}

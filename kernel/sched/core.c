@@ -3200,8 +3200,7 @@ asmlinkage __visible void __sched schedule(void)
 			 preempt_count(), rcu_preempt_depth(), ti->saved_preempt_count);
 		HDEBUG("current->h_irqs_en (%d)\n",
 			current->hardirqs_enabled);
-		HDEBUG("current->lockdep_depth (%d)\n", current->lockdep_depth);
-		
+				
 		sched_submit_work(tsk);
 		
 		(void)vmcall(VMCALL_SCHED);
@@ -3231,7 +3230,6 @@ asmlinkage __visible void __sched schedule(void)
 			in_atomic(), irqs_disabled(), current->pid, current->comm);
 		HDEBUG("return preempt_count (%#x) rcu_preempt_depth (%#x) saved preempt (%#x)\n",
 			preempt_count(), rcu_preempt_depth(), ti->saved_preempt_count);
-		HDEBUG("current->lockdep_depth (%d)\n", current->lockdep_depth);
 		HDEBUG("return current->h_irqs_en (%d)\n", current->hardirqs_enabled);
 		BXMAGICBREAK;
 	}

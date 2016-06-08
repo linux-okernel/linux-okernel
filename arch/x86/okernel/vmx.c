@@ -2138,7 +2138,6 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu)
 		 in_atomic(), irqs_disabled(), current->pid, current->comm);
 	HDEBUG2("preempt_count (%d) rcu_preempt_depth (%d)\n",
 		preempt_count(), rcu_preempt_depth());
-	HDEBUG2("current->lockdep_depth (%d)\n", current->lockdep_depth);
 
 	asm volatile ("mov %%rbp,%0" : "=rm" (rbp));
 	HDEBUG("rbp currently  (%#lx)\n", rbp);
@@ -2220,11 +2219,12 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu)
 			HDEBUG("current (OTHER STATE)\n");
 		}
 
+#ifdef CONFIG_DEBUG_ATOMIC_SLEEP
 		HDEBUG("state=%lx set at [<%p>] %pS\n",
 			current->state,
 			(void *)current->task_state_change,
 			(void *)current->task_state_change);
-
+#endif
                 /* Re-sync cloned-thread thread_info */
 #if 1
 		HDEBUG("syncing cloned thread_info state (NR->R) (original r_ti->flags=%#x)\n",
@@ -2265,7 +2265,6 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu)
 		       in_atomic(), irqs_disabled(), current->pid, current->comm);
 		HDEBUG("ret from preempt_count (%d) rcu_preempt_depth (%d)\n",
 		       preempt_count(), rcu_preempt_depth());
-		HDEBUG("current->lockdep_depth (%d)\n", current->lockdep_depth);
 		BXMAGICBREAK;
 	} else if(cmd == VMCALL_DOEXIT){
 		code = (long)vcpu->regs[VCPU_REGS_RBX];
@@ -2304,7 +2303,9 @@ int vmx_launch(unsigned int flags, struct nr_cloned_state *cloned_thread)
 	unsigned int ret = 0;
 	unsigned long c_rip;	
 	struct vmx_vcpu *vcpu;
+#if defined(CONFIG_TRACE_IRQFLAGS) && defined(CONFIG_PROVE_LOCKING)
 	unsigned long saved_irqs_on;
+#endif
 	int done = 0;
 	union {
 		struct intr_info s;
@@ -2382,45 +2383,47 @@ int vmx_launch(unsigned int flags, struct nr_cloned_state *cloned_thread)
 	vcpu->cloned_tsk = current;
 
 	local_irq_disable();
-	saved_irqs_on = (cloned_thread->rflags & RFLAGS_IF_BIT);
-
-
 
 	HDEBUG("Before vmexit handling loop: in_atomic(): %d, irqs_disabled(): %d, pid: %d, name: %s\n",
 		in_atomic(), irqs_disabled(), current->pid, current->comm);
-	HDEBUG("preempt_count (%d) rcu_preempt_depth (%d) cloned rflags (%lu) saved_irqs_on (%#lx)\n",
-	       preempt_count(), rcu_preempt_depth(), cloned_thread->rflags, saved_irqs_on);
+	HDEBUG("preempt_count (%d) rcu_preempt_depth (%d) cloned rflags (%lu)\n",
+	       preempt_count(), rcu_preempt_depth(), cloned_thread->rflags);
 
-	HDEBUG("current->lockdep_depth (%d)\n", current->lockdep_depth);
-
+#if defined(CONFIG_TRACE_IRQFLAGS) && defined(CONFIG_PROVE_LOCKING)
+	saved_irqs_on = (cloned_thread->rflags & RFLAGS_IF_BIT);
+	HDEBUG("saved_irqs_on (%#lx)\n", saved_irqs_on);
+#endif
+	
 	HDEBUG("About to enter vmx handler while loop...\n");
 	
 	while(1){
 		vmx_get_cpu(vcpu);
 
-		/* If the NR-mode code will start/re-launch with interrupts on, adjust the accounting
-		   since at this point in R-mode current->hardirqs_enabled should be 0 
+#if defined(CONFIG_TRACE_IRQFLAGS) && defined(CONFIG_PROVE_LOCKING)
+		/* If the NR-mode code will start/re-launch with interrupts on, adjust the 
+		   accounting since at this point in R-mode current->hardirqs_enabled
+		   should be 0. 
 		*/
 		if(saved_irqs_on){
 			trace_hardirqs_nr_on();
 		}
-
+#endif
+		
 		/**************************** GO FOR IT ***************************/
 		ret = vmx_run_vcpu(vcpu);
 		/*************************** GONE FOR IT! *************************/
 
-
 		BUG_ON(!irqs_disabled());
 
-
+#if defined(CONFIG_TRACE_IRQFLAGS) && defined(CONFIG_PROVE_LOCKING)
 		/* Record the current NR-mode interrupt state as this will be restored via
-		   above trace_hardirqs_nr_on() call above to fix-up the accounting - should 
-		   make this check onditional on irq tracing being configured in the kernel.
+		   above trace_hardirqs_nr_on() call above to fix-up the accounting.
 		*/
 		if((saved_irqs_on = vmcs_readl(GUEST_RFLAGS) & RFLAGS_IF_BIT)){
 			trace_hardirqs_nr_off();
 		}
-
+#endif
+		
 		if(ret==VMX_EXIT_REASONS_FAILED_VMENTRY){
 			/* Need to try tidy up here... */
 			local_irq_enable();
