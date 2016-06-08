@@ -613,42 +613,6 @@ int clone_kstack2(struct vmx_vcpu *vcpu)
 }
 
 
-int clone_tsk(struct vmx_vcpu *vcpu)
-{	
-	struct task_struct *orig_tsk = current;
-	u64 paddr;
-	void *vaddr;
-	int size, n_pages;
-	int i;
-	
-
-	/* Assumes tsk struct sits across contiguous physical pages */
-	HDEBUG("cloning task struct (vaddr: %#lx)\n", (unsigned long)current);
-
-	size = sizeof(struct task_struct);
-
-	n_pages = size / PAGESIZE +1;
-
-	HDEBUG("Need to clone tsk_size (%d) n_pages (%d)\n", size, n_pages);
-
-	for(i = 0; i < n_pages; i++){
-		paddr = __pa((unsigned long)orig_tsk + i*PAGESIZE);
-		HDEBUG("ept page clone on (%#lx)\n", (unsigned long)paddr);
-		/* also need replace_ept_contiguous_region */
-		if(!(vaddr = replace_ept_page(vcpu, paddr))){
-			printk(KERN_ERR "failed to clone page at (%#lx)\n",
-			       (unsigned long)paddr);
-			return 0;
-		}
-                /* FIX: we assume for now that the thread_info
-		 * structure is at the bottom of the first page */
-		if(i == 0){
-			vcpu->cloned_tsk = (struct task_struct*)vaddr;
-		}
-	}
-	return 1;
-}
-
 u64 vt_ept_2M_init(void)
 {
 	/*
@@ -2415,14 +2379,7 @@ int vmx_launch(unsigned int flags, struct nr_cloned_state *cloned_thread)
 	HDEBUG("fred (%lu) address of fred (%#lx)\n", fred, (unsigned long)&fred);
 	BXMAGICBREAK;
 	
-#if 1
 	vcpu->cloned_tsk = current;
-#else
-	if(!(clone_tsk(vcpu))){
-		printk(KERN_ERR "okernel: clone tsk failed.\n");
-		return 0;
-	}
-#endif
 
 	local_irq_disable();
 	saved_irqs_on = (cloned_thread->rflags & RFLAGS_IF_BIT);
