@@ -36,7 +36,7 @@
 #include <asm/context_tracking.h>
 #include <asm/smap.h>
 #include <asm/pgtable_types.h>
-#include <linux/err.h>	
+#include <linux/err.h>
 
 /* Avoid __ASSEMBLER__'ifying <linux/audit.h> just for this.  */
 #include <linux/elf-em.h>
@@ -44,7 +44,6 @@
 #define __AUDIT_ARCH_64BIT			0x80000000
 #define __AUDIT_ARCH_LE				0x40000000
 
-	
 .code64
 .section .entry.text, "ax"
 

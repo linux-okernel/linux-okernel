@@ -42,9 +42,7 @@
 #include <linux/bitops.h>
 #include <linux/mpage.h>
 #include <linux/bit_spinlock.h>
-#include <linux/okernel.h>
 #include <trace/events/block.h>
-
 
 static int fsync_buffers_list(spinlock_t *lock, struct list_head *list);
 static int submit_bh_wbc(int rw, struct buffer_head *bh,
@@ -3429,7 +3427,6 @@ int bh_submit_read(struct buffer_head *bh)
 	bh->b_end_io = end_buffer_read_sync;
 	submit_bh(READ, bh);
 	wait_on_buffer(bh);
-	
 	if (buffer_uptodate(bh))
 		return 0;
 	return -EIO;

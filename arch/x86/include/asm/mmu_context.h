@@ -4,7 +4,6 @@
 #include <asm/desc.h>
 #include <linux/atomic.h>
 #include <linux/mm_types.h>
-#include <linux/okernel.h>
 
 #include <trace/events/tlb.h>
 
@@ -97,7 +96,6 @@ static inline void switch_mm(struct mm_struct *prev, struct mm_struct *next,
 			     struct task_struct *tsk)
 {
 	unsigned cpu = smp_processor_id();
-
 
 	if (likely(prev != next)) {
 #ifdef CONFIG_SMP

@@ -15,6 +15,7 @@
 #include <linux/context_tracking.h>	/* exception_enter(), ...	*/
 #include <linux/uaccess.h>		/* faulthandler_disabled()	*/
 #include <linux/okernel.h>
+
 #include <asm/traps.h>			/* dotraplinkage, ...		*/
 #include <asm/pgalloc.h>		/* pgd_*(), ...			*/
 #include <asm/kmemcheck.h>		/* kmemcheck_*(), ...		*/
@@ -749,7 +750,7 @@ show_signal_msg(struct pt_regs *regs, unsigned long error_code,
 
 	if (!printk_ratelimit())
 		return;
-	dump_stack();
+
 	printk("%s%s[%d]: segfault at %lx ip %p sp %p error %lx",
 		task_pid_nr(tsk) > 1 ? KERN_INFO : KERN_EMERG,
 		tsk->comm, task_pid_nr(tsk), address,
@@ -1084,7 +1085,6 @@ __do_page_fault(struct pt_regs *regs, unsigned long error_code,
 	unsigned int flags = FAULT_FLAG_ALLOW_RETRY | FAULT_FLAG_KILLABLE;
 
 	int count = 0;
-	//struct vm_area_struct *vma;
 
 	tsk = current;
 	mm = tsk->mm;
@@ -1164,27 +1164,11 @@ __do_page_fault(struct pt_regs *regs, unsigned long error_code,
 	 * If we're in an interrupt, have no user context or are running
 	 * in a region with pagefaults disabled then we must not take the fault
 	 */
-#if 0
-	if(is_in_vmx_nr_mode()){
-		if (unlikely(faulthandler_disabled_nr() || !mm)) {
-			bad_area_nosemaphore(regs, error_code, address);
-			return;
-		}
-	} else {
-		if (unlikely(faulthandler_disabled() || !mm)) {
-			
-			bad_area_nosemaphore(regs, error_code, address);
-			return;
-		}
-	}
-#endif
-#if 1
 	if (unlikely(faulthandler_disabled() || !mm)) {
-		
 		bad_area_nosemaphore(regs, error_code, address);
 		return;
 	}
-#endif
+
 	/*
 	 * It's safe to allow irq's after cr2 has been saved and the
 	 * vmalloc fault has been handled.

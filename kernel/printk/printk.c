@@ -1052,18 +1052,6 @@ static size_t print_time(u64 ts, char *buf)
 		       (unsigned long)ts, rem_nsec / 1000);
 }
 
-#ifdef CONFIG_OKERNEL_PRINTK
-static size_t print_vmx_mode(char *buf)
-{
-      	if (!buf)
-		return snprintf(NULL, 0, "[NR: %u] ", (unsigned int)vmx_nr_mode());
-
-	return sprintf(buf, "[NR: %u] ", (unsigned int)vmx_nr_mode());
-	
-}
-#endif
-
-
 static size_t print_prefix(const struct printk_log *msg, bool syslog, char *buf)
 {
 	size_t len = 0;
@@ -1084,9 +1072,6 @@ static size_t print_prefix(const struct printk_log *msg, bool syslog, char *buf)
 	}
 
 	len += print_time(msg->ts_nsec, buf ? buf + len : NULL);
-#ifdef CONFIG_OKERNEL_PRINTK
-	len += print_vmx_mode( buf ? buf + len : NULL);
-#endif
 	return len;
 }
 
@@ -1917,7 +1902,6 @@ asmlinkage __visible int printk(const char *fmt, ...)
 	int r;
 
 
-	//break_in_nr_mode(); //4
 	va_start(args, fmt);
 
 	/*
@@ -1927,9 +1911,7 @@ asmlinkage __visible int printk(const char *fmt, ...)
 	 * disable preemption here.
 	 */
 	vprintk_func = this_cpu_read(printk_func);
-	//break_in_nr_mode(); //5
 	r = vprintk_func(fmt, args);
-	//break_in_nr_mode(); //6
 	va_end(args);
 	return r;
 }
@@ -2168,12 +2150,6 @@ void console_lock(void)
                 //asm volatile("xchg %bx, %bx");
 	}
 #endif
-#if 0
-	if(vmx_r_mode()){
-		return;
-                //asm volatile("xchg %bx, %bx");
-	}
-#endif	
 	might_sleep();
 
 	down_console_sem();
@@ -2196,13 +2172,6 @@ int console_trylock(void)
 {
 #if 0
 	if(is_in_vmx_nr_mode()){
-		return 1;
-		//asm volatile("xchg %bx, %bx");
-	}
-
-#endif
-#if 0
-	if(vmx_r_mode()){
 		return 1;
 		//asm volatile("xchg %bx, %bx");
 	}
@@ -2283,12 +2252,6 @@ void console_unlock(void)
                 //asm volatile("xchg %bx, %bx");
 	}
 #endif
-#if 0
-	if(vmx_r_mode()){
-		return;
-                //asm volatile("xchg %bx, %bx");
-	}
-#endif	
 	if (console_suspended) {
 		up_console_sem();
 		return;
@@ -2388,15 +2351,9 @@ skip:
 
 	if (retry && console_trylock())
 		goto again;
-#if 0
-	if(!is_in_vmx_nr_mode()){
-		if (wake_klogd)
-			wake_up_klogd();
-	}
-#else
+
 	if (wake_klogd)
 		wake_up_klogd();
-#endif
 }
 EXPORT_SYMBOL(console_unlock);
 

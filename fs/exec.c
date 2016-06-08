@@ -1496,7 +1496,6 @@ static int do_execveat_common(int fd, struct filename *filename,
 	struct files_struct *displaced;
 	int retval;
 	
-	
 	if (IS_ERR(filename))
 		return PTR_ERR(filename);
 
@@ -1530,11 +1529,7 @@ static int do_execveat_common(int fd, struct filename *filename,
 		goto out_free;
 
 	check_unsafe_exec(bprm);
-
-	
-	
 	current->in_execve = 1;
-
 	
 	file = do_open_execat(fd, filename, flags);
 	retval = PTR_ERR(file);
@@ -1601,11 +1596,8 @@ static int do_execveat_common(int fd, struct filename *filename,
 		goto out;
 
 	/* execve succeeded */
-
 	current->fs->in_exec = 0;
 	current->in_execve = 0;
-	
-
 	acct_update_integrals(current);
 	task_numa_free(current);
 	free_bprm(bprm);
@@ -1687,7 +1679,6 @@ int compat_do_execve(struct filename *filename,
 		.is_compat = true,
 		.ptr.compat = __envp,
 	};
-
 	return do_execveat_common(AT_FDCWD, filename, argv, envp, 0);
 }
 
@@ -1704,7 +1695,6 @@ int compat_do_execveat(int fd, struct filename *filename,
 		.is_compat = true,
 		.ptr.compat = __envp,
 	};
-
 	return do_execveat_common(fd, filename, argv, envp, flags);
 }
 #endif
