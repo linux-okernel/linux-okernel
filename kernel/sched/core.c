@@ -3141,8 +3141,10 @@ asmlinkage __visible void __sched schedule(void)
 			in_atomic(), irqs_disabled(), current->pid, current->comm);
 		HDEBUG("preempt_count (%#x) rcu_preempt_depth (%#x) saved preempt (%#x)\n",
 			 preempt_count(), rcu_preempt_depth(), ti->saved_preempt_count);
+#if defined(CONFIG_TRACE_IRQFLAGS) && defined(CONFIG_PROVE_LOCKING)
 		HDEBUG("current->h_irqs_en (%d)\n",
 			current->hardirqs_enabled);
+#endif
 				
 		sched_submit_work(tsk);
 		
@@ -3173,7 +3175,9 @@ asmlinkage __visible void __sched schedule(void)
 			in_atomic(), irqs_disabled(), current->pid, current->comm);
 		HDEBUG("return preempt_count (%#x) rcu_preempt_depth (%#x) saved preempt (%#x)\n",
 			preempt_count(), rcu_preempt_depth(), ti->saved_preempt_count);
+#if defined(CONFIG_TRACE_IRQFLAGS) && defined(CONFIG_PROVE_LOCKING)
 		HDEBUG("return current->h_irqs_en (%d)\n", current->hardirqs_enabled);
+#endif
 		BXMAGICBREAK;
 	}
 #endif

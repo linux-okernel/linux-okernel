@@ -109,8 +109,10 @@ asmlinkage void __noclone okernel_enter_fork_debug(void)
 	BXMAGICBREAK;
 		
 	HDEBUG("initial state in return from okernel_enter_fork :\n");
+#if defined(CONFIG_TRACE_IRQFLAGS) && defined(CONFIG_PROVE_LOCKING)
 	HDEBUG("current->h_irqs_en (%d)\n",
 		current->hardirqs_enabled);
+#endif
 	HDEBUG("in_atomic(): %d, irqs_disabled(): %d, pid: %d, name: %s\n",
 		in_atomic(), irqs_disabled(), current->pid, current->comm);
 	HDEBUG("preempt_count (%#x) rcu_preempt_depth (%#x)\n",
@@ -421,8 +423,10 @@ long ok_device_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 			ti = current_thread_info();
 			
 			HDEBUG("initial state in return from okernel_enter (IOCTL_LAUNCH):\n");
+#if defined(CONFIG_TRACE_IRQFLAGS) && defined(CONFIG_PROVE_LOCKING)
 			HDEBUG("current->h_irqs_en (%d)\n",
 				current->hardirqs_enabled);
+#endif
 			HDEBUG("in_atomic(): %d, irqs_disabled(): %d, pid: %d, name: %s\n",
 				in_atomic(), irqs_disabled(), current->pid, current->comm);
 			HDEBUG("preempt_count (%#x) rcu_preempt_depth (%#x)\n",
@@ -431,8 +435,10 @@ long ok_device_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 
 			HDEBUG("------------------------------------------------------------------\n");
 			HDEBUG("set state for return through kernel to upace from okernel_enter:\n");
+#if defined(CONFIG_TRACE_IRQFLAGS) && defined(CONFIG_PROVE_LOCKING)
 			HDEBUG("current->h_irqs_en (%d)\n",
 				current->hardirqs_enabled);
+#endif
 			HDEBUG("in_atomic(): %d, irqs_disabled(): %d, pid: %d, name: %s\n",
 				in_atomic(), irqs_disabled(), current->pid, current->comm);
 			HDEBUG("preempt_count (%#x) rcu_preempt_depth (%#x) saved preempt (%#x)\n",
