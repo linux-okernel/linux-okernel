@@ -1901,7 +1901,6 @@ asmlinkage __visible int printk(const char *fmt, ...)
 	va_list args;
 	int r;
 
-
 	va_start(args, fmt);
 
 	/*
@@ -1912,7 +1911,9 @@ asmlinkage __visible int printk(const char *fmt, ...)
 	 */
 	vprintk_func = this_cpu_read(printk_func);
 	r = vprintk_func(fmt, args);
+
 	va_end(args);
+
 	return r;
 }
 EXPORT_SYMBOL(printk);

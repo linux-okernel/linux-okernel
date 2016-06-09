@@ -1495,7 +1495,7 @@ static int do_execveat_common(int fd, struct filename *filename,
 	struct file *file;
 	struct files_struct *displaced;
 	int retval;
-	
+
 	if (IS_ERR(filename))
 		return PTR_ERR(filename);
 
@@ -1530,7 +1530,7 @@ static int do_execveat_common(int fd, struct filename *filename,
 
 	check_unsafe_exec(bprm);
 	current->in_execve = 1;
-	
+
 	file = do_open_execat(fd, filename, flags);
 	retval = PTR_ERR(file);
 	if (IS_ERR(file))
@@ -1605,7 +1605,6 @@ static int do_execveat_common(int fd, struct filename *filename,
 	putname(filename);
 	if (displaced)
 		put_files_struct(displaced);
-
 	return retval;
 
 out:
@@ -1636,7 +1635,6 @@ int do_execve(struct filename *filename,
 {
 	struct user_arg_ptr argv = { .ptr.native = __argv };
 	struct user_arg_ptr envp = { .ptr.native = __envp };
-
 	return do_execveat_common(AT_FDCWD, filename, argv, envp, 0);
 }
 
@@ -1652,7 +1650,7 @@ int do_execveat(int fd, struct filename *filename,
 }
 
 #ifdef CONFIG_COMPAT
-int compat_do_execve(struct filename *filename,
+static int compat_do_execve(struct filename *filename,
 	const compat_uptr_t __user *__argv,
 	const compat_uptr_t __user *__envp)
 {
@@ -1667,7 +1665,7 @@ int compat_do_execve(struct filename *filename,
 	return do_execveat_common(AT_FDCWD, filename, argv, envp, 0);
 }
 
-int compat_do_execveat(int fd, struct filename *filename,
+static int compat_do_execveat(int fd, struct filename *filename,
 			      const compat_uptr_t __user *__argv,
 			      const compat_uptr_t __user *__envp,
 			      int flags)
