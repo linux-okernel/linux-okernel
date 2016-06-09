@@ -50,10 +50,6 @@
 MODULE_LICENSE("GPL");
 MODULE_DESCRIPTION("Okernel intra-kernel protection");
 
-#ifdef CONFIG_OKERNEL_SCHED
-extern void __ok_schedule(void);
-#endif
-
 /* For the okernel ioctl device */
 #define DEVICE_NAME "okernel"
 #define DEVICE_PATH "/dev/okernel"
@@ -63,26 +59,6 @@ static struct class *okernel_dev_class;
 static int major_no;
 
 int okernel_enabled;
-
-
-
-#ifdef CONFIG_OKERNEL_SCHED
-void okernel_schedule_helper(void)
-{
-	int a = 0;
-	
-	a++;
-	HDEBUG("called a: (%d)\n", a);
-	__ok_schedule();
-}
-
-int okernel_setup(int *vcpu)
-{
-	*vcpu = 3;
-	HDEBUG("called.\n");
-	return 1;
-}
-#endif
 
 
 
@@ -536,10 +512,6 @@ static void  __exit okernel_exit(void)
 	return;
 }
 
-#ifdef CONFIG_OKERNEL_SCHED
-EXPORT_SYMBOL(okernel_setup);
-EXPORT_SYMBOL(okernel_schedule_helper);
-#endif
 EXPORT_SYMBOL(okernel_enabled);
 EXPORT_SYMBOL(okernel_enter);
 module_init(okernel_init)

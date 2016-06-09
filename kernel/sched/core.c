@@ -2996,23 +2996,13 @@ again:
  *
  * WARNING: must be called with preemption disabled!
  */
-#ifdef CONFIG_OKERNEL_SCHED
-static void __sched __schedule(void)
-#else
+
 void __sched __schedule(void)
-#endif
 {
 	struct task_struct *prev, *next;
 	unsigned long *switch_count;
 	struct rq *rq;
 	int cpu;
-#ifdef CONFIG_OKERNEL_SCHED
-	unsigned long *prev_okernel_state;
-	unsigned long *next_okernel_state;
-	int *next_okernel_vcpu;
-	int *prev_okernel_vcpu;
-	int64_t ret;
-#endif
 
 	cpu = smp_processor_id();
 	rq = cpu_rq(cpu);
@@ -3072,26 +3062,6 @@ void __sched __schedule(void)
 		rq->curr = next;
 		++*switch_count;
 
-#ifdef CONFIG_OKERNEL_SCHED
-		prev_okernel_state = &prev->okernel_status;
-		next_okernel_state = &next->okernel_status;
-		next_okernel_vcpu = &next->okernel_vcpu;
-		prev_okernel_vcpu = &prev->okernel_vcpu;
-			
-		if(*prev_okernel_state == OKERNEL_ON){
-			printk(KERN_ERR "ok sched cs: prev process OKERNEL_ON: next (%#lx) prev (%#lx)\n",
-			       (unsigned long)next, (unsigned long)prev);
-		}
-		if(*prev_okernel_state == OKERNEL_ON_EXEC){
-			printk(KERN_ERR "ok sched cs: prev proc OKERNEL_ON_EXEC vcpu(%d) next (%#lx) prev (%#lx)\n",
-			       *prev_okernel_vcpu, (unsigned long)next, (unsigned long)prev);
-		}
-#endif
-		
-#if 0
-		printk(KERN_ERR "ok sched 1: next (%#lx) prev (%#lx)\n",
-		       (unsigned long)next, (unsigned long)prev);
-#endif
 		/* Context of kernel thread A */		       
 		rq = context_switch(rq, prev, next); /* unlocks the rq */
 		/* Context of kernel thread B */
@@ -3101,29 +3071,8 @@ void __sched __schedule(void)
 		   If okernel_state == OKERNEL_ON or OKERNEL_ON_EXEC for the new task, then 
 		   call okernel_activate(). 
 		*/
-#if 0
-		printk(KERN_ERR "ok sched 2: next (%#lx) prev (%#lx)\n",
-		       (unsigned long)next, (unsigned long)prev);
-#endif
+
 		cpu = cpu_of(rq);
-
-#ifdef CONFIG_OKERNEL_SCHED
-		/* Lift (a clone of this) process onto a vcpu.  This original process remains
-		   here in the okernel_enter() loop, whilst the cloned process continues execution
-		   in VMX non-root mode. In
-		*/
-
-		if(*next_okernel_state == OKERNEL_ON_EXEC){
-			printk(KERN_ERR "ok sched: vcpu == (%d)  next (%#lx) prev (%#lx)\n",
-			       *next_okernel_vcpu, (unsigned long)next, (unsigned long)prev);
-			if(*next_okernel_vcpu == 3){
-				okernel_dump_stack_info();
-				/* Wait till exec fully set up - may need to lock. */
-				*next_okernel_state = OKERNEL_ON;
-				(void)okernel_enter(&ret);
-			} 
-		}
-#endif
 	} else {
 		lockdep_unpin_lock(&rq->lock);
 		raw_spin_unlock_irq(&rq->lock);
@@ -3132,12 +3081,6 @@ void __sched __schedule(void)
 	balance_callback(rq);
 }
 
-#ifdef CONFIG_OKERNEL_SCHED
-void __sched __ok_schedule(void)
-{
-	__schedule();
-}
-#endif
 
 #ifdef CONFIG_OKERNEL
 static void  __sched okernel_schedule(void)
@@ -8684,7 +8627,3 @@ void dump_cpu_task(int cpu)
 	pr_info("Task dump for CPU %d:\n", cpu);
 	sched_show_task(cpu_curr(cpu));
 }
-
-#ifdef CONFIG_OKERNEL_SCHED
-EXPORT_SYMBOL(__ok_schedule);
-#endif
