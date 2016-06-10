@@ -61,8 +61,7 @@ int vmcall6(unsigned int cmd, unsigned long arg1, unsigned long arg2, unsigned l
 void do_page_fault_r(struct pt_regs *regs, unsigned long error_code, unsigned long address);
 
 
-
-
+/* Use trace_printk instead of printk */
 #define HPE_DEBUG
 #ifdef HPE_DEBUG
 #define HDEBUG(fmt, args...)  trace_printk( KERN_ERR "%s: cpu(%d) pid(%d) %s: " fmt , vmx_nr_mode()?"NR":"R ", raw_smp_processor_id(), current->pid,__func__, ## args)
@@ -77,7 +76,8 @@ void do_page_fault_r(struct pt_regs *regs, unsigned long error_code, unsigned lo
 #endif
 
 
-#define HPE_BREAKPOINTS_ENABLED
+
+//#define HPE_BREAKPOINTS_ENABLED
 #ifdef HPE_BREAKPOINTS_ENABLED
 #define BXMAGICBREAK asm volatile("xchg %bx,%bx")
 #define BXMAGICBREAK_ASM xchg %bx,%bx

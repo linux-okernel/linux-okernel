@@ -2114,9 +2114,9 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu, int nr_irqs_enabled)
 	unsigned long rsp;
 	int cpu = smp_processor_id();
 	struct tss_struct *tss = &per_cpu(cpu_tss, cpu);
-	unsigned long fs;
+	volatile unsigned long fs;
 	unsigned long gs;
-
+	volatile unsigned long nr_fs;
 	unsigned long h_cr3 = 0;
 	
 	long code;
@@ -2160,6 +2160,7 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu, int nr_irqs_enabled)
 		fs = vmcs_readl(GUEST_FS_BASE);
 		gs = vmcs_readl(GUEST_GS_BASE);
 #endif
+#if 1
 		if(tls){
 			HDEBUG("setting new process FS based on TLS=%#lx\n", tls);
 			p->okernel_fork_fs_base = tls;
@@ -2167,6 +2168,10 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu, int nr_irqs_enabled)
 			p->okernel_fork_fs_base = fs;
 	
 		}
+#else
+		p->okernel_fork_fs_base = fs;
+#endif
+		
 		p->okernel_fork_gs_base = gs;
 		HDEBUG("VMCALL_DO_FORK_FIXUP setting fs to (%#lx) for p (%#lx)\n",
 			p->okernel_fork_fs_base, (unsigned long)p);
@@ -2177,7 +2182,7 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu, int nr_irqs_enabled)
 	} else if(cmd == VMCALL_DO_EXEC_FIXUP_HOST){
 		/* Next time we take a vmexit we will return using these page tables - should validate the address */
 		h_cr3 = vcpu->regs[VCPU_REGS_RBX];
-		HDEBUG("Setting saved HOST CR3 to (%#lx) __pa (%#lx)\n",
+		HDEBUG("excec_fixup: Setting saved HOST CR3 to (%#lx) __pa (%#lx)\n",
 		       (unsigned long)h_cr3, __pa(h_cr3));
 		vmx_get_cpu(vcpu);
 		vmcs_writel(HOST_CR3, __pa(h_cr3));
@@ -2233,10 +2238,14 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu, int nr_irqs_enabled)
 		memcpy(r_ti, nr_ti, sizeof(struct thread_info));
 #endif
 		rdmsrl(MSR_FS_BASE, fs);
-		HDEBUG("calling schedule_r (pid %d) cpu_cur_tos (%#lx) flgs (%#x) MSR_FS_BASE=%#lx\n",
-			current->pid, (unsigned long)tss->x86_tss.sp0, r_ti->flags, fs);
+		nr_fs = vmcs_readl(GUEST_FS_BASE);
+		vmcs_writel(HOST_FS_BASE, nr_fs); 
+
+		HDEBUG("calling schedule_r (pid %d) cpu_cur_tos (%#lx) flgs (%#x) MSR_FS_BASE=%#lx nr_fs=%#lx\n",
+		       current->pid, (unsigned long)tss->x86_tss.sp0, r_ti->flags, fs, nr_fs);
 		BXMAGICBREAK;
 
+		wrmsrl(MSR_FS_BASE, nr_fs);
 		unset_vmx_r_mode();
 		if(nr_irqs_enabled){
 			local_irq_enable();
@@ -2251,9 +2260,17 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu, int nr_irqs_enabled)
                 /* Re-sync cloned-thread thread_info */
 		
 		tss = &per_cpu(cpu_tss, cpu);
-		rdmsrl(MSR_FS_BASE, fs);
-		HDEBUG("returned schedule_r (pid %d) cpu_cur_tos (%#lx) flgs (%#x) MSR_FS_BASE=%#lx\n",
-			current->pid, (unsigned long)tss->x86_tss.sp0, r_ti->flags, fs);
+		//vmx_get_cpu(vcpu);
+		//vmcs_writel(GUEST_FS_BASE, nr_fs);
+		//vmx_put_cpu(vcpu);
+		
+		nr_fs = vmcs_readl(GUEST_FS_BASE);
+		//vmx_get_cpu(vcpu);
+		//vmcs_writel(GUEST_FS_BASE, nr_fs);
+		//vmx_put_cpu(vcpu);
+		wrmsrl(MSR_FS_BASE, nr_fs);
+		HDEBUG("ret schedule_r (pid %d) cpu_cur_tos (%#lx) flgs (%#x) MSR_FS_BASE=%#lx NR_FS=%#lx\n",
+		       current->pid, (unsigned long)tss->x86_tss.sp0, r_ti->flags, fs, nr_fs);
 		HDEBUG("syncing cloned thread_info state (R->NR)...\n");
 		BXMAGICBREAK;
 		memcpy(nr_ti, r_ti, sizeof(struct thread_info));
