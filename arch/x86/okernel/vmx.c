@@ -2309,9 +2309,8 @@ int vmx_launch(unsigned int flags, struct nr_cloned_state *cloned_thread)
 	unsigned int ret = 0;
 	unsigned long c_rip;	
 	struct vmx_vcpu *vcpu;
-#if defined(CONFIG_TRACE_IRQFLAGS) && defined(CONFIG_PROVE_LOCKING)
 	unsigned long saved_irqs_on;
-#endif
+
 	int done = 0;
 	union {
 		struct intr_info s;
@@ -2422,14 +2421,17 @@ int vmx_launch(unsigned int flags, struct nr_cloned_state *cloned_thread)
 
 		BUG_ON(!irqs_disabled());
 
-#if defined(CONFIG_TRACE_IRQFLAGS) && defined(CONFIG_PROVE_LOCKING)
+
 		/* Record the current NR-mode interrupt state as this will be restored via
-		   above trace_hardirqs_nr_on() call above to fix-up the accounting.
+		   above trace_hardirqs_nr_on() call above to fix-up the accounting. More 
+		   importantly we use it as a flag tp vmx_handle_vmcall to determine 
+		   current nr interrupt state.
 		*/
 		if((saved_irqs_on = vmcs_readl(GUEST_RFLAGS) & RFLAGS_IF_BIT)){
+#if defined(CONFIG_TRACE_IRQFLAGS) && defined(CONFIG_PROVE_LOCKING)
 			trace_hardirqs_nr_off();
-		}
 #endif
+		}
 		
 		if(ret==VMX_EXIT_REASONS_FAILED_VMENTRY){
 			/* Need to try tidy up here... */
