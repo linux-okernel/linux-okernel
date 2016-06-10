@@ -3187,13 +3187,14 @@ asmlinkage __visible void __sched schedule(void)
 			current->pid, (unsigned long)tss->x86_tss.sp0, ti->flags, fs);
 		BXMAGICBREAK;
 #endif
-
+		
+#if 0
 		if(irqs_disabled()){
 			printk("NR: BUG schedule called with irqs_disabled (%d)\n",
 			       irqs_disabled());
 			BUG();
 		}
-		
+#endif		
 		HDEBUG("in_atomic(): %d, irqs_disabled(): %d, pid: %d, name: %s\n",
 			in_atomic(), irqs_disabled(), current->pid, current->comm);
 		HDEBUG("preempt_count (%#x) rcu_preempt_depth (%#x) saved preempt (%#x)\n",

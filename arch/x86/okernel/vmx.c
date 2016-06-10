@@ -2139,7 +2139,7 @@ static void vmx_handle_cpuid(struct vmx_vcpu *vcpu)
 }
 
 
-void vmx_handle_vmcall(struct vmx_vcpu *vcpu)
+void vmx_handle_vmcall(struct vmx_vcpu *vcpu, int nr_irqs_enabled)
 {
 	int ret = 0;
 	unsigned long cmd;
@@ -2274,9 +2274,13 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu)
 		BXMAGICBREAK;
 
 		unset_vmx_r_mode();
-		local_irq_enable();
+		if(nr_irqs_enabled){
+			local_irq_enable();
+		}
 		schedule_r_mode();
-		local_irq_disable();
+		if(nr_irqs_enabled){
+			local_irq_disable();
+		}
 		set_vmx_r_mode();
 		barrier();
 #if 1
@@ -2306,7 +2310,9 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu)
 	} else if(cmd == VMCALL_DOEXIT){
 		code = (long)vcpu->regs[VCPU_REGS_RBX];
 		HDEBUG("calling do_exit(%ld)...\n", code);
-		local_irq_enable();
+		if(nr_irqs_enabled){
+			local_irq_enable();
+		}
 		do_exit(code);
 	} else {
 		HDEBUG("unexpected VMCALL argument.\n");
@@ -2355,6 +2361,7 @@ int vmx_launch(unsigned int flags, struct nr_cloned_state *cloned_thread)
 	unsigned long qual;
 	unsigned long *pml2_e;
 
+	
 	if(!cloned_thread)
 		return -EINVAL;
 	
@@ -2484,7 +2491,7 @@ int vmx_launch(unsigned int flags, struct nr_cloned_state *cloned_thread)
 		vmx_put_cpu(vcpu);
 
 		if (ret == EXIT_REASON_VMCALL){
-			vmx_handle_vmcall(vcpu);
+			vmx_handle_vmcall(vcpu, saved_irqs_on);
 		}
 		else if (ret == EXIT_REASON_CPUID)
 			vmx_handle_cpuid(vcpu);
