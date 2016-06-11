@@ -2231,55 +2231,56 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu, int nr_irqs_enabled)
 			(void *)current->task_state_change);
 #endif
                 /* Re-sync cloned-thread thread_info */
-#if 1
 		HDEBUG("syncing cloned thread_info state (NR->R) (original r_ti->flags=%#x)\n",
 			r_ti->flags);
 		BXMAGICBREAK;
 		memcpy(r_ti, nr_ti, sizeof(struct thread_info));
-#endif
+
+#if 1
 		rdmsrl(MSR_FS_BASE, fs);
+		vmx_get_cpu(vcpu);
 		nr_fs = vmcs_readl(GUEST_FS_BASE);
 		vmcs_writel(HOST_FS_BASE, nr_fs); 
-
+		vmx_put_cpu(vcpu);
+		wrmsrl(MSR_FS_BASE, nr_fs);
+#endif
+		
 		HDEBUG("calling schedule_r (pid %d) cpu_cur_tos (%#lx) flgs (%#x) MSR_FS_BASE=%#lx nr_fs=%#lx\n",
 		       current->pid, (unsigned long)tss->x86_tss.sp0, r_ti->flags, fs, nr_fs);
 		BXMAGICBREAK;
 
-		wrmsrl(MSR_FS_BASE, nr_fs);
 		unset_vmx_r_mode();
 		if(nr_irqs_enabled){
 			local_irq_enable();
 		}
+
 		schedule_r_mode();
+
 		if(nr_irqs_enabled){
 			local_irq_disable();
 		}
+
 		set_vmx_r_mode();
 		barrier();
-#if 1
+		
                 /* Re-sync cloned-thread thread_info */
-		
 		tss = &per_cpu(cpu_tss, cpu);
-		//vmx_get_cpu(vcpu);
-		//vmcs_writel(GUEST_FS_BASE, nr_fs);
-		//vmx_put_cpu(vcpu);
-		
+
+#if 1
+		rdmsrl(MSR_FS_BASE, fs);
 		nr_fs = vmcs_readl(GUEST_FS_BASE);
-		//vmx_get_cpu(vcpu);
-		//vmcs_writel(GUEST_FS_BASE, nr_fs);
-		//vmx_put_cpu(vcpu);
-		wrmsrl(MSR_FS_BASE, nr_fs);
+#endif
 		HDEBUG("ret schedule_r (pid %d) cpu_cur_tos (%#lx) flgs (%#x) MSR_FS_BASE=%#lx NR_FS=%#lx\n",
 		       current->pid, (unsigned long)tss->x86_tss.sp0, r_ti->flags, fs, nr_fs);
 		HDEBUG("syncing cloned thread_info state (R->NR)...\n");
 		BXMAGICBREAK;
+
 		memcpy(nr_ti, r_ti, sizeof(struct thread_info));
-		//nr_ti->flags = 0;
 		barrier();
+
 		HDEBUG("synced cloned thread_info state (R->NR) (nr_ti->flags=%#x)\n",
 			nr_ti->flags);
-		//clear_tsk_need_resched(current);
-#endif
+
 		HDEBUG("returning from schedule Rsaved prempt_c (%#x) NR saved (%#x)\n",
 			r_ti->saved_preempt_count, nr_ti->saved_preempt_count);
 		HDEBUG("ret from sched in_atomic(): %d, irqs_disabled(): %d, pid: %d, name: %s\n",
