@@ -2127,8 +2127,6 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu, int nr_irqs_enabled)
         
        	nr_ti = vcpu->cloned_thread_info;
 	r_ti = current_thread_info();
-		
-
 	       	
 	cmd = vcpu->regs[VCPU_REGS_RAX];
 						
@@ -2145,7 +2143,6 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu, int nr_irqs_enabled)
 	HDEBUG("rsp currently  (%#lx)\n", rsp);
 
 	if(cmd == VMCALL_DO_FORK_FIXUP){
-				
 		p = (struct task_struct*)vcpu->regs[VCPU_REGS_RBX];
 		tls = (unsigned long)vcpu->regs[VCPU_REGS_RCX];
 		
@@ -2153,14 +2150,10 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu, int nr_irqs_enabled)
 			(unsigned long)p, p->comm, tls);
 		set_tsk_thread_flag(p, TIF_OKERNEL_FORK);
 		clear_tsk_thread_flag(p, TIF_FORK);
-#if 0
-		/* Otherwise we lose MSR_FS_BASE state (used by glibc in user space on x64) */
-		rdmsrl(MSR_FS_BASE, fs);
-#else
+
 		fs = vmcs_readl(GUEST_FS_BASE);
 		gs = vmcs_readl(GUEST_GS_BASE);
-#endif
-#if 1
+
 		if(tls){
 			HDEBUG("setting new process FS based on TLS=%#lx\n", tls);
 			p->okernel_fork_fs_base = tls;
@@ -2168,9 +2161,6 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu, int nr_irqs_enabled)
 			p->okernel_fork_fs_base = fs;
 	
 		}
-#else
-		p->okernel_fork_fs_base = fs;
-#endif
 		
 		p->okernel_fork_gs_base = gs;
 		HDEBUG("VMCALL_DO_FORK_FIXUP setting fs to (%#lx) for p (%#lx)\n",
@@ -2236,14 +2226,13 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu, int nr_irqs_enabled)
 		BXMAGICBREAK;
 		memcpy(r_ti, nr_ti, sizeof(struct thread_info));
 
-#if 1
+		/* Don't need this first rdmsrl, just for debug output */
 		rdmsrl(MSR_FS_BASE, fs);
 		vmx_get_cpu(vcpu);
 		nr_fs = vmcs_readl(GUEST_FS_BASE);
 		vmcs_writel(HOST_FS_BASE, nr_fs); 
 		vmx_put_cpu(vcpu);
 		wrmsrl(MSR_FS_BASE, nr_fs);
-#endif
 		
 		HDEBUG("calling schedule_r (pid %d) cpu_cur_tos (%#lx) flgs (%#x) MSR_FS_BASE=%#lx nr_fs=%#lx\n",
 		       current->pid, (unsigned long)tss->x86_tss.sp0, r_ti->flags, fs, nr_fs);
@@ -2267,6 +2256,7 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu, int nr_irqs_enabled)
 		tss = &per_cpu(cpu_tss, cpu);
 
 #if 1
+		/* Just needed for debug */
 		rdmsrl(MSR_FS_BASE, fs);
 		nr_fs = vmcs_readl(GUEST_FS_BASE);
 #endif
