@@ -35,6 +35,7 @@
 #include <linux/uaccess.h>
 #include <linux/io.h>
 #include <linux/ftrace.h>
+#include <linux/okernel.h>
 
 #include <asm/pgtable.h>
 #include <asm/processor.h>
@@ -213,6 +214,20 @@ int copy_thread_tls(unsigned long clone_flags, unsigned long sp,
 			err = do_arch_prctl(p, ARCH_SET_FS, tls);
 		if (err)
 			goto out;
+		if(is_in_vmx_nr_mode()){
+			/* 
+			 * Need to adjust new process state here so
+			 * that it begins executing in a
+			 * vmlaunch/vmresume loop in R-mode. Initial
+			 * NR-mode RIP will be set to
+			 * return-from-fork.
+			 */			
+			HDEBUG("about to vmcall DO_TLS_FIXUP in copy_thread_tls...\n");
+			(void)vmcall3(VMCALL_DO_TLS_FIXUP, (unsigned long)p, (unsigned long)tls);
+		}
+	} else {
+		HDEBUG("about to vmcall DO_TLS_FIXUP (no TLS) in copy_thread_tls...\n");
+		(void)vmcall3(VMCALL_DO_TLS_FIXUP, (unsigned long)p, 0);
 	}
 	err = 0;
 out:
@@ -529,6 +544,7 @@ long do_arch_prctl(struct task_struct *task, int code, unsigned long addr)
 
 	switch (code) {
 	case ARCH_SET_GS:
+		HDEBUG("ARCH_SET_GS pid=%d addr=%#lx\n", current->pid, addr);	
 		if (addr >= TASK_SIZE_OF(task))
 			return -EPERM;
 		cpu = get_cpu();
@@ -553,6 +569,7 @@ long do_arch_prctl(struct task_struct *task, int code, unsigned long addr)
 		put_cpu();
 		break;
 	case ARCH_SET_FS:
+		HDEBUG("ARCH_SET_FS pid=%d addr=%#lx\n", current->pid, addr);	
 		/* Not strictly needed for fs, but do it for symmetry
 		   with gs */
 		if (addr >= TASK_SIZE_OF(task))
@@ -582,12 +599,15 @@ long do_arch_prctl(struct task_struct *task, int code, unsigned long addr)
 		break;
 	case ARCH_GET_FS: {
 		unsigned long base;
+
 		if (task->thread.fsindex == FS_TLS_SEL)
 			base = read_32bit_tls(task, FS_TLS);
 		else if (doit)
 			rdmsrl(MSR_FS_BASE, base);
 		else
 			base = task->thread.fs;
+
+		HDEBUG("ARCH_GET_FS pid=%d base=%#lx\n", current->pid, base);
 		ret = put_user(base, (unsigned long __user *)addr);
 		break;
 	}
@@ -604,6 +624,8 @@ long do_arch_prctl(struct task_struct *task, int code, unsigned long addr)
 				base = task->thread.gs;
 		} else
 			base = task->thread.gs;
+
+		HDEBUG("ARCH_GET_GS pid=%d base=%#lx\n", current->pid, base);
 		ret = put_user(base, (unsigned long __user *)addr);
 		break;
 	}
@@ -618,6 +640,7 @@ long do_arch_prctl(struct task_struct *task, int code, unsigned long addr)
 
 long sys_arch_prctl(int code, unsigned long addr)
 {
+	HDEBUG("code=%d addr=%#lx\n", code, addr);
 	return do_arch_prctl(current, code, addr);
 }
 

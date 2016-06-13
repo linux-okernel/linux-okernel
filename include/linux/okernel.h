@@ -48,6 +48,7 @@
 #define VMCALL_DOEXIT 3
 #define VMCALL_DO_FORK_FIXUP 4
 #define VMCALL_DO_EXEC_FIXUP_HOST 10
+#define VMCALL_DO_TLS_FIXUP 11
 
 
 int vmcall(unsigned int cmd);

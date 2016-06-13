@@ -2115,8 +2115,9 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu, int nr_irqs_enabled)
 	int cpu = smp_processor_id();
 	struct tss_struct *tss = &per_cpu(cpu_tss, cpu);
 	volatile unsigned long fs;
-	unsigned long gs;
+	volatile unsigned long gs;
 	volatile unsigned long nr_fs;
+	volatile unsigned long nr_gs;
 	unsigned long h_cr3 = 0;
 	
 	long code;
@@ -2151,9 +2152,26 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu, int nr_irqs_enabled)
 		set_tsk_thread_flag(p, TIF_OKERNEL_FORK);
 		clear_tsk_thread_flag(p, TIF_FORK);
 
-		fs = vmcs_readl(GUEST_FS_BASE);
 		gs = vmcs_readl(GUEST_GS_BASE);
 
+		HDEBUG("current pid (%d) (%x)\n", current->pid, current->pid);
+
+		p->okernel_fork_gs_base = gs;
+
+		HDEBUG("VMCALL_DO_FORK_FIXUP setting gs to (%#lx) for p (%#lx)\n",
+			p->okernel_fork_gs_base, (unsigned long)p);
+
+		BXMAGICBREAK;
+		ret = 0;
+	} else if (cmd == VMCALL_DO_TLS_FIXUP){
+		p = (struct task_struct*)vcpu->regs[VCPU_REGS_RBX];
+		tls = (unsigned long)vcpu->regs[VCPU_REGS_RCX];
+		fs = vmcs_readl(GUEST_FS_BASE);
+		
+
+		HDEBUG("current pid (%d) (%x)\n", current->pid, current->pid);
+
+		/* Need to look into TLS setting some more. */
 		if(tls){
 			HDEBUG("setting new process FS based on TLS=%#lx\n", tls);
 			p->okernel_fork_fs_base = tls;
@@ -2162,11 +2180,17 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu, int nr_irqs_enabled)
 	
 		}
 		
-		p->okernel_fork_gs_base = gs;
-		HDEBUG("VMCALL_DO_FORK_FIXUP setting fs to (%#lx) for p (%#lx)\n",
+		HDEBUG("VMCALL_TLS_FIXUP setting fs to (%#lx) for p (%#lx)\n",
 			p->okernel_fork_fs_base, (unsigned long)p);
-		HDEBUG("VMCALL_DO_FORK_FIXUP setting gs to (%#lx) for p (%#lx)\n",
-			p->okernel_fork_gs_base, (unsigned long)p);
+		
+		HDEBUG("\nCurrent (pid=%d) Code  Segment start = 0x%lx, end = 0x%lx \n"
+		       "Data  Segment start = 0x%lx, end = 0x%lx\n"
+		       "Stack Segment start = 0x%lx\n",
+		       current->pid,
+		       current->mm->start_code, current->mm->end_code,
+		       current->mm->start_data, current->mm->end_data,
+		       current->mm->start_stack);
+		HDEBUG("Current (pid=%d) mm vma mappings done.\n", current->pid);
 		BXMAGICBREAK;
 		ret = 0;
 	} else if(cmd == VMCALL_DO_EXEC_FIXUP_HOST){
@@ -2226,22 +2250,37 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu, int nr_irqs_enabled)
 		BXMAGICBREAK;
 		memcpy(r_ti, nr_ti, sizeof(struct thread_info));
 
-		/* Don't need this first rdmsrl, just for debug output */
-		rdmsrl(MSR_FS_BASE, fs);
+		
+		
 		vmx_get_cpu(vcpu);
 		nr_fs = vmcs_readl(GUEST_FS_BASE);
-		vmcs_writel(HOST_FS_BASE, nr_fs); 
-		vmx_put_cpu(vcpu);
+		nr_gs = vmcs_readl(GUEST_GS_BASE);
+		//vmcs_writel(HOST_FS_BASE, nr_fs);
+		//vmcs_writel(HOST_GS_BASE, nr_gs); 
+
 		wrmsrl(MSR_FS_BASE, nr_fs);
+		wrmsrl(MSR_GS_BASE, nr_gs);
+
+
+		/* Don't need this rdmsrl, just for debug output */
+		rdmsrl(MSR_FS_BASE, fs);
+		rdmsrl(MSR_GS_BASE, gs);
+
+		vmx_put_cpu(vcpu);		
 		
-		HDEBUG("calling schedule_r (pid %d) cpu_cur_tos (%#lx) flgs (%#x) MSR_FS_BASE=%#lx nr_fs=%#lx\n",
-		       current->pid, (unsigned long)tss->x86_tss.sp0, r_ti->flags, fs, nr_fs);
+		HDEBUG("calling schedule_r (pid %d) cpu_cur_tos (%#lx) flgs (%#x)\n",
+		       current->pid, (unsigned long)tss->x86_tss.sp0, r_ti->flags);
+
+		HDEBUG("calling schedule_r MSR_FS_BASE=%#lx nr_fs=%#lx MSR_GS_BASE=%#lx nr_gs=%#lx\n",
+		       fs, nr_fs, gs, nr_gs);
 		BXMAGICBREAK;
 
 		unset_vmx_r_mode();
 		if(nr_irqs_enabled){
 			local_irq_enable();
 		}
+
+		barrier();
 
 		schedule_r_mode();
 
@@ -2250,18 +2289,28 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu, int nr_irqs_enabled)
 		}
 
 		set_vmx_r_mode();
-		barrier();
+		//barrier();
 		
                 /* Re-sync cloned-thread thread_info */
 		tss = &per_cpu(cpu_tss, cpu);
 
-#if 1
-		/* Just needed for debug */
+#if 0
 		rdmsrl(MSR_FS_BASE, fs);
+		rdmsrl(MSR_GS_BASE, gs);
+		/* Just needed for debug */
 		nr_fs = vmcs_readl(GUEST_FS_BASE);
+		nr_gs = vmcs_readl(GUEST_GS_BASE);
+		wrmsrl(MSR_FS_BASE, nr_fs);
+		wrmsrl(MSR_GS_BASE, nr_gs);
+		
+		HDEBUG("ret schedule_r MSR_FS_BASE=%#lx nr_fs=%#lx MSR_GS_BASE=%#lx nr_gs=%#lx\n",
+		       fs, nr_fs, gs, nr_gs);
 #endif
-		HDEBUG("ret schedule_r (pid %d) cpu_cur_tos (%#lx) flgs (%#x) MSR_FS_BASE=%#lx NR_FS=%#lx\n",
-		       current->pid, (unsigned long)tss->x86_tss.sp0, r_ti->flags, fs, nr_fs);
+		HDEBUG("ret schedule_r (pid %d) cpu_cur_tos (%#lx) flgs (%#x)\n",
+		       current->pid, (unsigned long)tss->x86_tss.sp0, r_ti->flags);
+
+
+
 		HDEBUG("syncing cloned thread_info state (R->NR)...\n");
 		BXMAGICBREAK;
 

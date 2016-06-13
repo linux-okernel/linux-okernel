@@ -1734,7 +1734,7 @@ long _do_fork(unsigned long clone_flags,
 			init_completion(&vfork);
 			get_task_struct(p);
 		}
-
+#if 1
 		if(is_in_vmx_nr_mode()){
 			/* 
 			 * Need to adjust new process state here so
@@ -1746,7 +1746,7 @@ long _do_fork(unsigned long clone_flags,
 			HDEBUG("about to vmcall DO_FORK_FIXUP before wake_up_new_task...\n");
 			(void)vmcall3(VMCALL_DO_FORK_FIXUP, (unsigned long)p, (unsigned long)tls);
 		}
-		
+#endif		
 		wake_up_new_task(p);
 
 		/* forking complete and child started to run, tell ptracer */
