@@ -226,8 +226,10 @@ int copy_thread_tls(unsigned long clone_flags, unsigned long sp,
 			(void)vmcall3(VMCALL_DO_TLS_FIXUP, (unsigned long)p, (unsigned long)tls);
 		}
 	} else {
-		HDEBUG("about to vmcall DO_TLS_FIXUP (no TLS) in copy_thread_tls...\n");
-		(void)vmcall3(VMCALL_DO_TLS_FIXUP, (unsigned long)p, 0);
+		if(is_in_vmx_nr_mode()){
+			HDEBUG("about to vmcall DO_TLS_FIXUP (no TLS) in copy_thread_tls...\n");
+			(void)vmcall3(VMCALL_DO_TLS_FIXUP, (unsigned long)p, 0);
+		}
 	}
 	err = 0;
 out:

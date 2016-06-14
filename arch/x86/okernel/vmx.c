@@ -1090,6 +1090,12 @@ static __init int setup_vmcs_config(struct vmcs_config *vmcs_conf)
 			SECONDARY_EXEC_RDTSCP |
 			SECONDARY_EXEC_ENABLE_INVPCID;
 #endif
+#if 0
+		opt2 =  SECONDARY_EXEC_WBINVD_EXITING |
+			SECONDARY_EXEC_ENABLE_VPID |
+			SECONDARY_EXEC_ENABLE_EPT |
+			SECONDARY_EXEC_RDTSCP;
+#endif
 #if 1
 		opt2 =  SECONDARY_EXEC_WBINVD_EXITING |
 			SECONDARY_EXEC_ENABLE_VPID |
@@ -2279,11 +2285,15 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu, int nr_irqs_enabled)
 		if(nr_irqs_enabled){
 			local_irq_enable();
 		}
-
+		vpid_sync_vcpu_global();
+		ept_sync_global();
 		barrier();
 
 		schedule_r_mode();
-
+		
+		vpid_sync_vcpu_global();
+		ept_sync_global();
+		
 		if(nr_irqs_enabled){
 			local_irq_disable();
 		}
