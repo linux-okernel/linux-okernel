@@ -3173,8 +3173,8 @@ asmlinkage __visible void __sched schedule(void)
 		HDEBUG("returned from VMCALL schedule (pid=%d)  cpu_cur_tos (%#lx) flgs (%#x)\n",
 		       current->pid, (unsigned long)tss->x86_tss.sp0, ti->flags);
 
-		HDEBUG("returned from VMCALL schedule (pid=%d) MSR_FS_BASE=%#lx pid->\n",
-		       fs);
+		HDEBUG("returned from VMCALL schedule (pid=%d) MSR_FS_BASE=%#lx\n",
+		       current->pid, fs);
 
 
 		BXMAGICBREAK;
