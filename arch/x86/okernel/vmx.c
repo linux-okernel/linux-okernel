@@ -2285,21 +2285,16 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu, int nr_irqs_enabled)
 		if(nr_irqs_enabled){
 			local_irq_enable();
 		}
-		vpid_sync_vcpu_global();
-		ept_sync_global();
-		barrier();
 
 		schedule_r_mode();
 		
 		vpid_sync_vcpu_global();
-		ept_sync_global();
 		
 		if(nr_irqs_enabled){
 			local_irq_disable();
 		}
 
 		set_vmx_r_mode();
-		//barrier();
 		
                 /* Re-sync cloned-thread thread_info */
 		tss = &per_cpu(cpu_tss, cpu);
