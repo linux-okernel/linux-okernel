@@ -85,6 +85,9 @@ static DEFINE_SPINLOCK(vmx_vpid_lock);
 
 static unsigned long *msr_bitmap;
 
+static unsigned long max_phys_mem;
+static unsigned long ept_limit;
+static unsigned long ept_no_cache_start;
 
 
 
@@ -223,8 +226,22 @@ int vmcall6(unsigned int cmd, unsigned long arg1, unsigned long arg2, unsigned l
 	return (int)rax;
 }	
 
-
 #if 1
+static int
+no_cache_region(u64 addr, u64 size)
+{
+	
+	if (((addr > ((1UL << 32) -1))) ||
+	    ((addr >= 0x1000) && (addr < 0x8F000)) ||
+	    ((addr >= 0x90000) && (addr < 0xa0000)) ||
+	    ((addr >= 0x100000) && (addr < ept_no_cache_start))){
+	     return 0;
+	}
+	return 1;
+}
+#endif
+
+#if 0
 /* This is currently 8560p specific obviously Need to fix this...adjust dynamically based on real physical regions */
 #define END_PHYSICAL 0x3FFFFFFFF /* with 1GB physical memory */
 static int
@@ -646,9 +663,10 @@ u64 vt_ept_2M_init(void)
 	u64  pml4_phys = 0;
 	
 	/* What range do the EPT tables need to cover (including areas like the APIC mapping)? */
-	mappingsize = e820_end_paddr(MAXMEM);
+	//mappingsize = e820_end_paddr(MAXMEM);
+	mappingsize = ept_limit;
 
-	HDEBUG("max physical address to map under EPT: %#lx\n", (unsigned long)mappingsize);
+	HDEBUG("max address range to map under EPT: %#lx\n", (unsigned long)mappingsize);
 	
 	/* Round upp to closest Gigabyte of memory */
 	rounded_mappingsize = ((mappingsize + (GIGABYTE-1)) & (~(GIGABYTE-1)));      
@@ -2787,6 +2805,19 @@ int __init vmx_init(void)
 	memset(msr_bitmap, 0x0, PAGE_SIZE);
 
         set_bit(0, vmx_vpid_bitmap); /* 0 is reserved for host */
+
+
+	/* Establish physical memory / EPT mapping limits */
+	max_phys_mem = e820_end_paddr(MAXMEM);	
+
+	if(max_phys_mem > (1UL << 32)){
+		ept_limit = max_phys_mem;
+		ept_no_cache_start = (e820_end_of_low_ram_pfn() * PAGE_SIZE);
+	} else {
+		ept_limit = (1UL << 32);
+		ept_no_cache_start = max_phys_mem;
+	}
+	
 	
 	for_each_possible_cpu(cpu) {
 		struct vmcs *vmxon_buf;
