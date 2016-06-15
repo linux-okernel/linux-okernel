@@ -65,6 +65,7 @@
 #include <linux/console.h>
 #include <linux/compat.h>
 
+#include <asm/mtrr.h>
 #include <asm/desc.h>
 #include <asm/vmx.h>
 #include <asm/unistd_64.h>
@@ -76,6 +77,10 @@
 
 #include "constants2.h"
 #include "vmx.h"
+
+static unsigned long max_phys_mem;
+static unsigned long ept_limit;
+static unsigned long ept_no_cache_start;
 
 
 static atomic_t vmx_enable_failed;
@@ -222,6 +227,36 @@ int vmcall6(unsigned int cmd, unsigned long arg1, unsigned long arg2, unsigned l
 	asm volatile ("mov %%rax,%0" : "=rm" (rax));
 	return (int)rax;
 }	
+
+#if 0
+static int no_cache_region(u64 addr, u64 size)
+{
+	if (((addr >= 0x1000) && (addr < 0x8F000)) ||
+	    ((addr >= 0x90000) && (addr < 0xa0000)) ||
+	    ((addr >= 0x100000) && (addr < ept_no_cache_start)) ||
+	    ((addr >= (1UL << 32)))){
+		return 0;
+	}
+	return 1;
+}
+#endif
+
+#if 0
+static int no_cache_region(u64 addr, u64 size)
+{
+	u8 type;
+	u8 uniform;
+
+	type = mtrr_type_lookup(addr, addr+size, &uniform);
+
+	if(type != MTRR_TYPE_WRBACK){
+		HDEBUG("Returning un-cacheable type for addr (%#lx) size (%#lx)\n",
+		       (unsigned long)addr, (unsigned long)size);
+		return 1;
+	}
+	return 0;
+}
+#endif
 
 
 #if 1
@@ -647,6 +682,7 @@ u64 vt_ept_2M_init(void)
 	
 	/* What range do the EPT tables need to cover (including areas like the APIC mapping)? */
 	mappingsize = e820_end_paddr(MAXMEM);
+	//mappingsize = ept_limit;
 
 	HDEBUG("max physical address to map under EPT: %#lx\n", (unsigned long)mappingsize);
 	
@@ -2707,6 +2743,7 @@ static __init void vmx_enable(void *unused)
 	int ret;
 	struct vmcs *vmxon_buf = __this_cpu_read(vmxarea);
 
+	
 	if ((ret = __vmx_enable(vmxon_buf)))
 		goto failed;
 
@@ -2715,6 +2752,8 @@ static __init void vmx_enable(void *unused)
 
 	printk(KERN_INFO "vmx: VMX enabled on CPU %d\n",
 	       raw_smp_processor_id());
+
+
 	return;
 
 failed:
@@ -2811,8 +2850,24 @@ int __init vmx_init(void)
 		r = -EBUSY;
 		goto failed2;
 	}
+
+	/* Find out what we need to map in our EPT tables: 
+	 * if physical mem < 4GB, setup tables covering 0-FFFFFFFF nut only map 
+	 * upto physical mem limit as cacheable.
+	 */
+
 	
-	in_vmx_nr_mode = real_in_vmx_nr_mode;
+	max_phys_mem = (e820_end_of_ram_pfn() * PAGE_SHIFT); 
+	
+	if((max_phys_mem) > (1UL << 32)){
+		
+		ept_limit = max_phys_mem;
+	} else {
+		ept_no_cache_start = max_phys_mem;
+		ept_limit = (1UL << 32) -1;
+	}
+	
+	HDEBUG("max_phys_mem (%#lx) ept_limit (%#lx)\n", max_phys_mem, ept_limit);
 	
         return 0;
 
