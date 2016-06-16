@@ -459,6 +459,7 @@ int split_2M_mapping(struct vmx_vcpu* vcpu, u64 paddr)
 {
 	unsigned long *pml2_e;
 	pt_page *pt = NULL;
+	struct ept_pt_list *e_pt = NULL;
 	unsigned int n_entries = PAGESIZE / 8;
 	u64* q = NULL;
 	int i = 0;
@@ -492,11 +493,24 @@ int split_2M_mapping(struct vmx_vcpu* vcpu, u64 paddr)
 	
 	/* split the plm2_e into 4k ptes,i.e. have it point to a PML1 table */
 
-        /* First allocate a physical page for the PML1 table (512*4K entries) */ 
-	if(!(pt   = (pt_page*)kmalloc(sizeof(pt_page), GFP_KERNEL))){
+        /* First allocate a physical page for the PML1 table (512*4K entries) */
+	e_pt = (struct ept_pt_list*) kmalloc(sizeof(struct ept_pt_list), GFP_KERNEL);
+		
+	if(!e_pt){
+		printk(KERN_ERR "okernel: failed to allocate E_PT list entry in replace ept page.\n");
+		return 0;
+	}
+	
+	if(!(pt = (pt_page*)kmalloc(sizeof(pt_page), GFP_KERNEL))){
 		printk(KERN_ERR "okernel: failed to allocate PT table.\n");
 		return 0;
 	}
+
+	e_pt->page = pt;
+	e_pt->n_pages = 1;
+	INIT_LIST_HEAD(&e_pt->list);
+	list_add(&e_pt->list, &vcpu->ept_table_pages.list);
+	
 	
 	if(!(vt_alloc_page((void**)&pt[0].virt, &pt[0].phys))){
 		printk(KERN_ERR "okernel: failed to allocate PML1 table.\n");
@@ -1996,6 +2010,7 @@ void vmx_destroy_ept(struct vmx_vcpu *vcpu)
  */
 static void vmx_destroy_vcpu(struct vmx_vcpu *vcpu)
 {
+	HDEBUG("called.\n");
 	vmx_destroy_ept(vcpu);
 	vmx_get_cpu(vcpu);
 	ept_sync_context(vcpu->eptp);
