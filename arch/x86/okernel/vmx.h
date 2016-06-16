@@ -9,6 +9,7 @@
 #include <asm/vmx.h>
 #include <linux/kvm_types.h>
 #include <linux/okernel.h>
+#include "constants2.h"
 
 
 struct nr_cloned_state {
@@ -147,6 +148,11 @@ enum vmx_reg {
 	NR_VCPU_REGS
 };
 
+struct ept_pt_list {
+	struct list_head list;
+	pt_page* page;
+	int n_pages;
+};
 
 struct vmx_vcpu {
 	int cpu;
@@ -154,6 +160,7 @@ struct vmx_vcpu {
 	int launched;
 
 	//struct mmu_notifier mmu_notifier;
+	struct ept_pt_list ept_table_pages;
 	spinlock_t ept_lock;
 	unsigned long ept_root;
 	unsigned long eptp;

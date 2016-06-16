@@ -389,6 +389,8 @@ unsigned long* find_pd_entry(struct vmx_vcpu *vcpu, u64 paddr)
 
 	epte_t *pml4 =  (epte_t*) __va(vcpu->ept_root);
 
+	
+
 	pml3 = (epte_t *)epte_page_vaddr(*pml4);
 
 	pml3_index = (paddr & (~(GIGABYTE -1))) >> GIGABYTE_SHIFT;
@@ -525,6 +527,7 @@ int split_2M_mapping(struct vmx_vcpu* vcpu, u64 paddr)
 void* replace_ept_page(struct vmx_vcpu *vcpu, u64 paddr)
 {
 	unsigned long *pml1_p;
+	struct ept_pt_list *e_pt;
 	pt_page *pt;
 	u64 orig_paddr;
 	u64 split_addr;
@@ -550,14 +553,21 @@ void* replace_ept_page(struct vmx_vcpu *vcpu, u64 paddr)
 
 	HDEBUG("pte val for paddr (%#lx) is (%#lx)\n",
 		(unsigned long)paddr, (unsigned long)*pml1_p); 
-	
+
+	e_pt =(struct ept_pt_list*) kmalloc(sizeof(struct ept_pt_list), GFP_KERNEL);
+		
 	pt   = (pt_page*)kmalloc(sizeof(pt_page), GFP_KERNEL);
 
-	if(!pt){
+	if(!pt || ! e_pt){
 		printk(KERN_ERR "okernel: failed to allocate PT table in replace ept page.\n");
 		return NULL;
 	}
-	
+
+	e_pt->page = pt;
+	e_pt->n_pages = 1;
+	INIT_LIST_HEAD(&e_pt->list);
+	list_add(&e_pt->list, &vcpu->ept_table_pages.list);
+
 	if(!(vt_alloc_page((void**)&pt[0].virt, &pt[0].phys))){
 		printk(KERN_ERR "okernel: failed to allocate PML1 table.\n");
 		return NULL;
@@ -631,7 +641,7 @@ int clone_kstack2(struct vmx_vcpu *vcpu)
 }
 
 
-u64 vt_ept_2M_init(void)
+int vt_ept_2M_init(struct vmx_vcpu *vcpu)
 {
 	/*
 	 * For now share a direct 1:1 EPT mapping of host physical to
@@ -654,6 +664,9 @@ u64 vt_ept_2M_init(void)
 	unsigned int n_pt   = 0;
 	unsigned int n_pd   = 0;
 	unsigned int n_pdpt = 0;
+	struct ept_pt_list* e_pt;
+	struct ept_pt_list* e_pd;
+	struct ept_pt_list* e_pdpt;
 	pt_page* pt = NULL;
 	pt_page* pd = NULL;
 	pt_page* pdpt = NULL;
@@ -662,6 +675,9 @@ u64 vt_ept_2M_init(void)
 	u64 addr = 0;
 	u64* pml4_virt = NULL;
 	u64  pml4_phys = 0;
+
+	/* Keep track of pages we allocate for holding the ept tables so we can de-allocate */
+	INIT_LIST_HEAD(&vcpu->ept_table_pages.list);
 	
 	/* What range do the EPT tables need to cover (including areas like the APIC mapping)? */
 	//mappingsize = e820_end_paddr(MAXMEM);
@@ -690,9 +706,26 @@ u64 vt_ept_2M_init(void)
 	n_pt = 1;
 	
 	/* pt - PML1, pd - PML2, pdpt - PML3 */
+	e_pdpt = kmalloc(sizeof(struct ept_pt_list), GFP_KERNEL);
 	pdpt = (pt_page*)kmalloc(sizeof(pt_page)* n_pdpt, GFP_KERNEL);
+	e_pdpt->page = pdpt;
+	e_pdpt->n_pages = n_pdpt;
+	INIT_LIST_HEAD(&e_pdpt->list);
+	list_add(&e_pdpt->list, &vcpu->ept_table_pages.list);
+
+	e_pd = kmalloc(sizeof(struct ept_pt_list), GFP_KERNEL);
 	pd   = (pt_page*)kmalloc(sizeof(pt_page)* n_pd, GFP_KERNEL);
+	e_pd->page = pd;
+	e_pd->n_pages = n_pd;
+	INIT_LIST_HEAD(&e_pd->list);
+	list_add(&e_pd->list, &vcpu->ept_table_pages.list);
+
+	e_pt = kmalloc(sizeof(struct ept_pt_list), GFP_KERNEL);
 	pt   = (pt_page*)kmalloc(sizeof(pt_page)* n_pt, GFP_KERNEL);
+	e_pt->page = pt;
+	e_pt->n_pages = n_pt;
+	INIT_LIST_HEAD(&e_pt->list);
+	list_add(&e_pt->list, &vcpu->ept_table_pages.list);
 	
 	HDEBUG("Allocated (%u) pdpt (%u) pd (%u) pt tables.\n", n_pdpt, n_pd, n_pt);
 
@@ -805,7 +838,8 @@ u64 vt_ept_2M_init(void)
 	       (unsigned long)pml4_virt, (unsigned long)*pml4_virt,
 	       (unsigned long)pml4_phys);
 	
-       return pml4_phys;
+       vcpu->ept_root = pml4_phys;
+       return 1;
 }
 /* End: imported code from original BV prototype */
 
@@ -1919,10 +1953,9 @@ static struct vmx_vcpu * vmx_create_vcpu(struct nr_cloned_state* cloned_thread)
 
 	spin_lock_init(&vcpu->ept_lock);
 
-	vcpu->ept_root = vt_ept_2M_init();
-
-	if(vcpu->ept_root == 0)
+	if(!vt_ept_2M_init(vcpu)){
 		goto fail_ept;
+	}
 	
 	vcpu->eptp = construct_eptp(vcpu->ept_root);
 
@@ -1950,6 +1983,11 @@ fail_vpid:
 fail_vmcs:
 	kfree(vcpu);
 	return NULL;
+}
+
+void vmx_destroy_ept(struct vmx_vcpu *vcpu)
+{
+	return;
 }
 
 /**
@@ -2357,6 +2395,7 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu, int nr_irqs_enabled)
 		if(nr_irqs_enabled){
 			local_irq_enable();
 		}
+		vmx_destroy_vcpu(vcpu);
 		do_exit(code);
 	} else {
 		HDEBUG("unexpected VMCALL argument.\n");
@@ -2636,9 +2675,8 @@ int vmx_launch(unsigned int flags, struct nr_cloned_state *cloned_thread)
         HDEBUG("leaving vmexit() loop (VPID %d) - ret (%x) - trigger BUG() for now...\n",
 		vcpu->vpid, ret);
 	local_irq_enable();
+	vmx_destroy_vcpu(vcpu);
 	BUG();
-	//*ret_code = vcpu->ret_code;
-	//vmx_destroy_vcpu(vcpu);
 	return 0;
 }
 
