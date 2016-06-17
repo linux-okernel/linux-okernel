@@ -64,6 +64,7 @@
 #include <linux/version.h>
 #include <linux/console.h>
 #include <linux/compat.h>
+#include <linux/gfp.h>
 
 #include <asm/mtrr.h>
 #include <asm/desc.h>
@@ -829,7 +830,7 @@ int vt_ept_2M_init(struct vmx_vcpu *vcpu)
        for(k = 0; k < n_pdpt; k++){
 	    q = pdpt[k].virt;
 	    for(i = 0; i < n_pd; i++){
-		// These are the PDPTE entries - just 4 at present to map 4GB
+		    /* These are the PDPTE entries - just 4 at present to map 4GB */
 		    q[i] = (u64)(pd[i].phys + EPT_R + EPT_W + EPT_X);
 	    }
        }
@@ -2001,6 +2002,24 @@ fail_vmcs:
 
 void vmx_destroy_ept(struct vmx_vcpu *vcpu)
 {
+	struct ept_pt_list *entry;
+	struct ept_pt_list *q;
+	unsigned long *vaddr;
+	unsigned long vaddr_p;
+	
+	list_for_each_entry_safe(entry, q, &vcpu->ept_table_pages.list, list){
+		vaddr = __va(entry->page->phys);
+		vaddr_p = (unsigned long)*vaddr;
+		HDEBUG("Freeing page phys=%#lx __va(phys)=%#lx *virtp=%#lx *virt=%#lx\n",
+		       (unsigned long)entry->page->phys,
+		       (unsigned long)vaddr,
+		       (unsigned long)vaddr_p,
+		       (unsigned long)*entry->page->virt);
+		__free_page(virt_to_page(__va(entry->page->phys)));
+		kfree(entry->page);
+		list_del(&entry->list);
+		kfree(entry);
+	}
 	return;
 }
 
@@ -2011,9 +2030,10 @@ void vmx_destroy_ept(struct vmx_vcpu *vcpu)
 static void vmx_destroy_vcpu(struct vmx_vcpu *vcpu)
 {
 	HDEBUG("called.\n");
-	vmx_destroy_ept(vcpu);
 	vmx_get_cpu(vcpu);
 	ept_sync_context(vcpu->eptp);
+	vmx_destroy_ept(vcpu);
+	__free_page(virt_to_page(__va(vcpu->eptp)));
 	vmcs_clear(vcpu->vmcs);
 	__this_cpu_write(local_vcpu, NULL);
 	vmx_put_cpu(vcpu);
