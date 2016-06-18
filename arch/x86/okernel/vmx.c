@@ -1418,6 +1418,7 @@ static void vmx_get_cpu(struct vmx_vcpu *vcpu)
 		__this_cpu_write(local_vcpu, vcpu);
 		
 		if (vcpu->cpu != cur_cpu) {
+			HDEBUG("swapping cpu...\n");
 			if (vcpu->cpu >= 0)
 				smp_call_function_single(vcpu->cpu,
 							 __vmx_get_cpu_helper, (void *) vcpu, 1);
