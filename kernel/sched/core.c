@@ -7575,12 +7575,18 @@ void ___might_sleep(const char *file, int line, int preempt_offset)
 	if(is_in_vmx_nr_mode()){
 	        HDEBUG("preempt_count_equals (%d) !irqs_disabled (%d) !idle (%d)\n",
 			preempt_count_equals(preempt_offset), !irqs_disabled(), !is_idle_task(current));
+		printk(KERN_ERR "preempt_count_equals (%d) !irqs_disabled (%d) !idle (%d)\n",
+			preempt_count_equals(preempt_offset), !irqs_disabled(), !is_idle_task(current));
 		printk(KERN_ERR
 		       "BUG: NR sleeping function called from invalid context at %s:%d\n",
 		       file, line);
 		HDEBUG("in_atomic(): %d, irqs_disabled(): %d, pid: %d, name: %s\n",
 			in_atomic(), irqs_disabled(), current->pid, current->comm);
+		printk(KERN_ERR "in_atomic(): %d, irqs_disabled(): %d, pid: %d, name: %s\n",
+			in_atomic(), irqs_disabled(), current->pid, current->comm);
 		HDEBUG("preempt_offset (%d) preempt_count (%d) rcu_preempt_depth (%d)\n",
+			preempt_offset, preempt_count(), rcu_preempt_depth());
+		printk(KERN_ERR "preempt_offset (%d) preempt_count (%d) rcu_preempt_depth (%d)\n",
 			preempt_offset, preempt_count(), rcu_preempt_depth());
 	} else {
 		printk(KERN_ERR
