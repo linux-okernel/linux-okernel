@@ -11,7 +11,8 @@
  * something like a vMMU interface, as in 'Nested Kernel', Dautenhahn,
  *  et al. 
  *  
- * For basic vmx setup we re-use some of the existing kvm / dune code (in vmx.c). 
+ * For basic vmx setup we re-use some of the existing kvm / dune
+ * code (in vmx.c / vmx.h). 
  *
  */
 #include <linux/errno.h>
