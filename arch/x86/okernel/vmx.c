@@ -1412,6 +1412,7 @@ static void __vmx_get_cpu_helper(void *ptr)
  */
 static void vmx_get_cpu(struct vmx_vcpu *vcpu)
 {
+	int no_irqs;
 	int cur_cpu = get_cpu();
 
 	if (__this_cpu_read(local_vcpu) != vcpu) {
@@ -1419,12 +1420,19 @@ static void vmx_get_cpu(struct vmx_vcpu *vcpu)
 		
 		if (vcpu->cpu != cur_cpu) {
 			HDEBUG("swapping cpu...\n");
-			if (vcpu->cpu >= 0)
+			if (vcpu->cpu >= 0){
+				no_irqs = irqs_disabled();
+				if(no_irqs){
+					local_irq_enable();
+				}
 				smp_call_function_single(vcpu->cpu,
 							 __vmx_get_cpu_helper, (void *) vcpu, 1);
-			else
+				if(no_irqs){
+					local_irq_disable();
+				}
+			} else {
 				vmcs_clear(vcpu->vmcs);
-			
+			}
 			vpid_sync_context(vcpu->vpid);
 			ept_sync_context(vcpu->eptp);
 				
@@ -2428,9 +2436,7 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu, int nr_irqs_enabled)
 	} else if(cmd == VMCALL_DOEXIT){
 		code = (long)vcpu->regs[VCPU_REGS_RBX];
 		HDEBUG("calling do_exit(%ld)...\n", code);
-		if(nr_irqs_enabled){
-			local_irq_enable();
-		}
+		local_irq_enable();
 		vmx_destroy_vcpu(vcpu);
 		do_exit(code);
 	} else {
