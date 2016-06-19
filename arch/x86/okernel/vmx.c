@@ -2305,9 +2305,9 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu, int nr_irqs_enabled)
 		h_cr3 = vcpu->regs[VCPU_REGS_RBX];
 		HDEBUG("excec_fixup: Setting saved HOST CR3 to (%#lx) __pa (%#lx)\n",
 		       (unsigned long)h_cr3, __pa(h_cr3));
-		vmx_get_cpu(vcpu);
+		//vmx_get_cpu(vcpu);
 		vmcs_writel(HOST_CR3, __pa(h_cr3));
-		vmx_put_cpu(vcpu);
+		//vmx_put_cpu(vcpu);
 		BXMAGICBREAK;
 		ret = 0;
 	} else if (cmd == VMCALL_SCHED){
@@ -2359,7 +2359,7 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu, int nr_irqs_enabled)
 
 		
 		
-		vmx_get_cpu(vcpu);
+		//vmx_get_cpu(vcpu);
 		nr_fs = vmcs_readl(GUEST_FS_BASE);
 		nr_gs = vmcs_readl(GUEST_GS_BASE);
 		//vmcs_writel(HOST_FS_BASE, nr_fs);
@@ -2373,7 +2373,7 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu, int nr_irqs_enabled)
 		rdmsrl(MSR_FS_BASE, fs);
 		rdmsrl(MSR_GS_BASE, gs);
 
-		vmx_put_cpu(vcpu);		
+		//vmx_put_cpu(vcpu);		
 		
 		HDEBUG("calling schedule_r (pid %d) cpu_cur_tos (%#lx) flgs (%#x)\n",
 		       current->pid, (unsigned long)tss->x86_tss.sp0, r_ti->flags);
@@ -2383,10 +2383,14 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu, int nr_irqs_enabled)
 		BXMAGICBREAK;
 
 		unset_vmx_r_mode();
+
+		vmx_put_cpu(vcpu);
+		
 		if(nr_irqs_enabled){
 			local_irq_enable();
 		}
 
+		
 		schedule_r_mode();
 		
 		vpid_sync_vcpu_global();
@@ -2395,6 +2399,8 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu, int nr_irqs_enabled)
 			local_irq_disable();
 		}
 
+		vmx_get_cpu(vcpu);
+		
 		set_vmx_r_mode();
 		
                 /* Re-sync cloned-thread thread_info */
@@ -2416,12 +2422,11 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu, int nr_irqs_enabled)
 		       current->pid, (unsigned long)tss->x86_tss.sp0, r_ti->flags);
 
 
-
 		HDEBUG("syncing cloned thread_info state (R->NR)...\n");
 		BXMAGICBREAK;
 
 		memcpy(nr_ti, r_ti, sizeof(struct thread_info));
-		barrier();
+		//barrier();
 
 		HDEBUG("synced cloned thread_info state (R->NR) (nr_ti->flags=%#x)\n",
 			nr_ti->flags);
@@ -2436,6 +2441,7 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu, int nr_irqs_enabled)
 	} else if(cmd == VMCALL_DOEXIT){
 		code = (long)vcpu->regs[VCPU_REGS_RBX];
 		HDEBUG("calling do_exit(%ld)...\n", code);
+		vmx_put_cpu(vcpu);
 		local_irq_enable();
 		vmx_destroy_vcpu(vcpu);
 		do_exit(code);
@@ -2563,9 +2569,11 @@ int vmx_launch(unsigned int flags, struct nr_cloned_state *cloned_thread)
 #endif
 	
 	HDEBUG("About to enter vmx handler while loop...\n");
+
+	vmx_get_cpu(vcpu);
 	
 	while(1){
-		vmx_get_cpu(vcpu);
+		
 
 #if defined(CONFIG_TRACE_IRQFLAGS) && defined(CONFIG_PROVE_LOCKING)
 		/* If the NR-mode code will start/re-launch with interrupts on, adjust the 
@@ -2612,7 +2620,7 @@ int vmx_launch(unsigned int flags, struct nr_cloned_state *cloned_thread)
 			vmx_step_instruction();
 		}
 		
-		vmx_put_cpu(vcpu);
+		//vmx_put_cpu(vcpu);
 
 		if (ret == EXIT_REASON_VMCALL){
 			vmx_handle_vmcall(vcpu, saved_irqs_on);
@@ -2652,7 +2660,7 @@ int vmx_launch(unsigned int flags, struct nr_cloned_state *cloned_thread)
 			done = 1;
 		}
 		else if (ret == EXIT_REASON_EXCEPTION_NMI) {
-			vmx_get_cpu(vcpu);
+			
 			vii.v = vmcs_readl(VM_EXIT_INTR_INFO);
 			HDEBUG("recieved EXCEPTION or NMI\n");
 			if(vii.s.valid == INTR_INFO_VALID_VALID){
@@ -2671,15 +2679,17 @@ int vmx_launch(unsigned int flags, struct nr_cloned_state *cloned_thread)
 					regs.ss = vmcs_readl(GUEST_SS_SELECTOR);
 					regs.sp = vmcs_readl(GUEST_RSP);
 					
-					vmx_put_cpu(vcpu);
+					
 					regs.orig_ax = err;
 					//printk("R: ptregs before do_page_fault_r call: \n");
 					//show_regs(&regs);
 					HDEBUG("calling do_page_fault_r...\n");
+					vmx_get_cpu(vcpu);
 					local_irq_enable();
 					do_page_fault_r(&regs, err, cr2);
 					HDEBUG("returned from do_page_fault_r.\n");
 					local_irq_disable();
+					vmx_put_cpu(vcpu);
 					//BXMAGICBREAK;
 					continue;
 				} else if(vii.s.vector == EXCEPTION_GP){
@@ -2705,8 +2715,10 @@ int vmx_launch(unsigned int flags, struct nr_cloned_state *cloned_thread)
 			done = 1;
 		}
 		
-		if (done)
+		if (done){
+			vmx_put_cpu(vcpu);
 			break;
+		}
 	}
 
         /* (Likely) this may (will) cause a problem if irqs were
