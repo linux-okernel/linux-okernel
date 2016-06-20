@@ -1756,7 +1756,8 @@ static void vmx_setup_initial_guest_state(struct vmx_vcpu *vcpu)
 	/* as a way of detecting whether in root or NR mode. */
 	vmcs_writel(GUEST_CR4, cr4);
 	vmcs_writel(CR4_GUEST_HOST_MASK, cr4_mask);
-	vmcs_writel(CR4_READ_SHADOW, cr4_shadow);
+	//vmcs_writel(CR4_READ_SHADOW, cr4_shadow);
+	vmcs_writel(CR4_READ_SHADOW, 0);
 
 	/* Most of this we can set from the host state apart. Need to make
 	   sure we clone the kernel stack pages in the EPT mapping.
@@ -2305,9 +2306,7 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu, int nr_irqs_enabled)
 		h_cr3 = vcpu->regs[VCPU_REGS_RBX];
 		HDEBUG("excec_fixup: Setting saved HOST CR3 to (%#lx) __pa (%#lx)\n",
 		       (unsigned long)h_cr3, __pa(h_cr3));
-		//vmx_get_cpu(vcpu);
 		vmcs_writel(HOST_CR3, __pa(h_cr3));
-		//vmx_put_cpu(vcpu);
 		BXMAGICBREAK;
 		ret = 0;
 	} else if (cmd == VMCALL_SCHED){
@@ -2357,9 +2356,6 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu, int nr_irqs_enabled)
 		BXMAGICBREAK;
 		memcpy(r_ti, nr_ti, sizeof(struct thread_info));
 
-		
-		
-		//vmx_get_cpu(vcpu);
 		nr_fs = vmcs_readl(GUEST_FS_BASE);
 		nr_gs = vmcs_readl(GUEST_GS_BASE);
 		//vmcs_writel(HOST_FS_BASE, nr_fs);
@@ -2373,8 +2369,6 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu, int nr_irqs_enabled)
 		rdmsrl(MSR_FS_BASE, fs);
 		rdmsrl(MSR_GS_BASE, gs);
 
-		//vmx_put_cpu(vcpu);		
-		
 		HDEBUG("calling schedule_r (pid %d) cpu_cur_tos (%#lx) flgs (%#x)\n",
 		       current->pid, (unsigned long)tss->x86_tss.sp0, r_ti->flags);
 
@@ -2399,6 +2393,9 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu, int nr_irqs_enabled)
 			local_irq_disable();
 		}
 
+		/* We may have changed CPU by the time we get here so we possibly will
+		 * br resuming the NR-mode side on a different CPU to the one it exited
+		 * on */
 		vmx_get_cpu(vcpu);
 		
 		set_vmx_r_mode();
