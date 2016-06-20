@@ -130,12 +130,19 @@ asmlinkage void __noclone okernel_enter_fork(void)
 	 * allows us to save stack space. */
 
 	struct nr_cloned_state *cloned_thread = kmalloc(sizeof(struct nr_cloned_state), GFP_KERNEL);
-	
+
 	unsigned long rbp,rsp,cr2,rflags,rax,rcx,rdx,rbx,rsi,rdi,r8,r9,r10,r11,r12,r13,r14,r15;
 	int ret;
 
+	
 	HDEBUG("called for pid=%d\n", current->pid);
 
+	if(!cloned_thread){
+		HDEBUG("Failed to allocate cloned thread structure.\n");
+		BUG();
+	}
+
+	
 	cloned_thread->msr_fs_base = 0;
 
 	asm volatile ("mov %%cr2,%0" : "=rm" (cr2));
@@ -227,6 +234,8 @@ asmlinkage void __noclone okernel_enter_fork(void)
 	barrier();
 	
 	ret = vmx_launch(2, cloned_thread);
+
+	kfree(cloned_thread);
 	
 	asm volatile(".Lc_ret_from_fork_label: ");
 
@@ -256,6 +265,10 @@ int __noclone okernel_enter(unsigned long flags)
 	unsigned long rbp,rsp,rflags,cr2,rax,rcx,rdx,rbx,rsi,rdi,r8,r9,r10,r11,r12,r13,r14,r15;
 	int ret;
 
+	if(!cloned_thread){
+		HDEBUG("Failed to allocate cloned thread structure.\n");
+		BUG();
+	}
 		
 	HDEBUG("called - flags (%lx)\n", flags);
 
@@ -361,6 +374,8 @@ int __noclone okernel_enter(unsigned long flags)
 	barrier();
 	
 	ret = vmx_launch(flags, cloned_thread);
+
+	kfree(cloned_thread);
 	
 	asm volatile(".Lc_rip_label: ");
 	
