@@ -2440,7 +2440,7 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu, int nr_irqs_enabled)
 		BXMAGICBREAK;
 	} else if(cmd == VMCALL_DOEXIT){
 		code = (long)vcpu->regs[VCPU_REGS_RBX];
-		memcpy(r_ti, nr_ti, sizeof(struct thread_info));
+		//memcpy(r_ti, nr_ti, sizeof(struct thread_info));
 		HDEBUG("calling do_exit(%ld)...\n", code);
 		vmx_put_cpu(vcpu);
 		local_irq_enable();
