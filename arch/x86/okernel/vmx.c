@@ -2012,20 +2012,23 @@ fail_vmcs:
 
 void vmx_destroy_ept(struct vmx_vcpu *vcpu)
 {
+	int i;
 	struct ept_pt_list *entry;
 	struct ept_pt_list *q;
 	unsigned long *vaddr;
 	unsigned long vaddr_p;
 	
 	list_for_each_entry_safe(entry, q, &vcpu->ept_table_pages.list, list){
-		vaddr = __va(entry->page->phys);
-		vaddr_p = (unsigned long)*vaddr;
-		HDEBUG("Freeing page phys=%#lx __va(phys)=%#lx *virtp=%#lx *virt=%#lx\n",
-		       (unsigned long)entry->page->phys,
-		       (unsigned long)vaddr,
-		       (unsigned long)vaddr_p,
-		       (unsigned long)*entry->page->virt);
-		__free_page(virt_to_page(__va(entry->page->phys)));
+		for(i = 0; i < entry->n_pages; i++){
+			vaddr = __va(entry->page[i].phys);
+			vaddr_p = (unsigned long)*vaddr;
+			HDEBUG("Freeing page phys=%#lx __va(phys)=%#lx *virtp=%#lx *virt=%#lx\n",
+			       (unsigned long)entry->page[i].phys,
+			       (unsigned long)vaddr,
+			       (unsigned long)vaddr_p,
+			       (unsigned long)*entry->page[i].virt);
+			__free_page(virt_to_page(__va(entry->page[i].phys)));
+		}
 		kfree(entry->page);
 		list_del(&entry->list);
 		kfree(entry);
@@ -2437,6 +2440,7 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu, int nr_irqs_enabled)
 		BXMAGICBREAK;
 	} else if(cmd == VMCALL_DOEXIT){
 		code = (long)vcpu->regs[VCPU_REGS_RBX];
+		memcpy(r_ti, nr_ti, sizeof(struct thread_info));
 		HDEBUG("calling do_exit(%ld)...\n", code);
 		vmx_put_cpu(vcpu);
 		local_irq_enable();
@@ -2490,7 +2494,6 @@ int vmx_launch(unsigned int flags, struct nr_cloned_state *cloned_thread)
 	unsigned long qual;
 	unsigned long *pml2_e;
 
-	
 	if(!cloned_thread)
 		return -EINVAL;
 	
