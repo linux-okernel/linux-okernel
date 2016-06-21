@@ -1745,6 +1745,8 @@ long _do_fork(unsigned long clone_flags,
 			 */			
 			HDEBUG("about to vmcall DO_FORK_FIXUP before wake_up_new_task...\n");
 			(void)vmcall3(VMCALL_DO_FORK_FIXUP, (unsigned long)p, (unsigned long)tls);
+		} else {
+			p->okernel_status = OKERNEL_OFF;
 		}
 #endif		
 		wake_up_new_task(p);
