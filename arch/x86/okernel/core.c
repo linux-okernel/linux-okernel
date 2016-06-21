@@ -235,8 +235,6 @@ asmlinkage void __noclone okernel_enter_fork(void)
 	
 	ret = vmx_launch(2, cloned_thread);
 
-	kfree(cloned_thread);
-	
 	asm volatile(".Lc_ret_from_fork_label: ");
 
 	BXMAGICBREAK;
@@ -375,10 +373,9 @@ int __noclone okernel_enter(unsigned long flags)
 	
 	ret = vmx_launch(flags, cloned_thread);
 
-	kfree(cloned_thread);
-	
 	asm volatile(".Lc_rip_label: ");
-	
+
+		
 	/* Be careful what we do here as the C register state may not
 	   be the same as the compiler is expecting (since we are
 	   jumping straight to this point with state restored from a

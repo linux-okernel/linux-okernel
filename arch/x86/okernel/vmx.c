@@ -2499,7 +2499,7 @@ int vmx_launch(unsigned int flags, struct nr_cloned_state *cloned_thread)
 	HDEBUG("c_rip: (#%#lx)\n", c_rip);
 	
 	vcpu = vmx_create_vcpu(cloned_thread);
-	
+
 	if (!vcpu)
 		return -ENOMEM;
 	
@@ -2564,6 +2564,8 @@ int vmx_launch(unsigned int flags, struct nr_cloned_state *cloned_thread)
 	saved_irqs_on = (cloned_thread->rflags & RFLAGS_IF_BIT);
 	HDEBUG("saved_irqs_on (%#lx)\n", saved_irqs_on);
 #endif
+
+	kfree(cloned_thread);
 	
 	HDEBUG("About to enter vmx handler while loop...\n");
 
