@@ -122,6 +122,10 @@ struct intr_info {
 					RFLAGS_OF_BIT
 
 
+#define CR_REG_ACCESS_MASK              0xF
+#define CR_REG_ACCESS_TYPE              0x48
+#define CR_REG_ACCESS_GP                0xFF00   
+
 #define PDE_P_BIT			0x1
 #define PDE_RW_BIT			0x2
 #define PDE_US_BIT			0x4
@@ -214,6 +218,8 @@ struct intr_info {
 #define TWO_MBYTE       0x200000
 #define TWO_MBYTE_SHIFT 21
 
+/* CPUID  bits of interest */
+#define ECX_VMX_BIT 0x20
 
 typedef struct pt_page {
      u64  phys;

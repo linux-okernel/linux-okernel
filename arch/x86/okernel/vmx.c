@@ -2203,12 +2203,22 @@ static void vmx_step_instruction(void)
 static void vmx_handle_cpuid(struct vmx_vcpu *vcpu)
 {
 	unsigned int eax, ebx, ecx, edx;
-
+	unsigned int orig_eax;
+	
 	eax = vcpu->regs[VCPU_REGS_RAX];
+	orig_eax = eax;
 	ecx = vcpu->regs[VCPU_REGS_RCX];
+
 	native_cpuid(&eax, &ebx, &ecx, &edx);
 	vcpu->regs[VCPU_REGS_RAX] = eax;
 	vcpu->regs[VCPU_REGS_RBX] = ebx;
+
+	if(orig_eax == 1){
+		/* Requesting processor features, need to mask VMX (bit 5, ecx) */	
+		HDEBUG("Masking cpuid ecx vmx bit");
+		ecx &= ~(ECX_VMX_BIT);
+	}
+
 	vcpu->regs[VCPU_REGS_RCX] = ecx;
 	vcpu->regs[VCPU_REGS_RDX] = edx;
 }
@@ -2627,8 +2637,23 @@ int vmx_launch(unsigned int flags, struct nr_cloned_state *cloned_thread)
 		if (ret == EXIT_REASON_VMCALL){
 			vmx_handle_vmcall(vcpu, saved_irqs_on);
 		}
-		else if (ret == EXIT_REASON_CPUID)
+		else if (ret == EXIT_REASON_CPUID){
+			HDEBUG("cpuid called.\n");
 			vmx_handle_cpuid(vcpu);
+		} else if (ret == EXIT_REASON_CR_ACCESS){
+			qual = vmcs_readl(EXIT_QUALIFICATION);
+				
+			HDEBUG("CR REG access CR:=%u TO/FROM:=%d GP:=%d ECX=%#lx\n",
+			       (unsigned int)(qual & CR_REG_ACCESS_MASK),
+			       (unsigned int)(qual & CR_REG_ACCESS_TYPE),
+			       (unsigned int)(qual & CR_REG_ACCESS_GP),
+			       (unsigned long)vcpu->regs[VCPU_REGS_RCX]);
+			HDEBUG("Unsupported CR access - calling do_exit()...\n");
+			vmx_put_cpu(vcpu);
+			local_irq_enable();
+			vmx_destroy_vcpu(vcpu);
+			do_exit(0);
+		}
 		else if (ret == EXIT_REASON_EPT_VIOLATION){
 			qual = vmcs_readl(EXIT_QUALIFICATION);
 			gp_addr = vmcs_readl(GUEST_PHYSICAL_ADDRESS);
