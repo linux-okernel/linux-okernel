@@ -546,7 +546,9 @@ long do_arch_prctl(struct task_struct *task, int code, unsigned long addr)
 
 	switch (code) {
 	case ARCH_SET_GS:
-		HDEBUG("ARCH_SET_GS pid=%d addr=%#lx\n", current->pid, addr);	
+		if(is_in_vmx_nr_mode()){
+			HDEBUG("ARCH_SET_GS pid=%d addr=%#lx\n", current->pid, addr);
+		}
 		if (addr >= TASK_SIZE_OF(task))
 			return -EPERM;
 		cpu = get_cpu();
@@ -571,7 +573,9 @@ long do_arch_prctl(struct task_struct *task, int code, unsigned long addr)
 		put_cpu();
 		break;
 	case ARCH_SET_FS:
-		HDEBUG("ARCH_SET_FS pid=%d addr=%#lx\n", current->pid, addr);	
+		if(is_in_vmx_nr_mode()){
+			HDEBUG("ARCH_SET_FS pid=%d addr=%#lx\n", current->pid, addr);
+		}
 		/* Not strictly needed for fs, but do it for symmetry
 		   with gs */
 		if (addr >= TASK_SIZE_OF(task))
@@ -608,8 +612,10 @@ long do_arch_prctl(struct task_struct *task, int code, unsigned long addr)
 			rdmsrl(MSR_FS_BASE, base);
 		else
 			base = task->thread.fs;
-
-		HDEBUG("ARCH_GET_FS pid=%d base=%#lx\n", current->pid, base);
+		
+		if(is_in_vmx_nr_mode()){
+			HDEBUG("ARCH_GET_FS pid=%d base=%#lx\n", current->pid, base);
+		}
 		ret = put_user(base, (unsigned long __user *)addr);
 		break;
 	}
@@ -626,8 +632,10 @@ long do_arch_prctl(struct task_struct *task, int code, unsigned long addr)
 				base = task->thread.gs;
 		} else
 			base = task->thread.gs;
-
-		HDEBUG("ARCH_GET_GS pid=%d base=%#lx\n", current->pid, base);
+	
+		if(is_in_vmx_nr_mode()){
+			HDEBUG("ARCH_GET_GS pid=%d base=%#lx\n", current->pid, base);
+		}
 		ret = put_user(base, (unsigned long __user *)addr);
 		break;
 	}
@@ -642,7 +650,6 @@ long do_arch_prctl(struct task_struct *task, int code, unsigned long addr)
 
 long sys_arch_prctl(int code, unsigned long addr)
 {
-	HDEBUG("code=%d addr=%#lx\n", code, addr);
 	return do_arch_prctl(current, code, addr);
 }
 
