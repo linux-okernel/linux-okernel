@@ -2632,8 +2632,6 @@ int vmx_launch(unsigned int flags, struct nr_cloned_state *cloned_thread)
 			vmx_step_instruction();
 		}
 		
-		//vmx_put_cpu(vcpu);
-
 		if (ret == EXIT_REASON_VMCALL){
 			vmx_handle_vmcall(vcpu, saved_irqs_on);
 		}
