@@ -79,7 +79,7 @@ void do_page_fault_r(struct pt_regs *regs, unsigned long error_code, unsigned lo
 
 
 
-#define HPE_BREAKPOINTS_ENABLED
+//#define HPE_BREAKPOINTS_ENABLED
 #ifdef HPE_BREAKPOINTS_ENABLED
 #define BXMAGICBREAK asm volatile("xchg %bx,%bx")
 #define BXMAGICBREAK_ASM xchg %bx,%bx
