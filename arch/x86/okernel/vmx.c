@@ -1412,24 +1412,23 @@ static void __vmx_get_cpu_helper(void *ptr)
  */
 static void vmx_get_cpu(struct vmx_vcpu *vcpu)
 {
-	int no_irqs;
 	int cur_cpu = get_cpu();
-
+	struct thread_info* r_ti = current_thread_info();
+	
 	if (__this_cpu_read(local_vcpu) != vcpu) {
 		__this_cpu_write(local_vcpu, vcpu);
 		
 		if (vcpu->cpu != cur_cpu) {
-			HDEBUG("swapping cpu...\n");
 			if (vcpu->cpu >= 0){
-				no_irqs = irqs_disabled();
-				if(no_irqs){
-					local_irq_enable();
-				}
+				HDEBUG("swapping cpu:  prempt_c (%#x)\n", r_ti->saved_preempt_count);
+				HDEBUG("swapping cpu: in_atomic(): %d, irqs_disabled(): %d, pid: %d, name: %s\n",
+				       in_atomic(), irqs_disabled(), current->pid, current->comm);
+				HDEBUG("swapping cpu:  preempt_count (%d) rcu_preempt_depth (%d)\n",
+				       preempt_count(), rcu_preempt_depth());
+				put_cpu();
+				do_exit(0);
 				smp_call_function_single(vcpu->cpu,
 							 __vmx_get_cpu_helper, (void *) vcpu, 1);
-				if(no_irqs){
-					local_irq_disable();
-				}
 			} else {
 				vmcs_clear(vcpu->vmcs);
 			}

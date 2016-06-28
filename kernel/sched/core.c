@@ -851,6 +851,7 @@ void activate_task(struct rq *rq, struct task_struct *p, int flags)
 
 	if(p->okernel_status == OKERNEL_ON){
 		HDEBUG("About to enqueue OKERNEL process (pid=%d)\n", p->pid);
+		//dump_stack();
 	}
 	enqueue_task(rq, p, flags);
 }
@@ -1107,6 +1108,9 @@ struct migration_arg {
  */
 static struct rq *__migrate_task(struct rq *rq, struct task_struct *p, int dest_cpu)
 {
+	if(p->okernel_status == OKERNEL_ON){
+		HDEBUG("called for p->pid:=%d\n", p->pid);
+	}
 	if (unlikely(!cpu_active(dest_cpu)))
 		return rq;
 
@@ -1905,7 +1909,12 @@ try_to_wake_up(struct task_struct *p, unsigned int state, int wake_flags)
 	if (p->sched_class->task_waking)
 		p->sched_class->task_waking(p);
 
+	if(p->okernel_status == OKERNEL_ON){
+		HDEBUG("select_task_rq called for pid:=%d\n", p->pid);
+	}
+	
 	cpu = select_task_rq(p, p->wake_cpu, SD_BALANCE_WAKE, wake_flags);
+
 	if (task_cpu(p) != cpu) {
 		wake_flags |= WF_MIGRATED;
 		set_task_cpu(p, cpu);
@@ -2312,6 +2321,9 @@ void wake_up_new_task(struct task_struct *p)
 	/* Initialize new task's runnable average */
 	init_task_runnable_average(p);
 	rq = __task_rq_lock(p);
+	if(p->okernel_status == OKERNEL_ON){
+		HDEBUG("called for pid:=%d\n", p->pid);
+	}
 	activate_task(rq, p, 0);
 	p->on_rq = TASK_ON_RQ_QUEUED;
 	trace_sched_wakeup_new(p, true);
@@ -2677,6 +2689,9 @@ void sched_exec(void)
 	unsigned long flags;
 	int dest_cpu;
 
+	if(is_in_vmx_nr_mode()){
+		HDEBUG("called pid:=%d\n", p->pid);
+	}
 	raw_spin_lock_irqsave(&p->pi_lock, flags);
 	dest_cpu = p->sched_class->select_task_rq(p, task_cpu(p), SD_BALANCE_EXEC, 0);
 	if (dest_cpu == smp_processor_id())
