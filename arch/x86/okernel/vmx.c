@@ -1414,6 +1414,7 @@ static void vmx_get_cpu(struct vmx_vcpu *vcpu)
 {
 	int cur_cpu = get_cpu();
 	struct thread_info* r_ti = current_thread_info();
+	unsigned long gs;
 	
 	if (__this_cpu_read(local_vcpu) != vcpu) {
 		__this_cpu_write(local_vcpu, vcpu);
@@ -1425,10 +1426,11 @@ static void vmx_get_cpu(struct vmx_vcpu *vcpu)
 				       in_atomic(), irqs_disabled(), current->pid, current->comm);
 				HDEBUG("swapping cpu:  preempt_count (%d) rcu_preempt_depth (%d)\n",
 				       preempt_count(), rcu_preempt_depth());
-				put_cpu();
-				do_exit(0);
+				HDEBUG("calling smp_call_function_single...\n");
 				smp_call_function_single(vcpu->cpu,
 							 __vmx_get_cpu_helper, (void *) vcpu, 1);
+				HDEBUG("calling smp_call_function_single...done.\n");
+				
 			} else {
 				vmcs_clear(vcpu->vmcs);
 			}
@@ -1438,6 +1440,9 @@ static void vmx_get_cpu(struct vmx_vcpu *vcpu)
 			vcpu->launched = 0;
 			vmcs_load(vcpu->vmcs);
 			__vmx_setup_cpu();
+			/* Need to update nr-mode view of GS (per-cpu data) */
+			rdmsrl(MSR_GS_BASE, gs);
+			vmcs_writel(GUEST_GS_BASE, gs);
 			vcpu->cpu = cur_cpu;
 		} else {
 			vmcs_load(vcpu->vmcs);
@@ -2232,8 +2237,10 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu, int nr_irqs_enabled)
 	unsigned int cloned_tsk_state;
 	unsigned long rbp;
 	unsigned long rsp;
-	int cpu = smp_processor_id();
-	struct tss_struct *tss = &per_cpu(cpu_tss, cpu);
+
+
+	int cpu;
+	struct tss_struct *tss;
 	volatile unsigned long fs;
 	volatile unsigned long gs;
 	volatile unsigned long nr_fs;
@@ -2381,9 +2388,13 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu, int nr_irqs_enabled)
 		rdmsrl(MSR_FS_BASE, fs);
 		rdmsrl(MSR_GS_BASE, gs);
 
-		HDEBUG("calling schedule_r (pid %d) cpu_cur_tos (%#lx) flgs (%#x)\n",
-		       current->pid, (unsigned long)tss->x86_tss.sp0, r_ti->flags);
 
+		cpu = smp_processor_id();
+		tss = &per_cpu(cpu_tss, cpu);
+		
+		HDEBUG("calling schedule_r (pid %d) cpu_cur_tos (%#lx) tss.sp0 (%#lx) flgs (%#x)\n",
+		       current->pid, current_top_of_stack(), (unsigned long)tss->x86_tss.sp0, r_ti->flags);
+				
 		HDEBUG("calling schedule_r MSR_FS_BASE=%#lx nr_fs=%#lx MSR_GS_BASE=%#lx nr_gs=%#lx\n",
 		       fs, nr_fs, gs, nr_gs);
 		BXMAGICBREAK;
@@ -2398,8 +2409,14 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu, int nr_irqs_enabled)
 
 		
 		schedule_r_mode();
+
+		/* CPU may have changed when we get here so do a vcpu_get_cpu(vcpu) to make sure the 
+		 *  right vmcs info is loaded 
+		 */
 		
 		vpid_sync_vcpu_global();
+
+		//vcpu_get_cpu(vcpu);
 		
 		//if(nr_irqs_enabled){
 		//	local_irq_disable();
@@ -2413,22 +2430,30 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu, int nr_irqs_enabled)
 		set_vmx_r_mode();
 		
                 /* Re-sync cloned-thread thread_info */
+		cpu = smp_processor_id();
 		tss = &per_cpu(cpu_tss, cpu);
 
 #if 0
-		rdmsrl(MSR_FS_BASE, fs);
-		rdmsrl(MSR_GS_BASE, gs);
-		/* Just needed for debug */
+		//rdmsrl(MSR_FS_BASE, fs);
+
+		/* restore fs value from earlier */
+		//vmcs_writel(GUEST_FS_BASE, n_fs);
+
+		/* and reflect GS changes (used to hold per-cpu data so may have changed if we changed processor). */
+		//rdmsrl(MSR_GS_BASE, gs);
+		//vmcs_writel(GUEST_GS_BASE, gs); 
+
+                /* Just needed for debug */
 		nr_fs = vmcs_readl(GUEST_FS_BASE);
 		nr_gs = vmcs_readl(GUEST_GS_BASE);
-		wrmsrl(MSR_FS_BASE, nr_fs);
-		wrmsrl(MSR_GS_BASE, nr_gs);
+		//wrmsrl(MSR_FS_BASE, nr_fs);
+		//wrmsrl(MSR_GS_BASE, nr_gs);
 		
 		HDEBUG("ret schedule_r MSR_FS_BASE=%#lx nr_fs=%#lx MSR_GS_BASE=%#lx nr_gs=%#lx\n",
 		       fs, nr_fs, gs, nr_gs);
 #endif
-		HDEBUG("ret schedule_r (pid %d) cpu_cur_tos (%#lx) flgs (%#x)\n",
-		       current->pid, (unsigned long)tss->x86_tss.sp0, r_ti->flags);
+		HDEBUG("ret schedule_r (pid %d) cpu_cur_tos (%#lx) tss.sp0 (%#lx) flgs (%#x)\n",
+		       current->pid, current_top_of_stack(), (unsigned long)tss->x86_tss.sp0, r_ti->flags);
 
 
 		HDEBUG("syncing cloned thread_info state (R->NR)...\n");
@@ -2502,7 +2527,9 @@ int vmx_launch(unsigned int flags, struct nr_cloned_state *cloned_thread)
 	unsigned long gv_addr;
 	unsigned long qual;
 	unsigned long *pml2_e;
-
+	int cpu;
+	int orig_cpu;
+	
 	if(!cloned_thread)
 		return -EINVAL;
 	
@@ -2579,8 +2606,10 @@ int vmx_launch(unsigned int flags, struct nr_cloned_state *cloned_thread)
 	
 	HDEBUG("About to enter vmx handler while loop...\n");
 
+	orig_cpu = smp_processor_id();
 	
 	while(1){
+		HDEBUG("Entering vmxit handler loop...\n");
 		vmx_get_cpu(vcpu);		
 		local_irq_disable();
 	
@@ -2593,11 +2622,23 @@ int vmx_launch(unsigned int flags, struct nr_cloned_state *cloned_thread)
 			trace_hardirqs_nr_on();
 		}
 #endif
+
+		HDEBUG("About to call vmx_run_vcpu...\n");
+
+		cpu = smp_processor_id();
 		
+		if(cpu != orig_cpu){
+			HDEBUG("cpu changed - not running NR-mode\n");
+			//local_irq_enable();
+			//vmx_put_cpu(vcpu);
+			//do_exit(0);
+		}
+					
 		/**************************** GO FOR IT ***************************/
 		ret = vmx_run_vcpu(vcpu);
 		/*************************** GONE FOR IT! *************************/
-
+		HDEBUG("Returned from vmx_run_vcpu...handling exit condition...\n");
+		
 		BUG_ON(!irqs_disabled());
 
 
@@ -2703,7 +2744,7 @@ int vmx_launch(unsigned int flags, struct nr_cloned_state *cloned_thread)
 		if (done){
 			break;
 		}
-
+		HDEBUG("Done handling exit condition.\n");
 	}
 
         /* (Likely) this may (will) cause a problem if irqs were
