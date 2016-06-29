@@ -1394,6 +1394,25 @@ static void __vmx_setup_cpu(void)
 	vmcs_writel(HOST_GS_BASE, tmpl); /* 22.2.4 */
 }
 
+void vmx_update_nr_cpu_state(void)
+{
+
+	struct desc_ptr *gdt = this_cpu_ptr(&host_gdt);
+	unsigned long sysenter_esp;
+
+	/*
+	 * Linux uses per-cpu TSS and GDT, so set these when switching
+	 * processors.
+	 */
+	vmcs_writel(GUEST_TR_BASE, vmx_read_tr_base()); /* 22.2.4 */
+	vmcs_writel(GUEST_GDTR_BASE, gdt->address);   /* 22.2.4 */
+
+	rdmsrl(MSR_IA32_SYSENTER_ESP, sysenter_esp);
+	vmcs_writel(GUEST_SYSENTER_ESP, sysenter_esp); /* 22.2.3 */
+
+	return;
+}
+
 static void __vmx_get_cpu_helper(void *ptr)
 {
 	struct vmx_vcpu *vcpu = ptr;
@@ -1443,6 +1462,7 @@ static void vmx_get_cpu(struct vmx_vcpu *vcpu)
 			/* Need to update nr-mode view of GS (per-cpu data) */
 			rdmsrl(MSR_GS_BASE, gs);
 			vmcs_writel(GUEST_GS_BASE, gs);
+			vmx_update_nr_cpu_state();
 			vcpu->cpu = cur_cpu;
 		} else {
 			vmcs_load(vcpu->vmcs);
@@ -2397,36 +2417,22 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu, int nr_irqs_enabled)
 				
 		HDEBUG("calling schedule_r MSR_FS_BASE=%#lx nr_fs=%#lx MSR_GS_BASE=%#lx nr_gs=%#lx\n",
 		       fs, nr_fs, gs, nr_gs);
+
+		HDEBUG("calling schedule_r NR RIP:=%#lx\n", vmcs_readl(GUEST_RIP));
 		BXMAGICBREAK;
 
 		unset_vmx_r_mode();
 
-		//vmx_put_cpu(vcpu);
-		
-		//if(nr_irqs_enabled){
-		//	local_irq_enable();
-		//}
 
-		
+		vmx_put_cpu(vcpu);
 		schedule_r_mode();
+		vmx_get_cpu(vcpu);
 
 		/* CPU may have changed when we get here so do a vcpu_get_cpu(vcpu) to make sure the 
 		 *  right vmcs info is loaded 
 		 */
 		
 		vpid_sync_vcpu_global();
-
-		//vcpu_get_cpu(vcpu);
-		
-		//if(nr_irqs_enabled){
-		//	local_irq_disable();
-		//}
-
-		/* We may have changed CPU by the time we get here so we possibly will
-		 * br resuming the NR-mode side on a different CPU to the one it exited
-		 * on */
-		//vmx_get_cpu(vcpu);
-		
 		set_vmx_r_mode();
 		
                 /* Re-sync cloned-thread thread_info */
@@ -2476,7 +2482,7 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu, int nr_irqs_enabled)
 		code = (long)vcpu->regs[VCPU_REGS_RBX];
 		//memcpy(r_ti, nr_ti, sizeof(struct thread_info));
 		HDEBUG("calling do_exit(%ld)...\n", code);
-		//vmx_put_cpu(vcpu);
+		vmx_put_cpu(vcpu);
 		//local_irq_enable();
 		vmx_destroy_vcpu(vcpu);
 		do_exit(code);
@@ -2529,6 +2535,9 @@ int vmx_launch(unsigned int flags, struct nr_cloned_state *cloned_thread)
 	unsigned long *pml2_e;
 	int cpu;
 	int orig_cpu;
+	unsigned long nr_gs;
+	unsigned long nr_fs;
+	
 	
 	if(!cloned_thread)
 		return -EINVAL;
@@ -2612,7 +2621,12 @@ int vmx_launch(unsigned int flags, struct nr_cloned_state *cloned_thread)
 		HDEBUG("Entering vmxit handler loop...\n");
 		vmx_get_cpu(vcpu);		
 		local_irq_disable();
-	
+
+		nr_fs = vmcs_readl(GUEST_FS_BASE);
+		nr_gs = vmcs_readl(GUEST_GS_BASE);
+		
+		HDEBUG("Before run,  nr_fs=%#lx nr_gs=%#lx\n", nr_fs, nr_gs);
+		
 #if defined(CONFIG_TRACE_IRQFLAGS) && defined(CONFIG_PROVE_LOCKING)
 		/* If the NR-mode code will start/re-launch with interrupts on, adjust the 
 		   accounting since at this point in R-mode current->hardirqs_enabled
@@ -2629,6 +2643,7 @@ int vmx_launch(unsigned int flags, struct nr_cloned_state *cloned_thread)
 		
 		if(cpu != orig_cpu){
 			HDEBUG("cpu changed - not running NR-mode\n");
+			HDEBUG("NR RIP:=%#lx\n", vmcs_readl(GUEST_RIP));
 			//local_irq_enable();
 			//vmx_put_cpu(vcpu);
 			//do_exit(0);
@@ -2661,7 +2676,7 @@ int vmx_launch(unsigned int flags, struct nr_cloned_state *cloned_thread)
 			vmx_step_instruction();
 		}
 
-		vmx_put_cpu(vcpu);
+		//vmx_put_cpu(vcpu);
 		
 		if(ret==VMX_EXIT_REASONS_FAILED_VMENTRY){
 			/* Need to try tidy up here... */
@@ -2741,9 +2756,13 @@ int vmx_launch(unsigned int flags, struct nr_cloned_state *cloned_thread)
 			done = 1;
 		}
 		
+		vmx_put_cpu(vcpu);
+		
 		if (done){
+
 			break;
 		}
+
 		HDEBUG("Done handling exit condition.\n");
 	}
 
