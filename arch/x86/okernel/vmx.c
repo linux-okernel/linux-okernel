@@ -1053,7 +1053,7 @@ static noinline void vmwrite_error(unsigned long field, unsigned long value)
 {
 	printk(KERN_ERR "vmwrite error: reg %lx value %lx (err %d)\n",
 	       field, value, vmcs_read32(VM_INSTRUCTION_ERROR));
-	dump_stack();
+	//dump_stack();
 }
 
 static void vmcs_writel(unsigned long field, unsigned long value)
@@ -1399,16 +1399,33 @@ void vmx_update_nr_cpu_state(void)
 
 	struct desc_ptr *gdt = this_cpu_ptr(&host_gdt);
 	unsigned long sysenter_esp;
-
+	unsigned long gs;
+	unsigned long tmpl;
+	struct desc_ptr idt;	
 	/*
 	 * Linux uses per-cpu TSS and GDT, so set these when switching
 	 * processors.
 	 */
+		
+	rdmsrl(MSR_GS_BASE, gs);
+	vmcs_writel(GUEST_GS_BASE, gs);
+
 	vmcs_writel(GUEST_TR_BASE, vmx_read_tr_base()); /* 22.2.4 */
 	vmcs_writel(GUEST_GDTR_BASE, gdt->address);   /* 22.2.4 */
 
 	rdmsrl(MSR_IA32_SYSENTER_ESP, sysenter_esp);
 	vmcs_writel(GUEST_SYSENTER_ESP, sysenter_esp); /* 22.2.3 */
+
+	rdmsrl(MSR_IA32_SYSENTER_CS, tmpl);
+	vmcs_write32(GUEST_SYSENTER_CS, tmpl);
+
+	rdmsrl(MSR_IA32_SYSENTER_EIP, tmpl);
+	vmcs_writel(GUEST_SYSENTER_EIP, tmpl);
+	
+
+	native_store_idt(&idt);
+	vmcs_writel(GUEST_IDTR_BASE, idt.address);
+	vmcs_writel(GUEST_IDTR_LIMIT, idt.size);
 
 	return;
 }
@@ -1418,6 +1435,7 @@ static void __vmx_get_cpu_helper(void *ptr)
 	struct vmx_vcpu *vcpu = ptr;
 
 	BUG_ON(raw_smp_processor_id() != vcpu->cpu);
+	BUG_ON(is_in_vmx_nr_mode());
 	vmcs_clear(vcpu->vmcs);
 	if (__this_cpu_read(local_vcpu) == vcpu)
 		__this_cpu_write(local_vcpu, NULL);
@@ -1433,7 +1451,8 @@ static void vmx_get_cpu(struct vmx_vcpu *vcpu)
 {
 	int cur_cpu = get_cpu();
 	struct thread_info* r_ti = current_thread_info();
-	unsigned long gs;
+
+	BUG_ON(is_in_vmx_nr_mode());
 	
 	if (__this_cpu_read(local_vcpu) != vcpu) {
 		__this_cpu_write(local_vcpu, vcpu);
@@ -1451,6 +1470,7 @@ static void vmx_get_cpu(struct vmx_vcpu *vcpu)
 				HDEBUG("calling smp_call_function_single...done.\n");
 				
 			} else {
+				BUG_ON(is_in_vmx_nr_mode());
 				vmcs_clear(vcpu->vmcs);
 			}
 			vpid_sync_context(vcpu->vpid);
@@ -1459,10 +1479,10 @@ static void vmx_get_cpu(struct vmx_vcpu *vcpu)
 			vcpu->launched = 0;
 			vmcs_load(vcpu->vmcs);
 			__vmx_setup_cpu();
-			/* Need to update nr-mode view of GS (per-cpu data) */
-			rdmsrl(MSR_GS_BASE, gs);
-			vmcs_writel(GUEST_GS_BASE, gs);
-			vmx_update_nr_cpu_state();
+			if(vcpu->cpu >= 0){
+				/* Need to update nr-mode view of GS (per-cpu data) */
+				vmx_update_nr_cpu_state();
+			}
 			vcpu->cpu = cur_cpu;
 		} else {
 			vmcs_load(vcpu->vmcs);
@@ -2071,6 +2091,7 @@ static void vmx_destroy_vcpu(struct vmx_vcpu *vcpu)
 	ept_sync_context(vcpu->eptp);
 	vmx_destroy_ept(vcpu);
 	__free_page(virt_to_page(__va(vcpu->eptp)));
+	BUG_ON(is_in_vmx_nr_mode());
 	vmcs_clear(vcpu->vmcs);
 	__this_cpu_write(local_vcpu, NULL);
 	vmx_put_cpu(vcpu);
@@ -2408,7 +2429,6 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu, int nr_irqs_enabled)
 		rdmsrl(MSR_FS_BASE, fs);
 		rdmsrl(MSR_GS_BASE, gs);
 
-
 		cpu = smp_processor_id();
 		tss = &per_cpu(cpu_tss, cpu);
 		
@@ -2439,34 +2459,13 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu, int nr_irqs_enabled)
 		cpu = smp_processor_id();
 		tss = &per_cpu(cpu_tss, cpu);
 
-#if 0
-		//rdmsrl(MSR_FS_BASE, fs);
-
-		/* restore fs value from earlier */
-		//vmcs_writel(GUEST_FS_BASE, n_fs);
-
-		/* and reflect GS changes (used to hold per-cpu data so may have changed if we changed processor). */
-		//rdmsrl(MSR_GS_BASE, gs);
-		//vmcs_writel(GUEST_GS_BASE, gs); 
-
-                /* Just needed for debug */
-		nr_fs = vmcs_readl(GUEST_FS_BASE);
-		nr_gs = vmcs_readl(GUEST_GS_BASE);
-		//wrmsrl(MSR_FS_BASE, nr_fs);
-		//wrmsrl(MSR_GS_BASE, nr_gs);
-		
-		HDEBUG("ret schedule_r MSR_FS_BASE=%#lx nr_fs=%#lx MSR_GS_BASE=%#lx nr_gs=%#lx\n",
-		       fs, nr_fs, gs, nr_gs);
-#endif
 		HDEBUG("ret schedule_r (pid %d) cpu_cur_tos (%#lx) tss.sp0 (%#lx) flgs (%#x)\n",
 		       current->pid, current_top_of_stack(), (unsigned long)tss->x86_tss.sp0, r_ti->flags);
-
 
 		HDEBUG("syncing cloned thread_info state (R->NR)...\n");
 		BXMAGICBREAK;
 
 		memcpy(nr_ti, r_ti, sizeof(struct thread_info));
-		//barrier();
 
 		HDEBUG("synced cloned thread_info state (R->NR) (nr_ti->flags=%#x)\n",
 			nr_ti->flags);
@@ -2480,10 +2479,8 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu, int nr_irqs_enabled)
 		BXMAGICBREAK;
 	} else if(cmd == VMCALL_DOEXIT){
 		code = (long)vcpu->regs[VCPU_REGS_RBX];
-		//memcpy(r_ti, nr_ti, sizeof(struct thread_info));
 		HDEBUG("calling do_exit(%ld)...\n", code);
 		vmx_put_cpu(vcpu);
-		//local_irq_enable();
 		vmx_destroy_vcpu(vcpu);
 		do_exit(code);
 	} else {
@@ -2676,14 +2673,16 @@ int vmx_launch(unsigned int flags, struct nr_cloned_state *cloned_thread)
 			vmx_step_instruction();
 		}
 
-		//vmx_put_cpu(vcpu);
+		//
 		
 		if(ret==VMX_EXIT_REASONS_FAILED_VMENTRY){
 			/* Need to try tidy up here... */
 			HDEBUG("vmentry failed (%#x)\n", ret);
+			vmx_put_cpu(vcpu);
 			break;
 		} else if((ret == EXIT_REASON_EXTERNAL_INTERRUPT)){
 			/* We should be handling interrupts in NR-mode at the moment...*/
+			vmx_put_cpu(vcpu);
 			BUG();
 		} else if (ret == EXIT_REASON_VMCALL){
 			vmx_handle_vmcall(vcpu, saved_irqs_on);
@@ -2698,6 +2697,7 @@ int vmx_launch(unsigned int flags, struct nr_cloned_state *cloned_thread)
 			       (unsigned int)(qual & CR_REG_ACCESS_GP),
 			       (unsigned long)vcpu->regs[VCPU_REGS_RCX]);
 			HDEBUG("Unsupported CR access.\n");
+			vmx_put_cpu(vcpu);
 			BUG();
 		} else if (ret == EXIT_REASON_EPT_VIOLATION){
 			qual = vmcs_readl(EXIT_QUALIFICATION);
@@ -2742,10 +2742,12 @@ int vmx_launch(unsigned int flags, struct nr_cloned_state *cloned_thread)
 					       cr2, err);
 					HDEBUG("Guest rip (%#lx)\n", vmcs_readl(GUEST_RIP));
 					HDEBUG("can't handle for now...just BUG()\n");
+					vmx_put_cpu(vcpu);
 					BUG();
 				} else {
 					HDEBUG("unhandled exception/NMI: ret (%d) vector (%d), exit qual (%lx)\n",
 					       ret, vii.s.vector, vmcs_readl(EXIT_QUALIFICATION));
+					vmx_put_cpu(vcpu);
 					BUG();
 				}
 			}
@@ -2753,6 +2755,7 @@ int vmx_launch(unsigned int flags, struct nr_cloned_state *cloned_thread)
 		} else {
 			printk(KERN_ERR "vmx_launch: unhandled exit: reason %#x, exit qualification %#lx\n",
 			       ret, vmcs_readl(EXIT_QUALIFICATION));
+			vmx_put_cpu(vcpu);
 			done = 1;
 		}
 		

@@ -3191,6 +3191,8 @@ asmlinkage __visible void __sched schedule(void)
 		ti = current_thread_info();
 		rdmsrl(MSR_FS_BASE, fs);
 
+		cpu = smp_processor_id();
+		tss = &per_cpu(cpu_tss, cpu);
 		
 		HDEBUG("returned from VMCALL schedule (pid=%d)  cpu_cur_tos (%#lx) flgs (%#x)\n",
 		       current->pid, (unsigned long)tss->x86_tss.sp0, ti->flags);
