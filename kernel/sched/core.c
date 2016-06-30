@@ -3165,7 +3165,9 @@ asmlinkage __visible void __sched schedule(void)
 #endif
 				
 		sched_submit_work(tsk);
-		orig_cpu = smp_processor_id();
+		//orig_cpu = smp_processor_id();
+		//printk(KERN_ERR "NR calling schedule...cpu:=(%d) pid=(%d)\n",
+		//       smp_processor_id(), current->pid); 
 		(void)vmcall(VMCALL_SCHED);
 	} else {
 		sched_submit_work(tsk);
@@ -3182,7 +3184,8 @@ asmlinkage __visible void __sched schedule(void)
 
 #ifdef HPE_DEBUG
 	if(is_in_vmx_nr_mode()){
-
+		//printk(KERN_ERR "NR called schedule. cpu:=(%d) pid:=(%d)\n",
+		//       smp_processor_id(), current->pid); 
 		new_cpu = smp_processor_id();
 
 		if(new_cpu != orig_cpu){

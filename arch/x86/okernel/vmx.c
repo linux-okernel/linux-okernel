@@ -1435,8 +1435,14 @@ static void __vmx_get_cpu_helper(void *ptr)
 	struct vmx_vcpu *vcpu = ptr;
 
 	BUG_ON(raw_smp_processor_id() != vcpu->cpu);
-	BUG_ON(is_in_vmx_nr_mode());
-	vmcs_clear(vcpu->vmcs);
+#if 0
+	if(!is_in_vmx_nr_mode()){
+		BUG_ON(is_in_vmx_nr_mode());
+		//vmcs_clear(vcpu->vmcs);
+		if (__this_cpu_read(local_vcpu) == vcpu)
+			__this_cpu_write(local_vcpu, NULL);
+	}
+#endif
 	if (__this_cpu_read(local_vcpu) == vcpu)
 		__this_cpu_write(local_vcpu, NULL);
 }
@@ -1459,15 +1465,27 @@ static void vmx_get_cpu(struct vmx_vcpu *vcpu)
 		
 		if (vcpu->cpu != cur_cpu) {
 			if (vcpu->cpu >= 0){
-				HDEBUG("swapping cpu:  prempt_c (%#x)\n", r_ti->saved_preempt_count);
-				HDEBUG("swapping cpu: in_atomic(): %d, irqs_disabled(): %d, pid: %d, name: %s\n",
+#if 0
+				printk(KERN_ERR "%s swapping cpu:  old (%d) new (%d) prempt_c (%#x) pid:=(%d)\n",
+				       vmx_nr_mode()?"NR":"R ",
+				       vcpu->cpu, cur_cpu,
+				       r_ti->saved_preempt_count, current->pid);
+				printk(KERN_ERR "%s swapping cpu: in_atomic(): %d, irqs_disabled(): %d, pid: %d, name: %s\n",
+				       vmx_nr_mode()?"NR":"R ",
 				       in_atomic(), irqs_disabled(), current->pid, current->comm);
-				HDEBUG("swapping cpu:  preempt_count (%d) rcu_preempt_depth (%d)\n",
+				printk(KERN_ERR "%s swapping cpu:  preempt_count (%d) rcu_preempt_depth (%d)\n",
+				       vmx_nr_mode()?"NR":"R ",
 				       preempt_count(), rcu_preempt_depth());
-				HDEBUG("calling smp_call_function_single...\n");
+				printk(KERN_ERR "%s calling smp_call_function_single  (pid:=%d)...\n",
+				       vmx_nr_mode()?"NR":"R ", current->pid);
+#endif
 				smp_call_function_single(vcpu->cpu,
 							 __vmx_get_cpu_helper, (void *) vcpu, 1);
-				HDEBUG("calling smp_call_function_single...done.\n");
+#if 0
+				printk(KERN_ERR "%s calling smp_call_function_single (pid:=%d)...done.\n",
+				       vmx_nr_mode()?"NR":"R ", current->pid);
+#endif
+				vmcs_clear(vcpu->vmcs);
 				
 			} else {
 				BUG_ON(is_in_vmx_nr_mode());
@@ -2445,8 +2463,11 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu, int nr_irqs_enabled)
 
 
 		vmx_put_cpu(vcpu);
+
+		local_irq_enable();
 		schedule_r_mode();
 		vmx_get_cpu(vcpu);
+		local_irq_disable();
 
 		/* CPU may have changed when we get here so do a vcpu_get_cpu(vcpu) to make sure the 
 		 *  right vmcs info is loaded 
@@ -2481,6 +2502,7 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu, int nr_irqs_enabled)
 		code = (long)vcpu->regs[VCPU_REGS_RBX];
 		HDEBUG("calling do_exit(%ld)...\n", code);
 		vmx_put_cpu(vcpu);
+		local_irq_enable();
 		vmx_destroy_vcpu(vcpu);
 		do_exit(code);
 	} else {
@@ -2664,11 +2686,12 @@ int vmx_launch(unsigned int flags, struct nr_cloned_state *cloned_thread)
 			trace_hardirqs_nr_off();
 #endif
 		}
-		
+
+#if 0
 		if(saved_irqs_on){
 			local_irq_enable();
 		}
-		
+#endif		
 		if (ret == EXIT_REASON_VMCALL || ret == EXIT_REASON_CPUID) {
 			vmx_step_instruction();
 		}
@@ -2760,6 +2783,7 @@ int vmx_launch(unsigned int flags, struct nr_cloned_state *cloned_thread)
 		}
 		
 		vmx_put_cpu(vcpu);
+		local_irq_enable();
 		
 		if (done){
 

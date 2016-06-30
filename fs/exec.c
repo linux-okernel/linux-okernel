@@ -845,12 +845,13 @@ static int exec_mmap(struct mm_struct *mm)
 	tsk = current;
 	old_mm = current->mm;
 
+
 	if(is_in_vmx_nr_mode()){
+		//printk(KERN_ERR "Calling VMCALL_DO_EXEC_FIXUP_HOST...\n");
 		ret = vmcall2(VMCALL_DO_EXEC_FIXUP_HOST, (unsigned long)mm->pgd);
 		BUG_ON(ret);
+		//printk(KERN_ERR "Done calling VMCALL_DO_EXEC_FIXUP_HOST.\n");
 	}
-
-	barrier();
 	
 	mm_release(tsk, old_mm);
 
