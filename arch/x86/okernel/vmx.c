@@ -1435,14 +1435,8 @@ static void __vmx_get_cpu_helper(void *ptr)
 	struct vmx_vcpu *vcpu = ptr;
 
 	BUG_ON(raw_smp_processor_id() != vcpu->cpu);
-#if 0
-	if(!is_in_vmx_nr_mode()){
-		BUG_ON(is_in_vmx_nr_mode());
-		//vmcs_clear(vcpu->vmcs);
-		if (__this_cpu_read(local_vcpu) == vcpu)
-			__this_cpu_write(local_vcpu, NULL);
-	}
-#endif
+
+	/* CID: Need to fix this (this may be written in NR-mode */
 	if (__this_cpu_read(local_vcpu) == vcpu)
 		__this_cpu_write(local_vcpu, NULL);
 }
@@ -1465,26 +1459,19 @@ static void vmx_get_cpu(struct vmx_vcpu *vcpu)
 		
 		if (vcpu->cpu != cur_cpu) {
 			if (vcpu->cpu >= 0){
-#if 0
-				printk(KERN_ERR "%s swapping cpu:  old (%d) new (%d) prempt_c (%#x) pid:=(%d)\n",
-				       vmx_nr_mode()?"NR":"R ",
-				       vcpu->cpu, cur_cpu,
-				       r_ti->saved_preempt_count, current->pid);
-				printk(KERN_ERR "%s swapping cpu: in_atomic(): %d, irqs_disabled(): %d, pid: %d, name: %s\n",
-				       vmx_nr_mode()?"NR":"R ",
+				HDEBUG("swapping cpu:  old (%d) new (%d) prempt_c (%#x) pid:=(%d)\n",
+				      vcpu->cpu, cur_cpu, r_ti->saved_preempt_count, current->pid);
+				HDEBUG("swapping cpu: in_atomic(): %d, irqs_disabled(): %d, pid: %d, name: %s\n",
 				       in_atomic(), irqs_disabled(), current->pid, current->comm);
-				printk(KERN_ERR "%s swapping cpu:  preempt_count (%d) rcu_preempt_depth (%d)\n",
-				       vmx_nr_mode()?"NR":"R ",
+				HDEBUG("swapping cpu:  preempt_count (%d) rcu_preempt_depth (%d)\n",
 				       preempt_count(), rcu_preempt_depth());
-				printk(KERN_ERR "%s calling smp_call_function_single  (pid:=%d)...\n",
-				       vmx_nr_mode()?"NR":"R ", current->pid);
-#endif
+			        HDEBUG("calling smp_call_function_single  (pid:=%d)...\n",  current->pid);
+
 				smp_call_function_single(vcpu->cpu,
 							 __vmx_get_cpu_helper, (void *) vcpu, 1);
-#if 0
-				printk(KERN_ERR "%s calling smp_call_function_single (pid:=%d)...done.\n",
-				       vmx_nr_mode()?"NR":"R ", current->pid);
-#endif
+				
+				HDEBUG("calling smp_call_function_single (pid:=%d)...done.\n",
+				       current->pid);
 				vmcs_clear(vcpu->vmcs);
 				
 			} else {
@@ -2546,7 +2533,6 @@ int vmx_launch(unsigned int flags, struct nr_cloned_state *cloned_thread)
 	} vii;
 	unsigned long cr2;
 	unsigned long err;
-	struct pt_regs regs;
 	unsigned long k_stack;
 	unsigned long gp_addr;
 	unsigned long gv_addr;
