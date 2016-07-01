@@ -1084,8 +1084,9 @@ __do_page_fault(struct pt_regs *regs, unsigned long error_code,
 	int fault, major = 0;
 	unsigned int flags = FAULT_FLAG_ALLOW_RETRY | FAULT_FLAG_KILLABLE;
 
+#if defined(HPE_DEBUG)
 	int count = 0;
-
+#endif
 	tsk = current;
 	mm = tsk->mm;
 
@@ -1238,6 +1239,7 @@ retry:
 		goto good_area;
 	if (unlikely(!(vma->vm_flags & VM_GROWSDOWN))) {
 		HDEBUG("calling bad area 2\n");
+#if defined(HPE_DEBUG)
 		if(is_in_vmx_nr_mode()){
 			HDEBUG("Current mm vma mappings: \n");
 			for(vma = mm->mmap; vma; vma=vma->vm_next){
@@ -1253,6 +1255,7 @@ retry:
 			       mm->start_stack);
 			HDEBUG("Current mm vma mappings done.\n");
 		}
+#endif
 		bad_area(regs, error_code, address);
 		return;
 	}

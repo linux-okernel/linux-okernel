@@ -1450,10 +1450,9 @@ static void __vmx_get_cpu_helper(void *ptr)
 static void vmx_get_cpu(struct vmx_vcpu *vcpu)
 {
 	int cur_cpu = get_cpu();
+#if defined(HPE_DEBUG)
 	struct thread_info* r_ti = current_thread_info();
-
-	BUG_ON(is_in_vmx_nr_mode());
-	
+#endif
 	if (__this_cpu_read(local_vcpu) != vcpu) {
 		__this_cpu_write(local_vcpu, vcpu);
 		
@@ -1475,7 +1474,6 @@ static void vmx_get_cpu(struct vmx_vcpu *vcpu)
 				vmcs_clear(vcpu->vmcs);
 				
 			} else {
-				BUG_ON(is_in_vmx_nr_mode());
 				vmcs_clear(vcpu->vmcs);
 			}
 			vpid_sync_context(vcpu->vpid);
@@ -2096,7 +2094,6 @@ static void vmx_destroy_vcpu(struct vmx_vcpu *vcpu)
 	ept_sync_context(vcpu->eptp);
 	vmx_destroy_ept(vcpu);
 	__free_page(virt_to_page(__va(vcpu->eptp)));
-	BUG_ON(is_in_vmx_nr_mode());
 	vmcs_clear(vcpu->vmcs);
 	__this_cpu_write(local_vcpu, NULL);
 	vmx_put_cpu(vcpu);
@@ -2423,13 +2420,11 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu, int nr_irqs_enabled)
 
 		nr_fs = vmcs_readl(GUEST_FS_BASE);
 		nr_gs = vmcs_readl(GUEST_GS_BASE);
-		//vmcs_writel(HOST_FS_BASE, nr_fs);
-		//vmcs_writel(HOST_GS_BASE, nr_gs); 
-
 		wrmsrl(MSR_FS_BASE, nr_fs);
 		wrmsrl(MSR_GS_BASE, nr_gs);
 
 
+#if defined(HPE_DEBUG)
 		/* Don't need this rdmsrl, just for debug output */
 		rdmsrl(MSR_FS_BASE, fs);
 		rdmsrl(MSR_GS_BASE, gs);
@@ -2445,7 +2440,7 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu, int nr_irqs_enabled)
 
 		HDEBUG("calling schedule_r NR RIP:=%#lx\n", vmcs_readl(GUEST_RIP));
 		BXMAGICBREAK;
-
+#endif
 		unset_vmx_r_mode();
 
 
@@ -2526,7 +2521,6 @@ int vmx_launch(unsigned int flags, struct nr_cloned_state *cloned_thread)
 	struct vmx_vcpu *vcpu;
 	unsigned long saved_irqs_on;
 
-	int done = 0;
 	union {
 		struct intr_info s;
 		ulong v;
@@ -2538,10 +2532,12 @@ int vmx_launch(unsigned int flags, struct nr_cloned_state *cloned_thread)
 	unsigned long gv_addr;
 	unsigned long qual;
 	unsigned long *pml2_e;
+#if defined(HPE_DEBUG)
 	int cpu;
 	int orig_cpu;
 	unsigned long nr_gs;
 	unsigned long nr_fs;
+#endif
 	
 	
 	if(!cloned_thread)
@@ -2600,10 +2596,12 @@ int vmx_launch(unsigned int flags, struct nr_cloned_state *cloned_thread)
 	asm volatile ("mov %0, %%rsp": : "r" (new_rsp));
 
 	BXMAGICBREAK;
-	/* can we still access fred? */
+
+	/* Check our stack manipulation & sliding - can we still access fred? */
+#if defined(HPE_DEBUG)
 	HDEBUG("fred (%lu) address of fred (%#lx)\n", fred, (unsigned long)&fred);
 	BXMAGICBREAK;
-	
+#endif
 	vcpu->cloned_tsk = current;
 
 
@@ -2620,7 +2618,9 @@ int vmx_launch(unsigned int flags, struct nr_cloned_state *cloned_thread)
 	
 	HDEBUG("About to enter vmx handler while loop...\n");
 
+#if defined(HPE_DEBUG)
 	orig_cpu = smp_processor_id();
+#endif
 	vmx_get_cpu(vcpu);		
 	
 	while(1){
@@ -2628,10 +2628,11 @@ int vmx_launch(unsigned int flags, struct nr_cloned_state *cloned_thread)
 
 		local_irq_disable();
 
+#if defined(HPE_DEBUG)
 		nr_fs = vmcs_readl(GUEST_FS_BASE);
 		nr_gs = vmcs_readl(GUEST_GS_BASE);
-		
 		HDEBUG("Before run,  nr_fs=%#lx nr_gs=%#lx\n", nr_fs, nr_gs);
+#endif
 		
 #if defined(CONFIG_TRACE_IRQFLAGS) && defined(CONFIG_PROVE_LOCKING)
 		/* If the NR-mode code will start/re-launch with interrupts on, adjust the 
@@ -2645,24 +2646,21 @@ int vmx_launch(unsigned int flags, struct nr_cloned_state *cloned_thread)
 
 		HDEBUG("About to call vmx_run_vcpu...\n");
 
+#if defined(HPE_DEBUG)
 		cpu = smp_processor_id();
 		
 		if(cpu != orig_cpu){
-			HDEBUG("cpu changed - not running NR-mode\n");
+			HDEBUG("cpu changed\n");
 			HDEBUG("NR RIP:=%#lx\n", vmcs_readl(GUEST_RIP));
-			//local_irq_enable();
-			//vmx_put_cpu(vcpu);
-			//do_exit(0);
 		}
-					
+#endif			
 		/**************************** GO FOR IT ***************************/
 		ret = vmx_run_vcpu(vcpu);
-		/*************************** GONE FOR IT! *************************/
+                /*************************** GONE FOR IT! *************************/
+
 		HDEBUG("Returned from vmx_run_vcpu...handling exit condition...\n");
 		
-		BUG_ON(!irqs_disabled());
-
-
+		
 		/* Record the current NR-mode interrupt state as this will be restored via
 		   above trace_hardirqs_nr_on() call above to fix-up the accounting. More 
 		   importantly we use it as a flag tp vmx_handle_vmcall to determine 
@@ -2682,18 +2680,14 @@ int vmx_launch(unsigned int flags, struct nr_cloned_state *cloned_thread)
 		if (ret == EXIT_REASON_VMCALL || ret == EXIT_REASON_CPUID) {
 			vmx_step_instruction();
 		}
-
-		//
 		
 		if(ret==VMX_EXIT_REASONS_FAILED_VMENTRY){
-			/* Need to try tidy up here... */
 			HDEBUG("vmentry failed (%#x)\n", ret);
-			vmx_put_cpu(vcpu);
 			break;
 		} else if((ret == EXIT_REASON_EXTERNAL_INTERRUPT)){
 			/* We should be handling interrupts in NR-mode at the moment...*/
-			vmx_put_cpu(vcpu);
-			BUG();
+			HDEBUG("vmexit on external interrupt.\n");
+			break;
 		} else if (ret == EXIT_REASON_VMCALL){
 			vmx_handle_vmcall(vcpu, saved_irqs_on);
 		} else if (ret == EXIT_REASON_CPUID){
@@ -2707,8 +2701,7 @@ int vmx_launch(unsigned int flags, struct nr_cloned_state *cloned_thread)
 			       (unsigned int)(qual & CR_REG_ACCESS_GP),
 			       (unsigned long)vcpu->regs[VCPU_REGS_RCX]);
 			HDEBUG("Unsupported CR access.\n");
-			vmx_put_cpu(vcpu);
-			BUG();
+			break;
 		} else if (ret == EXIT_REASON_EPT_VIOLATION){
 			qual = vmcs_readl(EXIT_QUALIFICATION);
 			gp_addr = vmcs_readl(GUEST_PHYSICAL_ADDRESS);
@@ -2716,10 +2709,8 @@ int vmx_launch(unsigned int flags, struct nr_cloned_state *cloned_thread)
 			HDEBUG("ept violation exit - qualification=%#lx gpa=%#lx\n",
 				qual, gp_addr);
 
-						
 			if(!(pml2_e =  find_pd_entry(vcpu, gp_addr))){
-				printk(KERN_ERR "okernel: NULL pml2 entry for gp_addr (%#lx)\n",
-				       gp_addr);
+				HDEBUG("NULL pml2 entry for gp_addr (%#lx)\n", gp_addr);
 			} else {
 				HDEBUG("ept entry for gpa=%#lx is (%#lx)\n", gp_addr, *pml2_e);
 			}
@@ -2728,7 +2719,7 @@ int vmx_launch(unsigned int flags, struct nr_cloned_state *cloned_thread)
 				gv_addr = (u64)vmcs_readl(GUEST_LINEAR_ADDRESS);
 				HDEBUG("gva=%#lx\n", gv_addr);
 			}
-			done = 1;
+			break;
 		} else if (ret == EXIT_REASON_EPT_MISCONFIG){
 			gp_addr = vmcs_readl(GUEST_PHYSICAL_ADDRESS);
 			HDEBUG("ept misconfig exit - gpa=%#lx\n", gp_addr);
@@ -2738,53 +2729,39 @@ int vmx_launch(unsigned int flags, struct nr_cloned_state *cloned_thread)
 			} else {
 				HDEBUG("ept entry for gpa=%#lx is (%#lx)\n", gp_addr, *pml2_e);
 			}
-			done = 1;
+			break;
 		} else if (ret == EXIT_REASON_EXCEPTION_NMI) {
-			
 			vii.v = vmcs_readl(VM_EXIT_INTR_INFO);
 			HDEBUG("recieved EXCEPTION or NMI\n");
 			if(vii.s.valid == INTR_INFO_VALID_VALID){
 				if(vii.s.vector == EXCEPTION_GP){
 					err = (u64)vmcs_readl(VMCS_VMEXIT_INTR_ERRCODE);
 					cr2 = (u64)vmcs_readl(EXIT_QUALIFICATION);
-					
 					HDEBUG("Got GP error - exit qualification (%#lx) err (%#lx)\n",
 					       cr2, err);
 					HDEBUG("Guest rip (%#lx)\n", vmcs_readl(GUEST_RIP));
-					HDEBUG("can't handle for now...just BUG()\n");
-					vmx_put_cpu(vcpu);
-					BUG();
 				} else {
 					HDEBUG("unhandled exception/NMI: ret (%d) vector (%d), exit qual (%lx)\n",
 					       ret, vii.s.vector, vmcs_readl(EXIT_QUALIFICATION));
-					vmx_put_cpu(vcpu);
-					BUG();
 				}
 			}
-			done = 1;
+			break;
 		} else {
-			printk(KERN_ERR "vmx_launch: unhandled exit: reason %#x, exit qualification %#lx\n",
+			HDEBUG("unhandled exit: reason %#x, exit qualification %#lx\n",
 			       ret, vmcs_readl(EXIT_QUALIFICATION));
-			vmx_put_cpu(vcpu);
-			done = 1;
-		}
-		
-		//vmx_put_cpu(vcpu);
-		local_irq_enable();
-		
-		if (done){
-
 			break;
 		}
-
-		HDEBUG("Done handling exit condition.\n");
+		local_irq_enable();
+		HDEBUG("Done handling exit condition, looping...\n");
 	}
 
-        /* (Likely) this may (will) cause a problem if irqs were
+	/* something went wrong - legitimate exit would have been through the 
+	 * do_exit() kernel path.  (Likely) this may (will) cause a problem if irqs were
 	 * disabled / locks held, etc. in cloned thread on vmexit
 	 * fault - we will have inconsistent kernel state we will need
-	 * to sort out.*/
-	
+	 * to sort out.
+	 */
+	vmx_put_cpu(vcpu);
         HDEBUG("leaving vmexit() loop (VPID %d) - ret (%x) - trigger BUG() for now...\n",
 	       vcpu->vpid, ret);
 	local_irq_enable();

@@ -3132,9 +3132,10 @@ asmlinkage __visible void __sched schedule(void)
 	struct tss_struct *tss = &per_cpu(cpu_tss, cpu);
 	unsigned long fs;
 	
-#endif
+
 	int orig_cpu = 0;
 	int new_cpu = 0;
+#endif
 	
 	if(is_in_vmx_nr_mode()){
 		/* Return control to the original process running in root-mode VMX */
@@ -3146,15 +3147,8 @@ asmlinkage __visible void __sched schedule(void)
 	        HDEBUG("called (pid=%d)  cpu_cur_tos (%#lx) flgs(%#x) MSR_FS_BASE=%#lx\n",
 			current->pid, (unsigned long)tss->x86_tss.sp0, ti->flags, fs);
 		BXMAGICBREAK;
-#endif
+
 		
-#if 0
-		if(irqs_disabled()){
-			printk("NR: BUG schedule called with irqs_disabled (%d)\n",
-			       irqs_disabled());
-			BUG();
-		}
-#endif		
 		HDEBUG("in_atomic(): %d, irqs_disabled(): %d, pid: %d, name: %s\n",
 			in_atomic(), irqs_disabled(), current->pid, current->comm);
 		HDEBUG("preempt_count (%#x) rcu_preempt_depth (%#x) saved preempt (%#x)\n",
@@ -3163,11 +3157,8 @@ asmlinkage __visible void __sched schedule(void)
 		HDEBUG("current->h_irqs_en (%d)\n",
 			current->hardirqs_enabled);
 #endif
-				
+#endif				
 		sched_submit_work(tsk);
-		//orig_cpu = smp_processor_id();
-		//printk(KERN_ERR "NR calling schedule...cpu:=(%d) pid=(%d)\n",
-		//       smp_processor_id(), current->pid); 
 		(void)vmcall(VMCALL_SCHED);
 	} else {
 		sched_submit_work(tsk);
@@ -3186,11 +3177,13 @@ asmlinkage __visible void __sched schedule(void)
 	if(is_in_vmx_nr_mode()){
 		//printk(KERN_ERR "NR called schedule. cpu:=(%d) pid:=(%d)\n",
 		//       smp_processor_id(), current->pid); 
+#if defined(HPE_DEBUG)
 		new_cpu = smp_processor_id();
 
 		if(new_cpu != orig_cpu){
 			HDEBUG("CPUs swapped after schedule()\n");
 		}
+		
 		ti = current_thread_info();
 		rdmsrl(MSR_FS_BASE, fs);
 
@@ -3213,12 +3206,6 @@ asmlinkage __visible void __sched schedule(void)
 		HDEBUG("return current->h_irqs_en (%d)\n", current->hardirqs_enabled);
 #endif
 		BXMAGICBREAK;
-#if 0
-		if(new_cpu != orig_cpu){
-			HDEBUG("Trigger exit sincce cpus swapped after schedule()\n");
-			do_exit(0);
-			
-		}
 #endif
 	}
 #endif
