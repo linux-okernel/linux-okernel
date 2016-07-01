@@ -2621,10 +2621,11 @@ int vmx_launch(unsigned int flags, struct nr_cloned_state *cloned_thread)
 	HDEBUG("About to enter vmx handler while loop...\n");
 
 	orig_cpu = smp_processor_id();
+	vmx_get_cpu(vcpu);		
 	
 	while(1){
 		HDEBUG("Entering vmxit handler loop...\n");
-		vmx_get_cpu(vcpu);		
+
 		local_irq_disable();
 
 		nr_fs = vmcs_readl(GUEST_FS_BASE);
@@ -2768,7 +2769,7 @@ int vmx_launch(unsigned int flags, struct nr_cloned_state *cloned_thread)
 			done = 1;
 		}
 		
-		vmx_put_cpu(vcpu);
+		//vmx_put_cpu(vcpu);
 		local_irq_enable();
 		
 		if (done){
