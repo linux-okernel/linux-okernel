@@ -3593,20 +3593,19 @@ static void check_flags(unsigned long flags)
     defined(CONFIG_TRACE_IRQFLAGS)
 	if (!debug_locks)
 		return;
-#if 0
-	if(is_in_vmx_nr_mode()){
-		HDEBUG("check IR status against flags: flags (%#lx) c->hirqs_en (%d)\n",
-			flags, current->hardirqs_enabled);
-	}
-#endif	
+
 	if (irqs_disabled_flags(flags)) {
 		if (DEBUG_LOCKS_WARN_ON(current->hardirqs_enabled)) {
+#if defined(CONFIG_OKERNEL)
 			HDEBUG("possible reason: unannotated irqs-off.\n");
+#endif
 			printk("possible reason: unannotated irqs-off.\n");
 		}
 	} else {
 		if (DEBUG_LOCKS_WARN_ON(!current->hardirqs_enabled)) {
+#if defined(CONFIG_OKERNEL)
 			HDEBUG("possible reason: unannotated irqs-on.\n");
+#endif
 			printk("possible reason: unannotated irqs-on.\n");
 		}
 	}
@@ -3631,11 +3630,6 @@ static void check_flags(unsigned long flags)
 	if (!debug_locks)
 		print_irqtrace_events(current);
 
-#if 0
-	if(is_in_vmx_nr_mode()){
-		HDEBUG("check flags done.\n");
-	}
-#endif
 #endif
 }
 

@@ -100,6 +100,7 @@ do {									\
 #define __switch_canary_iparam
 #endif	/* CC_STACKPROTECTOR */
 
+#if defined(CONFIG_OKERNEL)
 /* Save restore flags to clear handle leaking NT */
 #define switch_to(prev, next, last) \
 	asm volatile(SAVE_CONTEXT					  \
@@ -126,6 +127,31 @@ do {									\
 	       [current_task] "m" (current_task)			  \
 	       __switch_canary_iparam					  \
 	     : "memory", "cc" __EXTRA_CLOBBER)
+#else
+/* Save restore flags to clear handle leaking NT */
+#define switch_to(prev, next, last) \
+	asm volatile(SAVE_CONTEXT					  \
+	     "movq %%rsp,%P[threadrsp](%[prev])\n\t" /* save RSP */	  \
+	     "movq %P[threadrsp](%[next]),%%rsp\n\t" /* restore RSP */	  \
+	     "call __switch_to\n\t"					  \
+	     "movq "__percpu_arg([current_task])",%%rsi\n\t"		  \
+	     __switch_canary						  \
+	     "movq %P[thread_info](%%rsi),%%r8\n\t"			  \
+	     "movq %%rax,%%rdi\n\t" 					  \
+	     "testl  %[_tif_fork],%P[ti_flags](%%r8)\n\t"		  \
+	     "jnz   ret_from_fork\n\t"					  \
+	     RESTORE_CONTEXT					          \
+	     : "=a" (last)					  	  \
+	       __switch_canary_oparam					  \
+	     : [next] "S" (next), [prev] "D" (prev),			  \
+	       [threadrsp] "i" (offsetof(struct task_struct, thread.sp)), \
+	       [ti_flags] "i" (offsetof(struct thread_info, flags)),	  \
+	       [_tif_fork] "i" (_TIF_FORK),			  	  \
+	       [thread_info] "i" (offsetof(struct task_struct, stack)),	  \
+	       [current_task] "m" (current_task)			  \
+	       __switch_canary_iparam					  \
+	     : "memory", "cc" __EXTRA_CLOBBER)
+#endif /* CONFIG_OKERNEL */
 
 #endif /* CONFIG_X86_32 */
 

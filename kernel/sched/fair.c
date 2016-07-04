@@ -4233,9 +4233,11 @@ enqueue_task_fair(struct rq *rq, struct task_struct *p, int flags)
 	struct cfs_rq *cfs_rq;
 	struct sched_entity *se = &p->se;
 
+#if defined(CONFIG_OKERNEL)
 	if(p->okernel_status == OKERNEL_ON){
 		HDEBUG("called for pid:=%d\n", p->pid);
 	}
+#endif
 	for_each_sched_entity(se) {
 		if (se->on_rq)
 			break;
@@ -5934,10 +5936,11 @@ static int detach_tasks(struct lb_env *env)
 
 		if ((load / 2) > env->imbalance)
 			goto next;
-
+#if defined(CONFIG_OKERNEL)
 		if(p->okernel_status == OKERNEL_ON){
 			HDEBUG("calling detach_task() for pid:=%d\n", p->pid);
 		}
+#endif
 		detach_task(p, env);
 		list_add(&p->se.group_node, &env->tasks);
 
@@ -5983,9 +5986,11 @@ static void attach_task(struct rq *rq, struct task_struct *p)
 {
 	lockdep_assert_held(&rq->lock);
 
+#if defined(CONFIG_OKERNEL)
 	if(p->okernel_status == OKERNEL_ON){
 		HDEBUG("calling activate_task() for pid:=%d\n", p->pid);
 	}
+#endif
 	BUG_ON(task_rq(p) != rq);
 	p->on_rq = TASK_ON_RQ_QUEUED;
 	activate_task(rq, p, 0);

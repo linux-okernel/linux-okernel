@@ -17,7 +17,6 @@
 #include "sched.h"
 
 #include <linux/slab.h>
-#include <linux/okernel.h>
 
 struct dl_bandwidth def_dl_bandwidth;
 
@@ -959,9 +958,6 @@ static void enqueue_task_dl(struct rq *rq, struct task_struct *p, int flags)
 	 * deadline.
 	 */
 
-	if(p->okernel_status == OKERNEL_ON){
-		HDEBUG("called for pid:=%d\n", p->pid);
-	}
 	if (pi_task && p->dl.dl_boosted && dl_prio(pi_task->normal_prio)) {
 		pi_se = &pi_task->dl;
 	} else if (!dl_prio(p->normal_prio)) {
@@ -988,9 +984,6 @@ static void enqueue_task_dl(struct rq *rq, struct task_struct *p, int flags)
 	enqueue_dl_entity(&p->dl, pi_se, flags);
 
 	if (!task_current(rq, p) && p->nr_cpus_allowed > 1){
-		if(p->okernel_status == OKERNEL_ON){
-			HDEBUG("enqueue pushable pid:=%d\n", p->pid);
-		}
 		enqueue_pushable_dl_task(rq, p);
 	}
 }

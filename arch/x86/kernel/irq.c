@@ -217,9 +217,11 @@ __visible unsigned int __irq_entry do_IRQ(struct pt_regs *regs)
 	unsigned vector = ~regs->orig_ax;
 	unsigned irq;
 
+#if defined(CONFIG_OKERNEL)
 	if(is_in_vmx_nr_mode()){
 		HDEBUG("called.\n");
 	}
+#endif
 	entering_irq();
 
 	irq = __this_cpu_read(vector_irq[vector]);

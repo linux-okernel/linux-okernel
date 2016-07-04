@@ -829,9 +829,11 @@ static void set_load_weight(struct task_struct *p)
 
 static void enqueue_task(struct rq *rq, struct task_struct *p, int flags)
 {
+#if defined(CONFIG_OKERNEL)
 	if(p->okernel_status == OKERNEL_ON){
 		HDEBUG("in enqueue task.\n");
 	}
+#endif
 	update_rq_clock(rq);
 	sched_info_queued(rq, p);
 	p->sched_class->enqueue_task(rq, p, flags);
@@ -848,11 +850,11 @@ void activate_task(struct rq *rq, struct task_struct *p, int flags)
 {
 	if (task_contributes_to_load(p))
 		rq->nr_uninterruptible--;
-
+#if defined(CONFIG_OKERNEL)
 	if(p->okernel_status == OKERNEL_ON){
 		HDEBUG("About to enqueue OKERNEL process (pid=%d)\n", p->pid);
-		//dump_stack();
 	}
+#endif
 	enqueue_task(rq, p, flags);
 }
 
@@ -1108,9 +1110,11 @@ struct migration_arg {
  */
 static struct rq *__migrate_task(struct rq *rq, struct task_struct *p, int dest_cpu)
 {
+#if defined(CONFIG_OKERNEL)
 	if(p->okernel_status == OKERNEL_ON){
 		HDEBUG("called for p->pid:=%d\n", p->pid);
 	}
+#endif
 	if (unlikely(!cpu_active(dest_cpu)))
 		return rq;
 
@@ -1909,9 +1913,11 @@ try_to_wake_up(struct task_struct *p, unsigned int state, int wake_flags)
 	if (p->sched_class->task_waking)
 		p->sched_class->task_waking(p);
 
+#if defined(CONFIG_OKERNEL)
 	if(p->okernel_status == OKERNEL_ON){
 		HDEBUG("select_task_rq called for pid:=%d\n", p->pid);
 	}
+#endif
 	
 	cpu = select_task_rq(p, p->wake_cpu, SD_BALANCE_WAKE, wake_flags);
 
@@ -2321,9 +2327,11 @@ void wake_up_new_task(struct task_struct *p)
 	/* Initialize new task's runnable average */
 	init_task_runnable_average(p);
 	rq = __task_rq_lock(p);
+#if defined(CONFIG_OKERNEL)
 	if(p->okernel_status == OKERNEL_ON){
 		HDEBUG("called for pid:=%d\n", p->pid);
 	}
+#endif
 	activate_task(rq, p, 0);
 	p->on_rq = TASK_ON_RQ_QUEUED;
 	trace_sched_wakeup_new(p, true);
@@ -2689,9 +2697,11 @@ void sched_exec(void)
 	unsigned long flags;
 	int dest_cpu;
 
+#if defined(CONFIG_OKERNEL)
 	if(is_in_vmx_nr_mode()){
 		HDEBUG("called pid:=%d\n", p->pid);
 	}
+#endif
 	raw_spin_lock_irqsave(&p->pi_lock, flags);
 	dest_cpu = p->sched_class->select_task_rq(p, task_cpu(p), SD_BALANCE_EXEC, 0);
 	if (dest_cpu == smp_processor_id())
@@ -2889,13 +2899,14 @@ static noinline void __schedule_bug(struct task_struct *prev)
 	if (oops_in_progress)
 		return;
 
+#if defined(CONFIG_OKERNEL)
 	if(is_in_vmx_nr_mode()){
 		printk(KERN_ERR "BUG: NR scheduling while atomic: %s/%d/0x%08x\n",
 		prev->comm, prev->pid, preempt_count());
-	} else {
-		printk(KERN_ERR "BUG: scheduling while atomic: %s/%d/0x%08x\n",
-		prev->comm, prev->pid, preempt_count());
 	}
+#endif
+	printk(KERN_ERR "BUG: scheduling while atomic: %s/%d/0x%08x\n",
+		prev->comm, prev->pid, preempt_count());
 	debug_show_held_locks(prev);
 	print_modules();
 	if (irqs_disabled())
@@ -3126,6 +3137,8 @@ static inline void sched_submit_work(struct task_struct *tsk)
 asmlinkage __visible void __sched schedule(void)
 {
 	struct task_struct *tsk = current;
+
+#if defined(CONFIG_OKERNEL)
 #ifdef HPE_DEBUG
 	volatile struct thread_info *ti;
 	int cpu = smp_processor_id();
@@ -3136,7 +3149,7 @@ asmlinkage __visible void __sched schedule(void)
 	int orig_cpu = 0;
 	int new_cpu = 0;
 #endif
-	
+
 	if(is_in_vmx_nr_mode()){
 		/* Return control to the original process running in root-mode VMX */
 		/* shouldn't be holding locks at this point? */
@@ -3164,20 +3177,12 @@ asmlinkage __visible void __sched schedule(void)
 		sched_submit_work(tsk);
 		do {
 			preempt_disable();
-#ifdef CONFIG_OKERNEL
 			okernel_schedule();
-#else
-			__schedule();
-#endif
 			sched_preempt_enable_no_resched();
 		} while (need_resched());
 	}
-
 #ifdef HPE_DEBUG
 	if(is_in_vmx_nr_mode()){
-		//printk(KERN_ERR "NR called schedule. cpu:=(%d) pid:=(%d)\n",
-		//       smp_processor_id(), current->pid); 
-#if defined(HPE_DEBUG)
 		new_cpu = smp_processor_id();
 
 		if(new_cpu != orig_cpu){
@@ -3206,8 +3211,17 @@ asmlinkage __visible void __sched schedule(void)
 		HDEBUG("return current->h_irqs_en (%d)\n", current->hardirqs_enabled);
 #endif
 		BXMAGICBREAK;
-#endif
+
 	}
+#endif
+#else /* CONFIG_OKERNEL */
+
+	sched_submit_work(tsk);
+	do {
+		preempt_disable();
+		__schedule();
+		sched_preempt_enable_no_resched();
+	} while (need_resched());
 #endif
 }
 EXPORT_SYMBOL(schedule);
@@ -7567,32 +7581,34 @@ void ___might_sleep(const char *file, int line, int preempt_offset)
 
 	rcu_sleep_check(); /* WARN_ON_ONCE() by default, no rate limit reqd. */
 
+#if defined(CONFIG_OKERNEL)
 	if(is_in_vmx_nr_mode()){
 		/* We keep the task with preempt enabled in NR mode
 		 * (preempt count held at 1 in the vmexit handler
 		 * loop. And even if irqs are disabled, we still get a
 		 * vmexit on timer interrupts */
-#if 0
-		if (((preempt_count() < 2) && !irqs_disabled() &&
-		     !is_idle_task(current)) ||
-		    system_state != SYSTEM_RUNNING || oops_in_progress)
-			return;
-#else
 		if ((preempt_count_equals(preempt_offset+nr_preempt_count_offset()) && !irqs_disabled() &&
 		     !is_idle_task(current)) ||
 		    system_state != SYSTEM_RUNNING || oops_in_progress)
 			return;
-#endif
 	} else {
 		if ((preempt_count_equals(preempt_offset) && !irqs_disabled() &&
 		     !is_idle_task(current)) ||
 		    system_state != SYSTEM_RUNNING || oops_in_progress)
 			return;
 	}
+#else
+	if ((preempt_count_equals(preempt_offset) && !irqs_disabled() &&
+	     !is_idle_task(current)) ||
+	    system_state != SYSTEM_RUNNING || oops_in_progress)
+		return;	
+#endif /* CONFIG_OKERNEL */
+	
 	if (time_before(jiffies, prev_jiffy + HZ) && prev_jiffy)
 		return;
 	prev_jiffy = jiffies;
 
+#if defined(CONFIG_OKERNEL)
 	if(is_in_vmx_nr_mode()){
 	        HDEBUG("preempt_count_equals (%d) !irqs_disabled (%d) !idle (%d)\n",
 			preempt_count_equals(preempt_offset), !irqs_disabled(), !is_idle_task(current));
@@ -7620,6 +7636,18 @@ void ___might_sleep(const char *file, int line, int preempt_offset)
 		printk(KERN_ERR "preempt_offset (%d) preempt_count (%d) rcu_preempt_depth (%d)\n",
 		       preempt_offset, preempt_count(), rcu_preempt_depth());
 	}
+#else
+	printk(KERN_ERR
+	       "BUG: sleeping function called from invalid context at %s:%d\n",
+	       file, line);
+	printk(KERN_ERR
+	       "in_atomic(): %d, irqs_disabled(): %d, pid: %d, name: %s\n",
+	       in_atomic(), irqs_disabled(),
+	       current->pid, current->comm);
+	printk(KERN_ERR "preempt_offset (%d) preempt_count (%d) rcu_preempt_depth (%d)\n",
+		       preempt_offset, preempt_count(), rcu_preempt_depth());
+	
+#endif
 	if (task_stack_end_corrupted(current))
 		printk(KERN_EMERG "Thread overran stack, or stack corrupted\n");
 

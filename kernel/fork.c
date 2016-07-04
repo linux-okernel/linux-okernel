@@ -1688,10 +1688,12 @@ long _do_fork(unsigned long clone_flags,
 	int trace = 0;
 	long nr;
 
+#if defined(CONFIG_OKERNEL)
 #ifdef HPE_DEBUG
 	if(is_in_vmx_nr_mode()){
 		HDEBUG("called...\n");
 	}
+#endif
 #endif
 	/*
 	 * Determine whether and which event to report to ptracer.  When
@@ -1734,7 +1736,7 @@ long _do_fork(unsigned long clone_flags,
 			init_completion(&vfork);
 			get_task_struct(p);
 		}
-#if 1
+#if defined(CONFIG_OKERNEL)
 		if(is_in_vmx_nr_mode()){
 			/* 
 			 * Need to adjust new process state here so
@@ -1834,6 +1836,9 @@ SYSCALL_DEFINE5(clone, unsigned long, clone_flags, unsigned long, newsp,
 		 unsigned long, tls)
 #endif
 {
+
+
+#if defined(CONFIG_OKERNEL)
 	long ret;
 	
 	if(is_in_vmx_nr_mode()){
@@ -1844,6 +1849,9 @@ SYSCALL_DEFINE5(clone, unsigned long, clone_flags, unsigned long, newsp,
 	} else {
 		return _do_fork(clone_flags, newsp, 0, parent_tidptr, child_tidptr, tls);
 	}
+#else
+	return _do_fork(clone_flags, newsp, 0, parent_tidptr, child_tidptr, tls);
+#endif
 }
 #endif
 
