@@ -3629,7 +3629,6 @@ static void check_flags(unsigned long flags)
 
 	if (!debug_locks)
 		print_irqtrace_events(current);
-
 #endif
 }
 

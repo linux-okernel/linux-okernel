@@ -46,9 +46,7 @@
 #include <linux/utsname.h>
 #include <linux/ctype.h>
 #include <linux/uio.h>
-#ifdef CONFIG_OKERNEL
 #include <linux/okernel.h>
-#endif
 
 #include <asm/uaccess.h>
 

@@ -1,7 +1,7 @@
 config OKERNEL
         bool "Enable inner/outer intra-kernel protection using process virtualization with Vt-x"
         depends on DEBUG_KERNEL
-        depends on X86
+        depends on X86_64
         depends on !VIRTUALIZATION
         select PREEMPT_NOTIFIERS
         select MMU_NOTIFIER

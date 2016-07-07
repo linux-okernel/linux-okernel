@@ -830,9 +830,11 @@ static void set_load_weight(struct task_struct *p)
 static void enqueue_task(struct rq *rq, struct task_struct *p, int flags)
 {
 #if defined(CONFIG_OKERNEL)
+#ifdef HPE_DEBUG
 	if(p->okernel_status == OKERNEL_ON){
 		HDEBUG("in enqueue task.\n");
 	}
+#endif
 #endif
 	update_rq_clock(rq);
 	sched_info_queued(rq, p);
@@ -851,9 +853,11 @@ void activate_task(struct rq *rq, struct task_struct *p, int flags)
 	if (task_contributes_to_load(p))
 		rq->nr_uninterruptible--;
 #if defined(CONFIG_OKERNEL)
+#ifdef HPE_DEBUG
 	if(p->okernel_status == OKERNEL_ON){
 		HDEBUG("About to enqueue OKERNEL process (pid=%d)\n", p->pid);
 	}
+#endif
 #endif
 	enqueue_task(rq, p, flags);
 }
@@ -1111,9 +1115,11 @@ struct migration_arg {
 static struct rq *__migrate_task(struct rq *rq, struct task_struct *p, int dest_cpu)
 {
 #if defined(CONFIG_OKERNEL)
+#ifdef HPE_DEBUG
 	if(p->okernel_status == OKERNEL_ON){
 		HDEBUG("called for p->pid:=%d\n", p->pid);
 	}
+#endif
 #endif
 	if (unlikely(!cpu_active(dest_cpu)))
 		return rq;
@@ -1914,9 +1920,11 @@ try_to_wake_up(struct task_struct *p, unsigned int state, int wake_flags)
 		p->sched_class->task_waking(p);
 
 #if defined(CONFIG_OKERNEL)
+#ifdef HPE_DEBUG
 	if(p->okernel_status == OKERNEL_ON){
 		HDEBUG("select_task_rq called for pid:=%d\n", p->pid);
 	}
+#endif
 #endif
 	
 	cpu = select_task_rq(p, p->wake_cpu, SD_BALANCE_WAKE, wake_flags);
@@ -2328,9 +2336,11 @@ void wake_up_new_task(struct task_struct *p)
 	init_task_runnable_average(p);
 	rq = __task_rq_lock(p);
 #if defined(CONFIG_OKERNEL)
+#ifdef HPE_DEBUG
 	if(p->okernel_status == OKERNEL_ON){
 		HDEBUG("called for pid:=%d\n", p->pid);
 	}
+#endif
 #endif
 	activate_task(rq, p, 0);
 	p->on_rq = TASK_ON_RQ_QUEUED;
@@ -2698,9 +2708,11 @@ void sched_exec(void)
 	int dest_cpu;
 
 #if defined(CONFIG_OKERNEL)
+#ifdef HPE_DEBUG
 	if(is_in_vmx_nr_mode()){
 		HDEBUG("called pid:=%d\n", p->pid);
 	}
+#endif
 #endif
 	raw_spin_lock_irqsave(&p->pi_lock, flags);
 	dest_cpu = p->sched_class->select_task_rq(p, task_cpu(p), SD_BALANCE_EXEC, 0);
@@ -2903,10 +2915,14 @@ static noinline void __schedule_bug(struct task_struct *prev)
 	if(is_in_vmx_nr_mode()){
 		printk(KERN_ERR "BUG: NR scheduling while atomic: %s/%d/0x%08x\n",
 		prev->comm, prev->pid, preempt_count());
+	} else {
+		printk(KERN_ERR "BUG: scheduling while atomic: %s/%d/0x%08x\n",
+		       prev->comm, prev->pid, preempt_count());
 	}
-#endif
+#else
 	printk(KERN_ERR "BUG: scheduling while atomic: %s/%d/0x%08x\n",
-		prev->comm, prev->pid, preempt_count());
+	       prev->comm, prev->pid, preempt_count());
+#endif
 	debug_show_held_locks(prev);
 	print_modules();
 	if (irqs_disabled())

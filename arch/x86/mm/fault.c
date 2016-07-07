@@ -1078,8 +1078,10 @@ __do_page_fault(struct pt_regs *regs, unsigned long error_code,
 	int fault, major = 0;
 	unsigned int flags = FAULT_FLAG_ALLOW_RETRY | FAULT_FLAG_KILLABLE;
 
+#if defined(CONFIG_OKERNEL)
 #if defined(HPE_DEBUG)
 	int count = 0;
+#endif
 #endif
 	tsk = current;
 	mm = tsk->mm;
@@ -1274,7 +1276,9 @@ retry:
 #if defined(CONFIG_OKERNEL)
 			HDEBUG("calling bad area 3 (regs->sp=%#lx)\n", regs->sp);
 			HDEBUG("ptregs before do_page_fault_r call: \n");
+#ifdef HPE_DEBUG
 			show_regs(regs);
+#endif
 			HDEBUG("ptregs before do_page_fault_r done.\n");
 #endif
 			bad_area(regs, error_code, address);

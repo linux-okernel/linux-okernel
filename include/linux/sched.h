@@ -423,7 +423,9 @@ extern signed long schedule_timeout_interruptible(signed long timeout);
 extern signed long schedule_timeout_killable(signed long timeout);
 extern signed long schedule_timeout_uninterruptible(signed long timeout);
 asmlinkage void schedule(void);
+#if defined(CONFIG_OKERNEL)
 asmlinkage void schedule_r_mode(void);
+#endif
 extern void schedule_preempt_disabled(void);
 
 extern long io_schedule_timeout(long timeout);
@@ -604,10 +606,11 @@ struct task_cputime_atomic {
  * before the scheduler is active -- see should_resched().
  */
 #define INIT_PREEMPT_COUNT	(PREEMPT_DISABLED + PREEMPT_ACTIVE)
+#if defined(CONFIG_OKERNEL)
 #define INIT_NR_PREEMPT_COUNT_OFFSET	0
 #define INIT_NR_MODE	0
 #define INIT_R_MODE	0
-
+#endif
 /**
  * struct thread_group_cputimer - thread group interval timer counts
  * @cputime_atomic:	atomic thread group interval timers.

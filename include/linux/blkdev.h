@@ -1074,16 +1074,21 @@ static inline void blk_schedule_flush_plug(struct task_struct *tsk)
 {
 	struct blk_plug *plug = tsk->plug;
 
+#if defined(CONFIG_OKERNEL)
 #ifdef HPE_DEBUG
 	if(is_in_vmx_nr_mode()){
 	        HDEBUG("0.\n");
 	}
 #endif
+#endif
+	
 	if (plug){
+#if defined(CONFIG_OKERNEL)
 #ifdef HPE_DEBUG
 		if(is_in_vmx_nr_mode()){
 			HDEBUG("something to do...\n");
 		}
+#endif
 #endif
 		blk_flush_plug_list(plug, true);
 	}

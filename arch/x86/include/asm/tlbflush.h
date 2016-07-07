@@ -42,6 +42,7 @@ static inline void cr4_set_bits(unsigned long mask)
 	unsigned long cr4;
 
 #if defined(CONFIG_OKERNEL)
+#ifdef HPE_DEBUG
 	if(is_in_vmx_nr_mode()){
 		if(mask & X86_CR4_VMXE){
 			HDEBUG("trying to set VMXE on in NR-mode (mask:=%#lx).\n",
@@ -49,6 +50,7 @@ static inline void cr4_set_bits(unsigned long mask)
 			BUG();
 		}
 	}
+#endif
 #endif
 			
 	cr4 = this_cpu_read(cpu_tlbstate.cr4);

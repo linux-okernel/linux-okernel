@@ -553,9 +553,11 @@ long do_arch_prctl(struct task_struct *task, int code, unsigned long addr)
 	switch (code) {
 	case ARCH_SET_GS:
 #if defined(CONFIG_OKERNEL)
+#ifdef HPE_DEBUG
 		if(is_in_vmx_nr_mode()){
 			HDEBUG("ARCH_SET_GS pid=%d addr=%#lx\n", current->pid, addr);
 		}
+#endif
 #endif
 		if (addr >= TASK_SIZE_OF(task))
 			return -EPERM;
@@ -582,9 +584,11 @@ long do_arch_prctl(struct task_struct *task, int code, unsigned long addr)
 		break;
 	case ARCH_SET_FS:
 #if defined(CONFIG_OKERNEL)
+#ifdef HPE_DEBUG
 		if(is_in_vmx_nr_mode()){
 			HDEBUG("ARCH_SET_FS pid=%d addr=%#lx\n", current->pid, addr);
 		}
+#endif
 #endif
 		/* Not strictly needed for fs, but do it for symmetry
 		   with gs */
@@ -623,9 +627,11 @@ long do_arch_prctl(struct task_struct *task, int code, unsigned long addr)
 		else
 			base = task->thread.fs;
 #if defined(CONFIG_OKERNEL)
+#ifdef HPE_DEBUG
 		if(is_in_vmx_nr_mode()){
 			HDEBUG("ARCH_GET_FS pid=%d base=%#lx\n", current->pid, base);
 		}
+#endif
 #endif
 		ret = put_user(base, (unsigned long __user *)addr);
 		break;
@@ -644,9 +650,11 @@ long do_arch_prctl(struct task_struct *task, int code, unsigned long addr)
 		} else
 			base = task->thread.gs;
 #if defined(CONFIG_OKERNEL)
+#ifdef HPE_DEBUG
 		if(is_in_vmx_nr_mode()){
 			HDEBUG("ARCH_GET_GS pid=%d base=%#lx\n", current->pid, base);
 		}
+#endif
 #endif
 		ret = put_user(base, (unsigned long __user *)addr);
 		break;
