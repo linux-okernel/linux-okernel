@@ -116,7 +116,7 @@
 #define in_atomic()	((preempt_count() - nr_preempt_count_offset()) != 0)
 #define in_atomic_nr()	(preempt_count() != 1)
 #else
-#define in_atomic()	((preempt_count() != 0)
+#define in_atomic()	(preempt_count() != 0)
 #endif
 /*
  * Check whether we were atomic before we did preempt_disable():
