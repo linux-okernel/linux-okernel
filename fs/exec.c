@@ -57,6 +57,7 @@
 #include <linux/oom.h>
 #include <linux/compat.h>
 #include <linux/vmalloc.h>
+#include <linux/okernel.h>
 
 #include <linux/uaccess.h>
 #include <asm/mmu_context.h>
@@ -996,10 +997,20 @@ static int exec_mmap(struct mm_struct *mm)
 {
 	struct task_struct *tsk;
 	struct mm_struct *old_mm, *active_mm;
-
+#if defined(CONFIG_OKERNEL)
+       int ret;
+#endif
+	
 	/* Notify parent that we're no longer interested in the old VM */
 	tsk = current;
 	old_mm = current->mm;
+
+#if defined(CONFIG_OKERNEL)
+       if(is_in_vmx_nr_mode()){
+               ret = vmcall2(VMCALL_DO_EXEC_FIXUP_HOST, (unsigned long)mm->pgd);
+               BUG_ON(ret);
+       }
+#endif
 	mm_release(tsk, old_mm);
 
 	if (old_mm) {

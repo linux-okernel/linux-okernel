@@ -22,3 +22,6 @@ obj-y += platform/
 obj-y += net/
 
 obj-$(CONFIG_KEXEC_FILE) += purgatory/
+
+# Intra-kernel protection support
+obj-$(CONFIG_OKERNEL) += okernel/

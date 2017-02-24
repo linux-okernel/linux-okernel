@@ -459,6 +459,9 @@ extern signed long schedule_timeout_killable(signed long timeout);
 extern signed long schedule_timeout_uninterruptible(signed long timeout);
 extern signed long schedule_timeout_idle(signed long timeout);
 asmlinkage void schedule(void);
+#if defined(CONFIG_OKERNEL)
+asmlinkage void schedule_r_mode(void);
+#endif
 extern void schedule_preempt_disabled(void);
 
 extern long io_schedule_timeout(long timeout);
@@ -655,6 +658,12 @@ struct task_cputime_atomic {
  * Reset by start_kernel()->sched_init()->init_idle()->init_idle_preempt_count().
  */
 #define INIT_PREEMPT_COUNT	PREEMPT_OFFSET
+
+#if defined(CONFIG_OKERNEL)
+#define INIT_NR_PREEMPT_COUNT_OFFSET   0
+#define INIT_NR_MODE   0
+#define INIT_R_MODE    0
+#endif
 
 /*
  * Initial preempt_count value; reflects the preempt_count schedule invariant
@@ -1997,6 +2006,14 @@ struct task_struct {
 #ifdef CONFIG_THREAD_INFO_IN_TASK
 	/* A live task holds one reference. */
 	atomic_t stack_refcount;
+#endif
+#ifdef CONFIG_OKERNEL
+       /* Can be one of OKERNEL_0FF, OKERNEL_ON_EXEC, OKERNEL_ACTIVE */
+       unsigned long okernel_status;
+       /* Replace with pointer to vcpu specific data */
+       int okernel_vcpu;
+       unsigned long okernel_fork_fs_base;
+       unsigned long okernel_fork_gs_base;
 #endif
 /* CPU-specific state of this task */
 	struct thread_struct thread;
