@@ -905,6 +905,56 @@ ENTRY(do_softirq_own_stack)
 	ret
 END(do_softirq_own_stack)
 
++       
+ /*
+  * Build the entry stubs with some assembler magic.
+  * We pack 1 stub into every 8-byte block.
+@@ -905,6 +906,48 @@ ENTRY(do_softirq_own_stack)
+        ret
+ END(do_softirq_own_stack)
+ 
+#ifdef CONFIG_OKERNEL
+ENTRY(okernel_ret_from_fork)
+       FRAME_BEGIN                     /* help unwinder find end of stack */
+       movq    %rax, %rdi
+
+       pushq   $0x0002
+       popfq                                   /* reset kernel eflags */
+
+       /* Cause BOCHS breakpoint if un-commented */
+       //xchg %bx, %bx
+
+	call    schedule_tail           /* rdi: 'prev' task parameter */
+
+       //xchg %bx, %bx
+
+       call okernel_enter_fork
+
+       //xchg %bx, %bx
+
+       leaq    FRAME_OFFSET(%rsp),%rdi /* pt_regs pointer */
+       call    syscall_return_slowpath /* returns with IRQs disabled */
+
+       /* okernel debugging to cause a breakpoint - don't need rmode check in this position
+          but leave in as an example.
+       pushq %r11
+       xor %r11,%r11
+       movq %cr4,%r11
+       andq $0x2000,%r11
+       cmpq $0, %r11
+       jne rmode
+       xchg %bx, %bx
+rmode:
+       popq %r11
+       */
+
+       TRACE_IRQS_ON                   /* user mode is traced as IRQS on */
+       SWAPGS
+       FRAME_END
+       jmp     restore_regs_and_iret
+END(okernel_ret_from_fork)
+#endif
+
 #ifdef CONFIG_XEN
 idtentry xen_hypervisor_callback xen_do_hypervisor_callback has_error_code=0
 

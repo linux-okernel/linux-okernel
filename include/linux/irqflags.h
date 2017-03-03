@@ -19,6 +19,10 @@
   extern void trace_softirqs_off(unsigned long ip);
   extern void trace_hardirqs_on(void);
   extern void trace_hardirqs_off(void);
+#ifdef CONFIG_OKERNEL
+  extern void trace_hardirqs_nr_on(void);
+  extern void trace_hardirqs_nr_off(void);
+#endif
 # define trace_hardirq_context(p)	((p)->hardirq_context)
 # define trace_softirq_context(p)	((p)->softirq_context)
 # define trace_hardirqs_enabled(p)	((p)->hardirqs_enabled)
@@ -33,6 +37,10 @@
 # define trace_hardirqs_off()		do { } while (0)
 # define trace_softirqs_on(ip)		do { } while (0)
 # define trace_softirqs_off(ip)		do { } while (0)
+#ifdef CONFIG_OKERNEL
+  extern void trace_hardirqs_nr_on(void);
+  extern void trace_hardirqs_nr_off(void);
+#endif
 # define trace_hardirq_context(p)	0
 # define trace_softirq_context(p)	0
 # define trace_hardirqs_enabled(p)	0

@@ -3,6 +3,7 @@
 
 #include <linux/mm.h>
 #include <linux/sched.h>
+#include <linux/okernel.h>
 
 #include <asm/processor.h>
 #include <asm/cpufeature.h>
@@ -89,7 +90,26 @@ static inline void cr4_set_bits(unsigned long mask)
 {
 	unsigned long cr4;
 
+#if defined(CONFIG_OKERNEL)
+#ifdef HPE_DEBUG
+       if(is_in_vmx_nr_mode()){
+               if(mask & X86_CR4_VMXE){
+                       HDEBUG("trying to set VMXE on in NR-mode (mask:=%#lx).\n",
+                             mask);
+                       BUG();
+               }
+       }
+#endif
+#endif
+
 	cr4 = this_cpu_read(cpu_tlbstate.cr4);
+
+#if defined(CONFIG_OKERNEL)
+       if(is_in_vmx_nr_mode()){
+               cr4 &= ~(X86_CR4_VMXE);
+       }
+#endif
+
 	if ((cr4 | mask) != cr4) {
 		cr4 |= mask;
 		this_cpu_write(cpu_tlbstate.cr4, cr4);
@@ -103,6 +123,13 @@ static inline void cr4_clear_bits(unsigned long mask)
 	unsigned long cr4;
 
 	cr4 = this_cpu_read(cpu_tlbstate.cr4);
+
+#if defined(CONFIG_OKERNEL)
+       if(is_in_vmx_nr_mode()){
+               cr4 &= ~(X86_CR4_VMXE);
+       }
+#endif
+	
 	if ((cr4 & ~mask) != cr4) {
 		cr4 &= ~mask;
 		this_cpu_write(cpu_tlbstate.cr4, cr4);
@@ -150,6 +177,11 @@ static inline void __native_flush_tlb_global_irq_disabled(void)
 	unsigned long cr4;
 
 	cr4 = this_cpu_read(cpu_tlbstate.cr4);
+#if defined(CONFIG_OKERNEL)
+       if(is_in_vmx_nr_mode()){
+               cr4 &= ~(X86_CR4_VMXE);
+       }
+#endif
 	/* clear PGE */
 	native_write_cr4(cr4 & ~X86_CR4_PGE);
 	/* write old PGE again and flush TLBs */

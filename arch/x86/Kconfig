@@ -2803,4 +2803,6 @@ source "crypto/Kconfig"
 
 source "arch/x86/kvm/Kconfig"
 
+source "arch/x86/okernel/Kconfig"
+
 source "lib/Kconfig"

@@ -49,6 +49,7 @@
 #include <linux/kmemcheck.h>
 #include <linux/random.h>
 #include <linux/jhash.h>
+#include <linux/okernel.h>
 
 #include <asm/sections.h>
 
@@ -2745,6 +2746,49 @@ void trace_hardirqs_on(void)
 	trace_hardirqs_on_caller(CALLER_ADDR0);
 }
 EXPORT_SYMBOL(trace_hardirqs_on);
+#ifdef CONFIG_OKERNEL
+__visible void trace_hardirqs_nr_on_caller(unsigned long ip)
+{
+       time_hardirqs_on(CALLER_ADDR0, ip);
+
+       if (unlikely(!debug_locks || current->lockdep_recursion))
+               return;
+
+       if (unlikely(current->hardirqs_enabled)) {
+               /*
+                * Neither irq nor preemption are disabled here
+                * so this is racy by nature but losing one hit
+                * in a stat is not a big deal.
+                */
+               __debug_atomic_inc(redundant_hardirqs_on);
+               return;
+       }
+
+       /*
+        * See the fine text that goes along with this variable definition.
+        */
+       if (DEBUG_LOCKS_WARN_ON(unlikely(early_boot_irqs_disabled)))
+               return;
+
+       /*
+        * Can't allow enabling interrupts while in an interrupt handler,
+        * that's general bad form and such. Recursion, limited stack etc..
+        */
+       if (DEBUG_LOCKS_WARN_ON(current->hardirq_context))
+               return;
+
+       current->lockdep_recursion = 1;
+       __trace_hardirqs_on_caller(ip);
+       current->lockdep_recursion = 0;
+}
+EXPORT_SYMBOL(trace_hardirqs_nr_on_caller);
+
+void trace_hardirqs_nr_on(void)
+{
+       trace_hardirqs_nr_on_caller(CALLER_ADDR0);
+}
+EXPORT_SYMBOL(trace_hardirqs_nr_on);
+#endif
 
 /*
  * Hardirqs were disabled:
@@ -2777,6 +2821,40 @@ __visible void trace_hardirqs_off_caller(unsigned long ip)
 		debug_atomic_inc(redundant_hardirqs_off);
 }
 EXPORT_SYMBOL(trace_hardirqs_off_caller);
+#ifdef CONFIG_OKERNEL
+/*
+ * Fix accounting so that Hardirqs appear to be disabled (when entering NR
+ * mode, R mode keeps IRQs disabled but they may be enabled in NR-mode).
+ */
+
+__visible void trace_hardirqs_nr_off_caller(unsigned long ip)
+{
+       struct task_struct *curr = current;
+
+       time_hardirqs_off(CALLER_ADDR0, ip);
+
+       if (unlikely(!debug_locks || current->lockdep_recursion))
+               return;
+
+       if (curr->hardirqs_enabled) {
+               /*
+                * We have done an ON -> OFF transition:
+                */
+               curr->hardirqs_enabled = 0;
+               curr->hardirq_disable_ip = ip;
+               curr->hardirq_disable_event = ++curr->irq_events;
+               debug_atomic_inc(hardirqs_off_events);
+       } else
+               debug_atomic_inc(redundant_hardirqs_off);
+}
+EXPORT_SYMBOL(trace_hardirqs_nr_off_caller);
+
+void trace_hardirqs_nr_off(void)
+{
+       trace_hardirqs_nr_off_caller(CALLER_ADDR0);
+}
+EXPORT_SYMBOL(trace_hardirqs_nr_off);
+#endif
 
 void trace_hardirqs_off(void)
 {
@@ -3687,10 +3765,16 @@ static void check_flags(unsigned long flags)
 
 	if (irqs_disabled_flags(flags)) {
 		if (DEBUG_LOCKS_WARN_ON(current->hardirqs_enabled)) {
+#if defined(CONFIG_OKERNEL)
+                       HDEBUG("possible reason: unannotated irqs-off.\n");
+#endif
 			printk("possible reason: unannotated irqs-off.\n");
 		}
 	} else {
 		if (DEBUG_LOCKS_WARN_ON(!current->hardirqs_enabled)) {
+#if defined(CONFIG_OKERNEL)
+                       HDEBUG("possible reason: unannotated irqs-on.\n");
+#endif
 			printk("possible reason: unannotated irqs-on.\n");
 		}
 	}

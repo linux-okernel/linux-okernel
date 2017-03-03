@@ -37,6 +37,7 @@
 #include <linux/uaccess.h>
 #include <linux/io.h>
 #include <linux/ftrace.h>
+#include <linux/okernel.h>
 
 #include <asm/pgtable.h>
 #include <asm/processor.h>
@@ -207,7 +208,29 @@ int copy_thread_tls(unsigned long clone_flags, unsigned long sp,
 			err = do_arch_prctl(p, ARCH_SET_FS, tls);
 		if (err)
 			goto out;
+#if defined(CONFIG_OKERNEL)
+               if(is_in_vmx_nr_mode()){
+                       /*
+                        * Need to adjust new process state here so
+                        * that it begins executing in a
+                        * vmlaunch/vmresume loop in R-mode. Initial
+                        * NR-mode RIP will be set to
+                        * return-from-fork.
+                        */
+                       HDEBUG("about to vmcall DO_TLS_FIXUP in copy_thread_tls...\n");
+                       (void)vmcall3(VMCALL_DO_TLS_FIXUP, (unsigned long)p, (unsigned long)tls);
+               }
+#endif
+       }
+#if defined(CONFIG_OKERNEL)
+       else {
+               if(is_in_vmx_nr_mode()){
+                       HDEBUG("about to vmcall DO_TLS_FIXUP (no TLS) in copy_thread_tls...\n");
+                       (void)vmcall3(VMCALL_DO_TLS_FIXUP, (unsigned long)p, 0);
+               }
 	}
+#endif
+
 	err = 0;
 out:
 	if (err && p->thread.io_bitmap_ptr) {
@@ -555,6 +578,13 @@ long do_arch_prctl(struct task_struct *task, int code, unsigned long addr)
 
 	switch (code) {
 	case ARCH_SET_GS:
+#if defined(CONFIG_OKERNEL)
+#ifdef HPE_DEBUG
+               if(is_in_vmx_nr_mode()){
+                       HDEBUG("ARCH_SET_GS pid=%d addr=%#lx\n", current->pid, addr);
+               }
+#endif
+#endif
 		if (addr >= TASK_SIZE_MAX)
 			return -EPERM;
 		cpu = get_cpu();
@@ -567,6 +597,13 @@ long do_arch_prctl(struct task_struct *task, int code, unsigned long addr)
 		put_cpu();
 		break;
 	case ARCH_SET_FS:
+#if defined(CONFIG_OKERNEL)
+#ifdef HPE_DEBUG
+               if(is_in_vmx_nr_mode()){
+                       HDEBUG("ARCH_SET_FS pid=%d addr=%#lx\n", current->pid, addr);
+               }
+#endif
+#endif
 		/* Not strictly needed for fs, but do it for symmetry
 		   with gs */
 		if (addr >= TASK_SIZE_MAX)
@@ -587,6 +624,13 @@ long do_arch_prctl(struct task_struct *task, int code, unsigned long addr)
 			rdmsrl(MSR_FS_BASE, base);
 		else
 			base = task->thread.fsbase;
+#if defined(CONFIG_OKERNEL)
+#ifdef HPE_DEBUG
+                if(is_in_vmx_nr_mode()){
+                       HDEBUG("ARCH_GET_FS pid=%d base=%#lx\n", current->pid, base);
+               }
+#endif
+#endif
 		ret = put_user(base, (unsigned long __user *)addr);
 		break;
 	}
@@ -596,6 +640,13 @@ long do_arch_prctl(struct task_struct *task, int code, unsigned long addr)
 			rdmsrl(MSR_KERNEL_GS_BASE, base);
 		else
 			base = task->thread.gsbase;
+#if defined(CONFIG_OKERNEL)
+#ifdef HPE_DEBUG
+                if(is_in_vmx_nr_mode()){
+                       HDEBUG("ARCH_GET_GS pid=%d base=%#lx\n", current->pid, base);
+               }
+#endif
+#endif
 		ret = put_user(base, (unsigned long __user *)addr);
 		break;
 	}

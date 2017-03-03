@@ -1279,7 +1279,14 @@ DEFINE_PER_CPU(unsigned int, irq_count) __visible = -1;
 
 DEFINE_PER_CPU(int, __preempt_count) = INIT_PREEMPT_COUNT;
 EXPORT_PER_CPU_SYMBOL(__preempt_count);
-
+#if defined(CONFIG_OKERNEL)
+DEFINE_PER_CPU(int, __nr_preempt_count_offset) = INIT_NR_PREEMPT_COUNT_OFFSET;
+EXPORT_PER_CPU_SYMBOL(__nr_preempt_count_offset);
+DEFINE_PER_CPU(int, __nr_mode) = INIT_NR_MODE;
+EXPORT_PER_CPU_SYMBOL(__nr_mode);
+DEFINE_PER_CPU(int, __r_mode) = INIT_R_MODE;
+EXPORT_PER_CPU_SYMBOL(__r_mode);
+#endif
 /*
  * Special IST stacks which the CPU switches to when it calls
  * an IST-marked descriptor entry. Up to 7 stacks (hardware
