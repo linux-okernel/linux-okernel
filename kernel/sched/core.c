@@ -3564,11 +3564,6 @@ asmlinkage __visible void __sched schedule(void)
        unsigned long fs;
        int orig_cpu = 0;
        int new_cpu = 0;
-       int cpu = smp_processor_id();
-       struct tss_struct *tss = &per_cpu(cpu_tss, cpu);
-       unsigned long fs;
-       int orig_cpu = 0;
-       int new_cpu = 0;
 #endif
 
        if(is_in_vmx_nr_mode()){

@@ -905,14 +905,6 @@ ENTRY(do_softirq_own_stack)
 	ret
 END(do_softirq_own_stack)
 
-+       
- /*
-  * Build the entry stubs with some assembler magic.
-  * We pack 1 stub into every 8-byte block.
-@@ -905,6 +906,48 @@ ENTRY(do_softirq_own_stack)
-        ret
- END(do_softirq_own_stack)
- 
 #ifdef CONFIG_OKERNEL
 ENTRY(okernel_ret_from_fork)
        FRAME_BEGIN                     /* help unwinder find end of stack */

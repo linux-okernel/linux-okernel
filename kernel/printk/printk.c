@@ -2061,7 +2061,7 @@ void console_lock(void)
                 //asm volatile("xchg %bx, %bx");
        }
 #endif
-/
+
 	might_sleep();
 
 	down_console_sem();
