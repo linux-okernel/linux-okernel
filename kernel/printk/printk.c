@@ -48,6 +48,7 @@
 #include <linux/sched/clock.h>
 #include <linux/sched/debug.h>
 #include <linux/sched/task_stack.h>
+#include <linux/okernel.h>
 
 #include <linux/uaccess.h>
 #include <asm/sections.h>
@@ -2054,6 +2055,13 @@ static int console_cpu_notify(unsigned int cpu)
  */
 void console_lock(void)
 {
+#if 0
+       if(is_in_vmx_nr_mode()){
+               return;
+                //asm volatile("xchg %bx, %bx");
+       }
+#endif
+/
 	might_sleep();
 
 	down_console_sem();
@@ -2074,6 +2082,13 @@ EXPORT_SYMBOL(console_lock);
  */
 int console_trylock(void)
 {
+#if 0
+       if(is_in_vmx_nr_mode()){
+               return 1;
+               //asm volatile("xchg %bx, %bx");
+       }
+
+#endif
 	if (down_trylock_console_sem())
 		return 0;
 	if (console_suspended) {
@@ -2155,6 +2170,12 @@ void console_unlock(void)
 	bool wake_klogd = false;
 	bool do_cond_resched, retry;
 
+#if 0
+       if(is_in_vmx_nr_mode()){
+               return;
+                //asm volatile("xchg %bx, %bx");
+       }
+#endif
 	if (console_suspended) {
 		up_console_sem();
 		return;

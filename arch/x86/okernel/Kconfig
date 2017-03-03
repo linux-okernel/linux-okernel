@@ -1,0 +1,19 @@
+config OKERNEL
+        bool "Enable inner/outer intra-kernel protection using process virtualization with Vt-x"
+        depends on DEBUG_KERNEL
+        depends on X86_64
+        depends on !VIRTUALIZATION
+        select PREEMPT_NOTIFIERS
+        select MMU_NOTIFIER
+        default n
+        ---help---
+          Suport for splitting the kernel into inner and outer regions.
+          Processes marked as 'PKERNEL' run under vmx non-root mode, e.g. processes
+          are virtualized, aka Dune, c.f. full machine virtualization.
+          They enter the kernel in that mode too (outer-kernel mode)
+          thus giving the 'inner kernel' (the code that runs in root-mode vmx)
+          a control point where restrictions can be put in place, e.g. enforce
+          something like a vMMU interface, as in 'Nested Kernel', Dautenhahn,
+          et al.
+
+          If in doubt, say "N".

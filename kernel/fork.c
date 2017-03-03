@@ -87,6 +87,7 @@
 #include <linux/compiler.h>
 #include <linux/sysctl.h>
 #include <linux/kcov.h>
+#include <linux/okernel.h>
 
 #include <asm/pgtable.h>
 #include <asm/pgalloc.h>
@@ -1964,6 +1965,13 @@ long _do_fork(unsigned long clone_flags,
 	int trace = 0;
 	long nr;
 
+#if defined(CONFIG_OKERNEL)
+#ifdef HPE_DEBUG
+       if(is_in_vmx_nr_mode()){
+               HDEBUG("called...\n");
+       }
+#endif
+#endif
 	/*
 	 * Determine whether and which event to report to ptracer.  When
 	 * called from kernel_thread or CLONE_UNTRACED is explicitly
@@ -2007,6 +2015,21 @@ long _do_fork(unsigned long clone_flags,
 			get_task_struct(p);
 		}
 
+#if defined(CONFIG_OKERNEL)
+               if(is_in_vmx_nr_mode()){
+                       /*
+                        * Need to adjust new process state here so
+                        * that it begins executing in a
+                        * vmlaunch/vmresume loop in R-mode. Initial
+                        * NR-mode RIP will be set to
+                        * return-from-fork.
+                        */
+                       HDEBUG("about to vmcall DO_FORK_FIXUP before wake_up_new_task...\n");
+                       (void)vmcall3(VMCALL_DO_FORK_FIXUP, (unsigned long)p, (unsigned long)tls);
+               } else {
+                       p->okernel_status = OKERNEL_OFF;
+               }
+#endif
 		wake_up_new_task(p);
 
 		/* forking complete and child started to run, tell ptracer */
@@ -2092,7 +2115,21 @@ SYSCALL_DEFINE5(clone, unsigned long, clone_flags, unsigned long, newsp,
 		 unsigned long, tls)
 #endif
 {
+#if defined(CONFIG_OKERNEL)
+       long ret;
+       
+       if(is_in_vmx_nr_mode()){
+               HDEBUG("sys clone called tls=%#lx\n", tls);
+               ret = _do_fork(clone_flags, newsp, 0, parent_tidptr, child_tidptr, tls);
+               HDEBUG("sys clone returning (%ld) from _do_fork()\n", ret);
+               return ret;
+       } else {
+               return _do_fork(clone_flags, newsp, 0, parent_tidptr, child_tidptr, tls);
+       }
+#else
+
 	return _do_fork(clone_flags, newsp, 0, parent_tidptr, child_tidptr, tls);
+#endif	
 }
 #endif
 

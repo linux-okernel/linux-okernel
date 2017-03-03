@@ -61,6 +61,10 @@
 
 #define STACK_END_MAGIC		0x57AC6E9D
 
+#if defined(CONFIG_OKERNEL)
+#define NR_STACK_END_MAGIC     0x40E3BDBE
+#endif
+
 #define TRACEFS_MAGIC          0x74726163
 
 #define V9FS_MAGIC		0x01021997

@@ -33,6 +33,10 @@ enum page_ext_flags {
 	PAGE_EXT_YOUNG,
 	PAGE_EXT_IDLE,
 #endif
+#ifdef CONFIG_OKERNEL
+       PAGE_EXT_OK_PROTECTED,          /* Shouldn't map into NR-mode EPT tables by default */
+#endif
+	
 };
 
 /*
@@ -44,6 +48,16 @@ enum page_ext_flags {
  */
 struct page_ext {
 	unsigned long flags;
+#ifdef CONFIG_PAGE_OWNER
+       unsigned int order;
+       gfp_t gfp_mask;
+       int last_migrate_reason;
+       depot_stack_handle_t handle;
+#endif
+#ifdef CONFIG_OKERNEL
+       /* What process should have access to the page? Replace at some point with container id */
+       pid_t pid;
+#endif
 };
 
 extern void pgdat_page_ext_init(struct pglist_data *pgdat);
