@@ -221,12 +221,6 @@ struct task_cputime {
 	unsigned long long		sum_exec_runtime;
 };
 
-#if defined(CONFIG_OKERNEL)
-#define INIT_NR_PREEMPT_COUNT_OFFSET   0
-#define INIT_NR_MODE   0
-#define INIT_R_MODE    0
-#endif
-
 /* Alternate field names when used on cache expirations: */
 #define virt_exp			utime
 #define prof_exp			stime
