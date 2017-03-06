@@ -144,14 +144,14 @@ static inline int real_in_vmx_nr_mode(void)
 	unsigned long cr4;
 
 	cr4 = native_read_cr4();
-	
+
 	if(cr4 & X86_CR4_VMXE)
 		return 0;
 	return 1;
 }
 
 
-static int (*in_vmx_nr_mode)(void) = dummy_in_vmx_nr_mode;	
+static int (*in_vmx_nr_mode)(void) = dummy_in_vmx_nr_mode;
 
 inline int is_in_vmx_nr_mode(void)
 {
@@ -162,7 +162,7 @@ inline int is_in_vmx_nr_mode(void)
 /* Copy vcpu regs into a pt_regs structure */
 void copy_vcpu_to_ptregs(struct vmx_vcpu *vcpu, struct pt_regs *regs)
 {
-	
+
 
 	regs->bp = vcpu->regs[VCPU_REGS_RBP];
 	regs->ip = vcpu->regs[VCPU_REGS_RIP];
@@ -201,7 +201,7 @@ int vmcall(unsigned int cmd)
 int vmcall2(unsigned int cmd, unsigned long arg1)
 {
 	unsigned long rax;
-	
+
 	asm volatile(".byte 0x0F,0x01,0xC1\n" ::"a"(cmd),"b"(arg1));
 	asm volatile ("mov %%rax,%0" : "=rm" (rax));
 	return (int)rax;
@@ -210,7 +210,7 @@ int vmcall2(unsigned int cmd, unsigned long arg1)
 int vmcall3(unsigned int cmd, unsigned long arg1, unsigned long arg2)
 {
 	unsigned long rax;
-	
+
 	asm volatile(".byte 0x0F,0x01,0xC1\n" ::"a"(cmd),"b"(arg1),"c"(arg2));
 	asm volatile ("mov %%rax,%0" : "=rm" (rax));
 	return (int)rax;
@@ -247,13 +247,13 @@ int vmcall6(unsigned int cmd, unsigned long arg1, unsigned long arg2, unsigned l
 	asm volatile(".byte 0x0F,0x01,0xC1\n" ::"a"(cmd),"b"(arg1),"c"(arg2), "r"(r10), "r"(r11), "r"(r12));
 	asm volatile ("mov %%rax,%0" : "=rm" (rax));
 	return (int)rax;
-}	
+}
 
 #if 1
 static int
 no_cache_region(u64 addr, u64 size)
 {
-	
+
 	if (((addr > ((1UL << 32) -1))) ||
 	    ((addr >= 0x1000) && (addr < 0x8F000)) ||
 	    ((addr >= 0x90000) && (addr < 0xa0000)) ||
@@ -356,14 +356,14 @@ int vt_alloc_pages(struct pt_page *pt, int order)
 		printk(KERN_ERR "Null pt passed.\n");
 		return 0;
 	}
-	
+
 	pg = alloc_pages(GFP_KERNEL, order);
 
 	if(!pg){
 		printk(KERN_ERR "okernel: failed to alloc pages.\n");
 		return 0;
 	}
-	
+
         v = page_address(pg);
 
         if(!v){
@@ -406,12 +406,12 @@ unsigned long* find_pd_entry(struct vmx_vcpu *vcpu, u64 paddr)
 	epte_t *pml2 = NULL;
 	epte_t *pde  = NULL;
 	unsigned long* pml2_p;
-	
+
 	int pml3_index, pml2_index;
 
 	epte_t *pml4 =  (epte_t*) __va(vcpu->ept_root);
 
-	
+
 
 	pml3 = (epte_t *)epte_page_vaddr(*pml4);
 
@@ -419,7 +419,7 @@ unsigned long* find_pd_entry(struct vmx_vcpu *vcpu, u64 paddr)
 
 	HDEBUG("addr (%#lx) pml3 (%#lx) pml3_index (%i)\n",
 		(unsigned long)paddr, (unsigned long)pml3, pml3_index);
-	
+
 	pml2 = (epte_t *)epte_page_vaddr(pml3[pml3_index]);
 
 	pml2_index = ((paddr & (GIGABYTE -1)) >> PAGESIZE2M_SHIFT);
@@ -444,7 +444,7 @@ unsigned long* find_pt_entry(struct vmx_vcpu *vcpu, u64 paddr)
 	epte_t *pml1 = NULL;
 
 	unsigned long* pml1_p;
-	
+
 	int pml3_index, pml2_index, pml1_index;
 
 	epte_t *pml4 =  (epte_t*) __va(vcpu->ept_root);
@@ -454,7 +454,7 @@ unsigned long* find_pt_entry(struct vmx_vcpu *vcpu, u64 paddr)
 	pml3_index = (paddr & (~(GIGABYTE -1))) >> GIGABYTE_SHIFT;
 
 	HDEBUG("addr (%#lx) pml3 index (%i)\n", (unsigned long)paddr, pml3_index);
-	
+
 	pml2 = (epte_t *)epte_page_vaddr(pml3[pml3_index]);
 
 
@@ -470,13 +470,13 @@ unsigned long* find_pt_entry(struct vmx_vcpu *vcpu, u64 paddr)
 	pml1_index = ((paddr & (PAGESIZE2M-1)) >> PAGESIZE_SHIFT);
 
 	pml1_p = &pml1[pml1_index];
-	
+
 	HDEBUG("addr (%#lx) pte (%#lx)\n", (unsigned long)paddr, (unsigned long)pml1);
 	return pml1_p;
 }
 
 
-	
+
 int split_2M_mapping(struct vmx_vcpu* vcpu, u64 paddr)
 {
 	unsigned long *pml2_e;
@@ -487,12 +487,12 @@ int split_2M_mapping(struct vmx_vcpu* vcpu, u64 paddr)
 	int i = 0;
 	u64 p_base_addr;
 	u64 addr;
-	
+
 	if((paddr & (PAGESIZE2M -1)) != 0){
 		printk(KERN_ERR "okernel: 2MB unaligned addr passed to is_2M_mapping.\n");
 		return 0;
 	}
-	
+
 	if(!(pml2_e =  find_pd_entry(vcpu, paddr))){
 		printk(KERN_ERR "okernel: NULL pml2 entry for paddr (%#lx)\n",
 		       (unsigned long)paddr);
@@ -512,17 +512,17 @@ int split_2M_mapping(struct vmx_vcpu* vcpu, u64 paddr)
 
 	HDEBUG("base EPT physical addr for table 2M split (%#lx) paddr (%#lx)\n",
 		(unsigned long)p_base_addr, (unsigned long)paddr);
-	
+
 	/* split the plm2_e into 4k ptes,i.e. have it point to a PML1 table */
 
         /* First allocate a physical page for the PML1 table (512*4K entries) */
 	e_pt = (struct ept_pt_list*) kmalloc(sizeof(struct ept_pt_list), GFP_KERNEL);
-		
+
 	if(!e_pt){
 		printk(KERN_ERR "okernel: failed to allocate E_PT list entry in replace ept page.\n");
 		return 0;
 	}
-	
+
 	if(!(pt = (pt_page*)kmalloc(sizeof(pt_page), GFP_KERNEL))){
 		printk(KERN_ERR "okernel: failed to allocate PT table.\n");
 		return 0;
@@ -532,8 +532,8 @@ int split_2M_mapping(struct vmx_vcpu* vcpu, u64 paddr)
 	e_pt->n_pages = 1;
 	INIT_LIST_HEAD(&e_pt->list);
 	list_add(&e_pt->list, &vcpu->ept_table_pages.list);
-	
-	
+
+
 	if(!(vt_alloc_page((void**)&pt[0].virt, &pt[0].phys))){
 		printk(KERN_ERR "okernel: failed to allocate PML1 table.\n");
 		return 0;
@@ -542,7 +542,7 @@ int split_2M_mapping(struct vmx_vcpu* vcpu, u64 paddr)
 	memset(pt[0].virt, 0, PAGESIZE);
 	HDEBUG("PML1 pt virt (%llX) pt phys (%llX)\n", (unsigned long long)pt[0].virt, pt[0].phys);
 
-	/* Fill in eack of the 4k ptes for the PML1 */ 
+	/* Fill in eack of the 4k ptes for the PML1 */
 	q = pt[0].virt;
 
 	for(i = 0; i < n_entries; i++){
@@ -554,7 +554,7 @@ int split_2M_mapping(struct vmx_vcpu* vcpu, u64 paddr)
 		}
 	}
 
-	*pml2_e = pt[0].phys + EPT_R + EPT_W + EPT_X; 
+	*pml2_e = pt[0].phys + EPT_R + EPT_W + EPT_X;
 	return 1;
 }
 
@@ -569,9 +569,9 @@ void* replace_ept_page(struct vmx_vcpu *vcpu, u64 paddr, unsigned long perms)
 	u64 split_addr;
 
 	split_addr = (paddr & ~(PAGESIZE2M-1));
-	
+
 	HDEBUG("Check or split 2M mapping at (%#lx)\n", (unsigned long)split_addr);
-	
+
 	if(!(split_2M_mapping(vcpu, split_addr))){
 		printk(KERN_ERR "okernel: couldn't split 2MB mapping for (%#lx)\n",
 		       (unsigned long)paddr);
@@ -580,7 +580,7 @@ void* replace_ept_page(struct vmx_vcpu *vcpu, u64 paddr, unsigned long perms)
 
 	HDEBUG("Split or check ok: looking for pte for paddr (%#lx)\n",
 		(unsigned long)paddr);
-	
+
 	if(!(pml1_p = find_pt_entry(vcpu, paddr))){
 		printk(KERN_ERR "okernel: failed to find pte for (%#lx)\n",
 		       (unsigned long)paddr);
@@ -588,10 +588,10 @@ void* replace_ept_page(struct vmx_vcpu *vcpu, u64 paddr, unsigned long perms)
 	}
 
 	HDEBUG("pte val for paddr (%#lx) is (%#lx)\n",
-		(unsigned long)paddr, (unsigned long)*pml1_p); 
+		(unsigned long)paddr, (unsigned long)*pml1_p);
 
 	e_pt =(struct ept_pt_list*) kmalloc(sizeof(struct ept_pt_list), GFP_KERNEL);
-		
+
 	pt   = (pt_page*)kmalloc(sizeof(pt_page), GFP_KERNEL);
 
 	if(!pt || ! e_pt){
@@ -616,7 +616,7 @@ void* replace_ept_page(struct vmx_vcpu *vcpu, u64 paddr, unsigned long perms)
 	orig_paddr = (*pml1_p & ~(PAGESIZE-1));
 
 	HDEBUG("orig paddr (%#lx)\n", (unsigned long)orig_paddr);
-	
+
 	if(orig_paddr != paddr){
 		printk(KERN_ERR "address mis-match in EPT tables.\n");
 		return NULL;
@@ -629,7 +629,7 @@ void* replace_ept_page(struct vmx_vcpu *vcpu, u64 paddr, unsigned long perms)
 
 	HDEBUG("copying data from va (%#lx) to va of replacement physical (%#lx)\n",
 		(unsigned long)__va(orig_paddr), (unsigned long)pt[0].virt);
-	
+
 	memcpy(pt[0].virt, __va(orig_paddr), PAGESIZE);
 	HDEBUG("Done for pa (%#lx)\n", (unsigned long)paddr);
 	return pt[0].virt;
@@ -644,9 +644,9 @@ int modify_ept_physaddr_perms(struct vmx_vcpu *vcpu, u64 paddr, unsigned long pe
 	u64 split_addr;
 
 	split_addr = (paddr & ~(PAGESIZE2M-1));
-	
+
 	HDEBUG("Check or split 2M mapping at (%#lx)\n", (unsigned long)split_addr);
-	
+
 	if(!(split_2M_mapping(vcpu, split_addr))){
 		printk(KERN_ERR "okernel: couldn't split 2MB mapping for (%#lx)\n",
 		       (unsigned long)paddr);
@@ -655,7 +655,7 @@ int modify_ept_physaddr_perms(struct vmx_vcpu *vcpu, u64 paddr, unsigned long pe
 
 	HDEBUG("Split or check ok: looking for pte for paddr (%#lx)\n",
 		(unsigned long)paddr);
-	
+
 	if(!(pml1_p = find_pt_entry(vcpu, paddr))){
 		printk(KERN_ERR "okernel: failed to find pte for (%#lx)\n",
 		       (unsigned long)paddr);
@@ -663,12 +663,12 @@ int modify_ept_physaddr_perms(struct vmx_vcpu *vcpu, u64 paddr, unsigned long pe
 	}
 
 	HDEBUG("pte val for paddr (%#lx) is (%#lx)\n",
-		(unsigned long)paddr, (unsigned long)*pml1_p); 
+		(unsigned long)paddr, (unsigned long)*pml1_p);
 
 	orig_paddr = (*pml1_p & ~(PAGESIZE-1));
 
 	HDEBUG("orig paddr (%#lx)\n", (unsigned long)orig_paddr);
-	
+
 	if(orig_paddr != paddr){
 		printk(KERN_ERR "address mis-match in EPT tables.\n");
 		return 0;
@@ -705,7 +705,7 @@ int add_ept_page_perms(struct vmx_vcpu *vcpu, u64 paddr)
 {
 	/* Need to sort out return handling */
 	unsigned long perms;
-	
+
 	perms = EPT_R | EPT_W | EPT_X | EPT_CACHE_2 | EPT_CACHE_3;
 
 	if(!(modify_ept_physaddr_perms(vcpu, paddr, perms))){
@@ -723,11 +723,11 @@ int remap_ept_page(struct vmx_vcpu *vcpu, u64 paddr, u64 new_paddr)
 	u64 orig_paddr;
 	u64 split_addr;
 	unsigned long perms;
-	
+
 	split_addr = (paddr & ~(PAGESIZE2M-1));
-	
+
 	HDEBUG("Check or split 2M mapping at (%#lx)\n", (unsigned long)split_addr);
-	
+
 	if(!(split_2M_mapping(vcpu, split_addr))){
 		printk(KERN_ERR "okernel: couldn't split 2MB mapping for (%#lx)\n",
 		       (unsigned long)paddr);
@@ -736,7 +736,7 @@ int remap_ept_page(struct vmx_vcpu *vcpu, u64 paddr, u64 new_paddr)
 
 	HDEBUG("Split or check ok: looking for pte for paddr (%#lx)\n",
 		(unsigned long)paddr);
-	
+
 	if(!(pml1_p = find_pt_entry(vcpu, paddr))){
 		printk(KERN_ERR "okernel: failed to find pte for (%#lx)\n",
 		       (unsigned long)paddr);
@@ -744,12 +744,12 @@ int remap_ept_page(struct vmx_vcpu *vcpu, u64 paddr, u64 new_paddr)
 	}
 
 	HDEBUG("pte val for paddr (%#lx) is (%#lx)\n",
-		(unsigned long)paddr, (unsigned long)*pml1_p); 
+		(unsigned long)paddr, (unsigned long)*pml1_p);
 
 	orig_paddr = (*pml1_p & ~(PAGESIZE-1));
 
 	HDEBUG("orig paddr (%#lx)\n", (unsigned long)orig_paddr);
-	
+
 	if(orig_paddr != paddr){
 		printk(KERN_ERR "address mis-match in EPT tables.\n");
 		return 0;
@@ -757,7 +757,7 @@ int remap_ept_page(struct vmx_vcpu *vcpu, u64 paddr, u64 new_paddr)
 
 	/* Hack perms for now to make RO */
 	perms =  EPT_R | EPT_CACHE_2 | EPT_CACHE_3;
-	
+
 	HDEBUG("Replacing  pte (%#lx) as pte entry with (%#lx)\n",
 	       (unsigned long)(*pml1_p), (unsigned long)(new_paddr | perms));
 
@@ -766,7 +766,7 @@ int remap_ept_page(struct vmx_vcpu *vcpu, u64 paddr, u64 new_paddr)
 	HDEBUG("Done for pa (%#lx)\n", (unsigned long)paddr);
 	return 1;
 }
-	
+
 /* We just clone the bottom page of the stack for now */
 int clone_kstack2(struct vmx_vcpu *vcpu, unsigned long perms)
 {
@@ -775,25 +775,25 @@ int clone_kstack2(struct vmx_vcpu *vcpu, unsigned long perms)
 	u64 paddr;
 	void  *vaddr;
 	unsigned int* nr_stack_canary;
-	
+
 	n_pages = THREAD_SIZE / PAGESIZE;
 
 	BUG_ON(n_pages != 4);
 
-	
-	
+
+
 	k_stack  = (unsigned long)current->stack;
 
 	/* Write a canary value before we replace the EPT page: use this later to detect NR stack overflow */
 	nr_stack_canary = (unsigned int*)(k_stack + PAGE_SIZE - 4);
 	*nr_stack_canary = NR_STACK_END_MAGIC;
-	
+
         HDEBUG("kstack addr:=%#lx nr_stack_canary:=%#lx *nr_stack_canary:=%#x\n",
 	       k_stack, (unsigned long)nr_stack_canary, *nr_stack_canary);
-	
+
 	HDEBUG("kernel thread_info (tsk->stack) vaddr (%#lx) paddr (%#lx) top of stack (%#lx)\n",
 		k_stack, __pa(k_stack), current_top_of_stack());
-	
+
 	paddr = __pa(k_stack);
 
 	HDEBUG("ept page clone on (%#lx)\n", (unsigned long)paddr);
@@ -828,7 +828,7 @@ int vt_ept_2M_init(struct vmx_vcpu *vcpu)
 {
 	/*
 	 * For now share a direct 1:1 EPT mapping of host physical to
-	 * guest physical across all vmx 'containers'. 
+	 * guest physical across all vmx 'containers'.
 	 *
 	 * Setup the per-vcpu pagetables here. For now we just map up to
 	 * 512G of physical RAM, and we use a 2MB page size. So we need
@@ -841,9 +841,9 @@ int vt_ept_2M_init(struct vmx_vcpu *vcpu)
 	 * so we can be more selectively over caching controls, etc. for
 	 * that region.
 	 */
-	unsigned long mappingsize = 0;      
+	unsigned long mappingsize = 0;
 	unsigned long rounded_mappingsize = 0;
-	unsigned int n_entries = PAGESIZE / 8; 
+	unsigned int n_entries = PAGESIZE / 8;
 	unsigned int n_pt   = 0;
 	unsigned int n_pd   = 0;
 	unsigned int n_pdpt = 0;
@@ -861,17 +861,17 @@ int vt_ept_2M_init(struct vmx_vcpu *vcpu)
 
 	/* Keep track of pages we allocate for holding the ept tables so we can de-allocate */
 	INIT_LIST_HEAD(&vcpu->ept_table_pages.list);
-	
+
 	/* What range do the EPT tables need to cover (including areas like the APIC mapping)? */
 	//mappingsize = e820_end_paddr(MAXMEM);
 	mappingsize = ept_limit;
 
 	HDEBUG("max address range to map under EPT: %#lx\n", (unsigned long)mappingsize);
-	
-	/* Round upp to closest Gigabyte of memory */
-	rounded_mappingsize = ((mappingsize + (GIGABYTE-1)) & (~(GIGABYTE-1)));      
 
-	HDEBUG("Need EPT tables covering (%lu) Mb (%lu) bytes for Phys Mapping sz: %lu MB\n", 
+	/* Round upp to closest Gigabyte of memory */
+	rounded_mappingsize = ((mappingsize + (GIGABYTE-1)) & (~(GIGABYTE-1)));
+
+	HDEBUG("Need EPT tables covering (%lu) Mb (%lu) bytes for Phys Mapping sz: %lu MB\n",
 		rounded_mappingsize >> 20, rounded_mappingsize, mappingsize >> 20);
 
 	if((rounded_mappingsize >> GIGABYTE_SHIFT) >  PML4E_MAP_LIMIT){
@@ -887,7 +887,7 @@ int vt_ept_2M_init(struct vmx_vcpu *vcpu)
 	n_pd = rounded_mappingsize >> GIGABYTE_SHIFT;
 	/* We just split the 1st 2Mb region into 4K pages so need only 1 PT table. */
 	n_pt = 1;
-	
+
 	/* pt - PML1, pd - PML2, pdpt - PML3 */
 	e_pdpt = kmalloc(sizeof(struct ept_pt_list), GFP_KERNEL);
 	pdpt = (pt_page*)kmalloc(sizeof(pt_page)* n_pdpt, GFP_KERNEL);
@@ -897,7 +897,7 @@ int vt_ept_2M_init(struct vmx_vcpu *vcpu)
 		printk(KERN_ERR "okernel: failed to allocate (e)pdpt table in replace ept page.\n");
 		return 0;
 	}
-		
+
 	e_pdpt->page = pdpt;
 	e_pdpt->n_pages = n_pdpt;
 	INIT_LIST_HEAD(&e_pdpt->list);
@@ -924,18 +924,18 @@ int vt_ept_2M_init(struct vmx_vcpu *vcpu)
 		printk(KERN_ERR "okernel: failed to allocate (e)pt table in replace ept page.\n");
 		return 0;
 	}
-	
+
 	e_pt->page = pt;
 	e_pt->n_pages = n_pt;
 	INIT_LIST_HEAD(&e_pt->list);
 	list_add(&e_pt->list, &vcpu->ept_table_pages.list);
-	
+
 	HDEBUG("Allocated (%u) pdpt (%u) pd (%u) pt tables.\n", n_pdpt, n_pd, n_pt);
 
         /* Allocate the paging structures from bottom to top so we start
 	 * at the PT level (PML1) and finish with the PML4 table.
 	 */
-	
+
 	/* 1st 2Meg mapping (PML1 / PT):
 	 * At the moment we only use a PT for the 1st 2MB region, for
 	 * the rest of memory we map in via 2MB PD entries. We break
@@ -945,7 +945,7 @@ int vt_ept_2M_init(struct vmx_vcpu *vcpu)
 	 */
 
 	BUG_ON(n_pt != 1);
-	
+
 	/* XXXX todo cid: recheck on the caching bits / ipat bit and when they should be set. */
 	/* This is the 0-2MB first set of mappings which we break into 4K PTEs*/
 	for(i = 0; i < n_pt; i++){
@@ -967,7 +967,7 @@ int vt_ept_2M_init(struct vmx_vcpu *vcpu)
 			q[i] = (u64)((i << 12) | EPT_R | EPT_W | EPT_X | EPT_CACHE_2 | EPT_CACHE_3);
 		}
 	}
-	
+
         /* Now the PD (PML2) tables (plug the pt[0] entry back in later) */
 	for(i = 0; i < n_pd; i++){
 		if(!(vt_alloc_page((void**)&pd[i].virt, &pd[i].phys))){
@@ -998,7 +998,7 @@ int vt_ept_2M_init(struct vmx_vcpu *vcpu)
 
 	/* Point just the PD entry covering the 1st 2Mb region to the PT we set
 	 * up earlier. The rest of the PD entries directly map a 2Mb
-	 * page entry, not a PT table. 
+	 * page entry, not a PT table.
 	 */
 	q = pd[0].virt;
 	q[0] = (u64)(pt[0].phys + EPT_R + EPT_W + EPT_X);
@@ -1028,19 +1028,19 @@ int vt_ept_2M_init(struct vmx_vcpu *vcpu)
 	       printk(KERN_ERR "okernel: failed to allocate PML4 table.\n");
 	       return 0;
        }
-       
+
        memset(pml4_virt, 0, PAGESIZE);
        q = pml4_virt;
-       
+
        /* Link to the PDPT table above.These are the PML4E entries - just one at present */
        for(i = 0; i < n_pdpt; i++){
 	       q[i] = (u64)(pdpt[i].phys + EPT_R + EPT_W + EPT_X);
        }
-       
-       HDEBUG("PML4 plm4_virt (%#lx) *plm4_virt (%#lx) pml4_phys (%#lx)\n", 
+
+       HDEBUG("PML4 plm4_virt (%#lx) *plm4_virt (%#lx) pml4_phys (%#lx)\n",
 	       (unsigned long)pml4_virt, (unsigned long)*pml4_virt,
 	       (unsigned long)pml4_phys);
-	
+
        vcpu->ept_root = pml4_phys;
        return 1;
 }
@@ -1324,7 +1324,7 @@ static __init int setup_vmcs_config(struct vmcs_config *vmcs_conf)
 		return -EIO;
 
 	min = CPU_BASED_USE_TSC_OFFSETING;
-		
+
 	opt = CPU_BASED_TPR_SHADOW |
 	      CPU_BASED_USE_MSR_BITMAPS |
 	      CPU_BASED_ACTIVATE_SECONDARY_CONTROLS;
@@ -1364,7 +1364,7 @@ static __init int setup_vmcs_config(struct vmcs_config *vmcs_conf)
 			SECONDARY_EXEC_ENABLE_EPT |
 			SECONDARY_EXEC_RDTSCP |
 			SECONDARY_EXEC_ENABLE_INVPCID;
-		
+
 		if (adjust_vmx_controls(min2, opt2,
 					MSR_IA32_VMX_PROCBASED_CTLS2,
 					&_cpu_based_2nd_exec_control) < 0)
@@ -1596,12 +1596,12 @@ void vmx_update_nr_cpu_state(void)
 	unsigned long sysenter_esp;
 	unsigned long gs;
 	unsigned long tmpl;
-	struct desc_ptr idt;	
+	struct desc_ptr idt;
 	/*
 	 * Linux uses per-cpu TSS and GDT, so set these when switching
 	 * processors.
 	 */
-		
+
 	rdmsrl(MSR_GS_BASE, gs);
 	vmcs_writel(GUEST_GS_BASE, gs);
 
@@ -1616,7 +1616,7 @@ void vmx_update_nr_cpu_state(void)
 
 	rdmsrl(MSR_IA32_SYSENTER_EIP, tmpl);
 	vmcs_writel(GUEST_SYSENTER_EIP, tmpl);
-	
+
 	native_store_idt(&idt);
 	vmcs_writel(GUEST_IDTR_BASE, idt.address);
 	vmcs_writel(GUEST_IDTR_LIMIT, idt.size);
@@ -1629,9 +1629,9 @@ void vmx_update_nr_cpu_state(void)
 static void __vmx_get_cpu_helper(void *ptr)
 {
 	unsigned int cmd = VMCALL_DO_GET_CPU_HELPER;
-	
+
         struct vmx_vcpu *vcpu = ptr;
-	
+
 	if(is_in_vmx_nr_mode()){
 		/* do a vmcall */
 		asm volatile(".byte 0x0F,0x01,0xC1\n" ::"a"(cmd),"b"(ptr));
@@ -1656,7 +1656,7 @@ static void vmx_get_cpu(struct vmx_vcpu *vcpu)
 	//if (__this_cpu_read(local_vcpu) != vcpu) {
 	//	__this_cpu_write(local_vcpu, vcpu);
 	//}
-	
+
 	if (vcpu->cpu != cur_cpu) {
 		if (vcpu->cpu >= 0){
 			smp_call_function_single(vcpu->cpu,
@@ -1766,7 +1766,7 @@ static struct vmcs *vmx_alloc_vmcs(void)
 
 
 
-	
+
 struct vmcs_cpu_state {
 	unsigned long rsp;
 	unsigned long rbp;
@@ -1775,7 +1775,7 @@ struct vmcs_cpu_state {
 	unsigned long cr4;
 	unsigned long rflags;
 	unsigned long efer;
-	
+
 	u16 cs_selector;
 	u16 ds_selector;
 	u16 es_selector;
@@ -1793,14 +1793,14 @@ struct vmcs_cpu_state {
 
 	unsigned long  tr_base;
 	unsigned short tr_limit;
-	
+
 	unsigned long cs_base;
 	unsigned long ds_base;
 	unsigned long es_base;
-	unsigned long ss_base;	
+	unsigned long ss_base;
 	unsigned long fs_base;
 	unsigned long gs_base;
-	
+
 	unsigned long sysenter_cs;
 	unsigned long sysenter_eip;
 	unsigned long sysenter_esp;
@@ -1813,14 +1813,14 @@ void show_cpu_state(struct vmcs_cpu_state state)
 	HDEBUG("rbp     (%#lx)\n", state.rbp);
 	HDEBUG("cr0     (%#lx)\n", state.cr0);
 	HDEBUG("cr3     (%#lx)\n", state.cr3);
-	HDEBUG("cr4     (%#lx)\n", state.cr4);	
+	HDEBUG("cr4     (%#lx)\n", state.cr4);
 	HDEBUG("rflags  (%#lx)\n", state.rflags);
 	HDEBUG("efer    (%#lx)\n", state.efer);
 
 	HDEBUG("idt base (%#lx) limit (%#x)\n", state.idt_base, state.idt_limit);
 	HDEBUG("gdt base (%#lx) limit (%#x)\n", state.gdt_base, state.gdt_limit);
-	HDEBUG("ldt base (%#lx) limit (%#x)\n", state.ldt_base, state.ldt_limit);	
-	
+	HDEBUG("ldt base (%#lx) limit (%#x)\n", state.ldt_base, state.ldt_limit);
+
 	HDEBUG("Selectors: \n");
 	HDEBUG("cs_s (%#x) ds_s (%#x) es_s (%#x) ss_s (%#x) tr_s (%#x)\n",
 		state.cs_selector, state.ds_selector, state.es_selector,
@@ -1856,11 +1856,11 @@ void get_cpu_state(struct vmx_vcpu *vcpu, struct vmcs_cpu_state* cpu_state)
 	cpu_state->cr0 = read_cr0();
 	cpu_state->cr3 = read_cr3();
 	cpu_state->cr4 = native_read_cr4();
-        
+
 	rdmsr(MSR_EFER, low32, high32);
 	cpu_state->efer = low32;
 
-	
+
 	/* Segment Selectors */
 	cpu_state->cs_selector = __KERNEL_CS;
 	cpu_state->ds_selector = __KERNEL_DS;
@@ -1900,7 +1900,7 @@ void get_cpu_state(struct vmx_vcpu *vcpu, struct vmcs_cpu_state* cpu_state)
 #if 0
 	cpu_state->idt_base = cloned_thread->idt_base;
 	cpu_state->idt_limit = cloned_thread->idt_limit;
-#else	
+#else
 	native_store_idt(&idt);
 	cpu_state->idt_base = idt.address;
 	cpu_state->idt_limit = idt.size;
@@ -1909,11 +1909,11 @@ void get_cpu_state(struct vmx_vcpu *vcpu, struct vmcs_cpu_state* cpu_state)
 		cpu_state->idt_base, __pa(cpu_state->idt_base), cpu_state->idt_limit);
         //cpu_state->idt_limit = 0xFFFF;
 
-	
+
 	native_store_gdt(&gdt);
 	cpu_state->gdt_base = gdt.address;
 	cpu_state->gdt_limit = gdt.size;
-	
+
 	//native_store_ldt(&ldt);
 	cpu_state->ldt_base = 0;
 	cpu_state->ldt_limit = 0;
@@ -1922,8 +1922,8 @@ void get_cpu_state(struct vmx_vcpu *vcpu, struct vmcs_cpu_state* cpu_state)
 	tr = native_store_tr();
 	cpu_state->tr_base = tr;
 	cpu_state->tr_limit = 0xff;
-	
-	
+
+
 	/* sysenter */
 	rdmsrl(MSR_IA32_SYSENTER_CS, tmpl);
 	cpu_state->sysenter_cs =  tmpl;
@@ -1940,18 +1940,18 @@ void get_cpu_state(struct vmx_vcpu *vcpu, struct vmcs_cpu_state* cpu_state)
  */
 static void vmx_setup_initial_guest_state(struct vmx_vcpu *vcpu)
 {
-	
+
 	/* Need to mask out X64_CR4_VMXE in guest read shadow */
 	unsigned long cr4_mask = X86_CR4_VMXE;
-	unsigned long cr4_shadow; 
+	unsigned long cr4_shadow;
 	unsigned long cr4;
 	struct nr_cloned_state *cloned_thread;
-	
+
 	struct vmcs_cpu_state current_cpu_state;
 	struct pt_regs *regs;
 
 	regs = task_pt_regs(current);
-	
+
 	get_cpu_state(vcpu, &current_cpu_state);
 	show_cpu_state(current_cpu_state);
 
@@ -1974,18 +1974,18 @@ static void vmx_setup_initial_guest_state(struct vmx_vcpu *vcpu)
 	vcpu->regs[VCPU_REGS_R14] = cloned_thread->r14;
 	vcpu->regs[VCPU_REGS_R15] = cloned_thread->r15;
 	vcpu->cr2 = cloned_thread->cr2;
-	
+
 
 #if 0
 	HDEBUG("----start of 'current' regs from __show_regs:\n");
 	__show_regs(regs, 1);
 	HDEBUG("----end of 'current' regs from __show_regs.\n");
-#endif  
+#endif
 	/* Most likely will need to adjust */
 	cr4 = current_cpu_state.cr4;
 	cr4_shadow = (cr4 & ~X86_CR4_VMXE);
-	vmcs_writel(GUEST_CR0, current_cpu_state.cr0);	
-	vmcs_writel(CR0_READ_SHADOW, current_cpu_state.cr0);	
+	vmcs_writel(GUEST_CR0, current_cpu_state.cr0);
+	vmcs_writel(CR0_READ_SHADOW, current_cpu_state.cr0);
 	vmcs_writel(GUEST_CR3, current_cpu_state.cr3);
 
 	/* Make sure VMXE is not visible under a vcpu: we use this currently */
@@ -2019,9 +2019,9 @@ static void vmx_setup_initial_guest_state(struct vmx_vcpu *vcpu)
 	vmcs_write32(GUEST_SYSENTER_CS, current_cpu_state.sysenter_cs);
 	vmcs_writel(GUEST_SYSENTER_ESP, current_cpu_state.sysenter_esp);
 	vmcs_writel(GUEST_SYSENTER_EIP, current_cpu_state.sysenter_eip);
-	
+
 	vmcs_writel(GUEST_GDTR_BASE, current_cpu_state.gdt_base);
-	
+
 	vmcs_writel(GUEST_GDTR_LIMIT, current_cpu_state.gdt_limit);
 	//vmcs_writel(GUEST_GDTR_LIMIT, 0x7f);
 	vmcs_writel(GUEST_IDTR_BASE, current_cpu_state.idt_base);
@@ -2043,7 +2043,7 @@ static void vmx_setup_initial_guest_state(struct vmx_vcpu *vcpu)
 	vmcs_writel(GUEST_TR_AR_BYTES, 0x0080 | VMX_AR_TYPE_BUSY_64_TSS);
 	vmcs_writel(GUEST_TR_LIMIT, current_cpu_state.tr_limit);
 #endif
-	
+
 	// DO WE NEED CHANGE ANY OF THESE???
 	vmcs_writel(GUEST_DR7, 0);
 
@@ -2090,7 +2090,7 @@ static void vmx_setup_initial_guest_state(struct vmx_vcpu *vcpu)
 static void vmx_setup_vmcs(struct vmx_vcpu *vcpu)
 {
 	unsigned int exception_bitmap;
-	
+
 	vmcs_write16(VIRTUAL_PROCESSOR_ID, vcpu->vpid);
 	vmcs_write64(VMCS_LINK_POINTER, -1ull); /* 22.3.1.5 */
 
@@ -2113,7 +2113,7 @@ static void vmx_setup_vmcs(struct vmx_vcpu *vcpu)
 	vmcs_write32(CR3_TARGET_COUNT, 0);           /* 22.2.1 */
 
 	vmcs_write64(MSR_BITMAP, __pa(msr_bitmap));
-	
+
 	vmcs_config.vmentry_ctrl |= VM_ENTRY_IA32E_MODE;
 
 	vmcs_write32(VM_EXIT_CONTROLS, vmcs_config.vmexit_ctrl);
@@ -2125,10 +2125,10 @@ static void vmx_setup_vmcs(struct vmx_vcpu *vcpu)
 	//kvm_write_tsc(&vmx->vcpu, 0);
 	vmcs_writel(TSC_OFFSET, 0);
 
-	
+
 #if 0
 	/* Handle (page-faults) exceptions in R-mode */
-	
+
 	vmcs_write32(VMCS_EXCEPTION_BMP, 0xFFFFFFFF);
         vmcs_writel(VMCS_PAGEFAULT_ERRCODE_MASK, 0);
         vmcs_writel(VMCS_PAGEFAULT_ERRCODE_MATCH, 0);
@@ -2217,7 +2217,7 @@ static struct vmx_vcpu * vmx_create_vcpu(struct nr_cloned_state* cloned_thread)
 	if(!vt_ept_2M_init(vcpu)){
 		goto fail_ept;
 	}
-	
+
 	vcpu->eptp = construct_eptp(vcpu->ept_root);
 
 	vmx_get_cpu(vcpu);
@@ -2225,9 +2225,9 @@ static struct vmx_vcpu * vmx_create_vcpu(struct nr_cloned_state* cloned_thread)
 	vmx_setup_vmcs(vcpu);
 
 	vcpu->cloned_thread = cloned_thread;
-	
+
 	vmx_setup_initial_guest_state(vcpu);
-	
+
 	vmx_put_cpu(vcpu);
 
 #if 1
@@ -2243,11 +2243,11 @@ static struct vmx_vcpu * vmx_create_vcpu(struct nr_cloned_state* cloned_thread)
 		BUG();
 	}
 #endif
-	
+
 	return vcpu;
 fail_ept:
 	vmx_free_vpid(vcpu);
-	
+
 fail_vpid:
 	vmx_free_vmcs(vcpu->vmcs);
 fail_vmcs:
@@ -2262,7 +2262,7 @@ void vmx_destroy_ept(struct vmx_vcpu *vcpu)
 	struct ept_pt_list *q;
 	unsigned long *vaddr;
 	unsigned long vaddr_p;
-	
+
 	list_for_each_entry_safe(entry, q, &vcpu->ept_table_pages.list, list){
 		for(i = 0; i < entry->n_pages; i++){
 			vaddr = __va(entry->page[i].phys);
@@ -2317,7 +2317,7 @@ static unsigned int __noclone vmx_run_vcpu(struct vmx_vcpu *vcpu)
 {
 	nr_preempt_count_set_offset(1);
 	unset_vmx_r_mode();
-			
+
 	asm(
 		/* Store host registers */
 		"push %%"R"dx; push %%"R"bp;"
@@ -2426,7 +2426,7 @@ static unsigned int __noclone vmx_run_vcpu(struct vmx_vcpu *vcpu)
 
 	set_vmx_r_mode();
 	nr_preempt_count_set_offset(0);
-	
+
 	vcpu->launched = 1;
 
 	if (unlikely(vcpu->fail)) {
@@ -2449,7 +2449,7 @@ static void vmx_handle_cpuid(struct vmx_vcpu *vcpu)
 {
 	unsigned int eax, ebx, ecx, edx;
 	unsigned int orig_eax;
-	
+
 	eax = vcpu->regs[VCPU_REGS_RAX];
 	orig_eax = eax;
 	ecx = vcpu->regs[VCPU_REGS_RCX];
@@ -2459,7 +2459,7 @@ static void vmx_handle_cpuid(struct vmx_vcpu *vcpu)
 	vcpu->regs[VCPU_REGS_RBX] = ebx;
 
 	if(orig_eax == 1){
-		/* Requesting processor features, need to mask VMX (bit 5, ecx) */	
+		/* Requesting processor features, need to mask VMX (bit 5, ecx) */
 		HDEBUG("Masking cpuid ecx vmx bit");
 		ecx &= ~(ECX_VMX_BIT);
 	}
@@ -2494,7 +2494,7 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu, int nr_irqs_enabled)
 #if !defined(CONFIG_THREAD_INFO_IN_TASK)
 	int need_set_signal;
 #endif
-	
+
 	long code;
 	unsigned long tls;
 
@@ -2516,13 +2516,13 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu, int nr_irqs_enabled)
 	asm volatile ("mov %%rsp,%0" : "=rm" (rsp));
 	HDEBUG("rsp currently  (%#lx)\n", rsp);
 #endif
-	
+
 	if(cmd == VMCALL_DO_FORK_FIXUP){
 		struct fork_frame *fork_frame;
 		struct inactive_task_frame *frame;
 		p = (struct task_struct*)vcpu->regs[VCPU_REGS_RBX];
 		tls = (unsigned long)vcpu->regs[VCPU_REGS_RCX];
-		
+
 		HDEBUG("VMCALL_DO_FORK_FIXUP called for p (%#lx) (%s) tls (%#lx)\n",
 			(unsigned long)p, p->comm, tls);
 		fork_frame = (struct fork_frame*) p->thread.sp;
@@ -2532,7 +2532,7 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu, int nr_irqs_enabled)
 		vmx_get_cpu(vcpu);
 		gs = vmcs_readl(GUEST_GS_BASE);
 		vmx_put_cpu(vcpu);
-		
+
 		HDEBUG("current pid (%d) (%x)\n", current->pid, current->pid);
 
 		p->okernel_fork_gs_base = gs;
@@ -2558,12 +2558,12 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu, int nr_irqs_enabled)
 			p->okernel_fork_fs_base = tls;
 		} else {
 			p->okernel_fork_fs_base = fs;
-	
+
 		}
-		
+
 		HDEBUG("VMCALL_TLS_FIXUP setting fs to (%#lx) for p (%#lx)\n",
 			p->okernel_fork_fs_base, (unsigned long)p);
-		
+
 		HDEBUG("\nCurrent (pid=%d) Code  Segment start = 0x%lx, end = 0x%lx \n"
 		       "Data  Segment start = 0x%lx, end = 0x%lx\n"
 		       "Stack Segment start = 0x%lx\n",
@@ -2596,7 +2596,7 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu, int nr_irqs_enabled)
 		r_ti = current_thread_info();
 #endif
 		cloned_tsk_state = vcpu->cloned_tsk->state;
-		
+
 		HDEBUG("in VMCALL schedule - current state (%lu) cloned state (%u)\n",
 			current->state, cloned_tsk_state);
 
@@ -2644,17 +2644,17 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu, int nr_irqs_enabled)
 			HDEBUG("sig pending before copy thread_info from NR to R.\n");
 		}
 
-				
+
 		memcpy(r_ti, nr_ti, sizeof(struct thread_info));
 		//smp_mb();
 
 		HDEBUG("synced cloned thread_info state (NR->R) (new r_ti->flags=%#lx)\n",
 		       r_ti->flags);
-		
+
 		if(need_set_signal){
 			set_tsk_thread_flag(current, TIF_SIGPENDING);
 		}
-			
+
 
 #if defined(HPE_DEBUG)
 		if(signal_pending(current)){
@@ -2675,14 +2675,14 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu, int nr_irqs_enabled)
 
 		cpu = smp_processor_id();
 		tss = &per_cpu(cpu_tss, cpu);
-		
+
 		HDEBUG("calling schedule_r (pid %d) cpu_cur_tos (%#lx) tss.sp0 (%#lx) flgs (%#lx)\n",
 		       current->pid, current_top_of_stack(), (unsigned long)tss->x86_tss.sp0,
 		       current_thread_info()->flags);
-				
+
 		HDEBUG("calling schedule_r MSR_FS_BASE=%#lx nr_fs=%#lx MSR_GS_BASE=%#lx nr_gs=%#lx\n",
 		       fs, nr_fs, gs, nr_gs);
-		
+
 		BXMAGICBREAK;
 #endif
 		unset_vmx_r_mode();
@@ -2699,11 +2699,11 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu, int nr_irqs_enabled)
 
 		vpid_sync_vcpu_global();
 		ept_sync_global();
-				
+
 		/* We may come back here on a different CPU...*/
-				
+
 		set_vmx_r_mode();
-		
+
                 /* Re-sync cloned-thread thread_info */
 		cpu = smp_processor_id();
 		tss = &per_cpu(cpu_tss, cpu);
@@ -2720,7 +2720,7 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu, int nr_irqs_enabled)
 		HDEBUG("synced cloned thread_info state (R->NR) (nr_ti->flags=%#lx)\n",
 		       nr_ti->flags);
 #endif
-		
+
 		HDEBUG("ret from sched in_atomic(): %d, irqs_disabled(): %d, pid: %d, name: %s\n",
 		       in_atomic(), irqs_disabled(), current->pid, current->comm);
 		HDEBUG("ret from preempt_count (%d) rcu_preempt_depth (%d)\n",
@@ -2766,7 +2766,7 @@ int vmx_launch(unsigned int mode, unsigned int flags, struct nr_cloned_state *cl
 	unsigned long r_stack_top;
 	unsigned long in_use;
 	unsigned int ret = 0;
-	unsigned long c_rip;	
+	unsigned long c_rip;
 	struct vmx_vcpu *vcpu;
 //	struct vmx_vcpu *remote_vcpu;
 	unsigned long saved_irqs_on;
@@ -2793,25 +2793,25 @@ int vmx_launch(unsigned int mode, unsigned int flags, struct nr_cloned_state *cl
 #if !defined(CONFIG_THREAD_INFO_IN_TASK)
 	struct thread_info *nr_ti;
 #endif
-	
+
 	if(!cloned_thread)
 		return -EINVAL;
-	
+
 	c_rip = cloned_thread->rip;
-	
+
 	HDEBUG("c_rip: (#%#lx)\n", c_rip);
-	
+
 	vcpu = vmx_create_vcpu(cloned_thread);
 
 	if (!vcpu)
 		return -ENOMEM;
-	
+
 	HDEBUG("created new VMX process context (VPID %d)\n", vcpu->vpid);
 
 	//perms =  EPT_R | EPT_W | EPT_X | EPT_CACHE_2 | EPT_CACHE_3;
 	/* Could make this non-X too */
 	perms =  EPT_R | EPT_W | EPT_X | EPT_CACHE_2 | EPT_CACHE_3;
-	
+
 	if(!clone_kstack2(vcpu, perms)){
 		printk(KERN_ERR "okernel: clone kstack failed.\n");
 		return -ENOMEM;
@@ -2821,7 +2821,7 @@ int vmx_launch(unsigned int mode, unsigned int flags, struct nr_cloned_state *cl
 	in_use = current_top_of_stack() - current_stack_pointer();
 
 	k_stack = (unsigned long)current->stack;
-	
+
 	r_stack_top = k_stack + PAGE_SIZE;
 
         /* Check currently not using last page of stack otherwise we break */
@@ -2831,13 +2831,13 @@ int vmx_launch(unsigned int mode, unsigned int flags, struct nr_cloned_state *cl
 		return -ENOMEM;
 	}
 
-	
+
 	HDEBUG("reset stack to top of bottom page for orig thread: in use (%lu) new top (%#lx)\n",
 		in_use, r_stack_top);
-	
+
 	HDEBUG("kernel thread_info (tsk->stack) vaddr (%#lx) paddr (%#lx) top of stack (%#lx)\n",
 		k_stack, __pa(k_stack), current_top_of_stack());
-	
+
 	HDEBUG("sizeof(struct thread_info) (%lu)\n", sizeof(struct thread_info));
 
 	asm volatile ("mov %%rbp,%0" : "=rm" (rbp));
@@ -2845,10 +2845,10 @@ int vmx_launch(unsigned int mode, unsigned int flags, struct nr_cloned_state *cl
 	asm volatile ("mov %%rsp,%0" : "=rm" (rsp));
 	HDEBUG("orginal thread rsp currently  (%#lx)\n", rsp);
 
-	/* 
+	/*
 	 * Ok we want to clone the stack contents from
 	 * old rsp->old rbp so the local variables are still available
-	 * to us 
+	 * to us
 	 */
 	current_frame_len = rbp - rsp;
 	HDEBUG("current stack from in use (%lu)\n", current_frame_len);
@@ -2856,7 +2856,7 @@ int vmx_launch(unsigned int mode, unsigned int flags, struct nr_cloned_state *cl
 	new_rbp = r_stack_top;
 	new_rsp = new_rbp - current_frame_len;
 	memcpy((u64 *)new_rsp, (u64 *)rsp, current_frame_len);
-	
+
 	HDEBUG("setting rsp to (%#lx) rbp to (%#lx)\n", new_rsp, new_rbp);
 	asm volatile ("mov %0, %%rbp": : "r" (new_rbp));
 	asm volatile ("mov %0, %%rsp": : "r" (new_rsp));
@@ -2878,11 +2878,11 @@ int vmx_launch(unsigned int mode, unsigned int flags, struct nr_cloned_state *cl
 	       preempt_count(), rcu_preempt_depth(), cloned_thread->rflags);
 
 	saved_irqs_on = (cloned_thread->rflags & RFLAGS_IF_BIT);
-	
+
 	HDEBUG("saved_irqs_on (%#lx)\n", saved_irqs_on);
 
 	kfree(cloned_thread);
-	
+
 	HDEBUG("About to enter vmx handler while loop...\n");
 
 #if defined(HPE_DEBUG)
@@ -2892,11 +2892,11 @@ int vmx_launch(unsigned int mode, unsigned int flags, struct nr_cloned_state *cl
 		HDEBUG("Entering vmxit handler loop...\n");
 
 		vmx_get_cpu(vcpu);
-		
+
 		/* We may be on a different CPU now compared to when we exited the vmx_run_vcpu() call below.
 		 * As a consequence we need to be careful with percpu data.
-		 */		
-		
+		 */
+
 #if defined(HPE_DEBUG)
 		nr_fs = vmcs_readl(GUEST_FS_BASE);
 		nr_gs = vmcs_readl(GUEST_GS_BASE);
@@ -2921,7 +2921,7 @@ int vmx_launch(unsigned int mode, unsigned int flags, struct nr_cloned_state *cl
 			clear_tsk_thread_flag(current, TIF_SIGPENDING);
 		}
 #endif // CONFIG_THREAD_INFO_IN_TASK
-		
+
 #if defined(HPE_DEBUG)
                 /* Are we about to inject an event to NR-mode? */
                 event_info = vmcs_read32(VMCS_VMENTRY_INTR_INFO_FIELD);
@@ -2938,15 +2938,15 @@ int vmx_launch(unsigned int mode, unsigned int flags, struct nr_cloned_state *cl
 #endif
                 /* Use this instead of local_irq_disable() to save getting tangled in irq on/off tracing stuff. */
 		native_irq_disable();
-		
+
 		//fast_path:
-		
+
                 /**************************** GO FOR IT ***************************/
 		ret = vmx_run_vcpu(vcpu);
                 /*************************** GONE FOR IT! *************************/
 
 
-		//if((ret == EXIT_REASON_VMCALL) && (vcpu->regs[VCPU_REGS_RAX] == VMCALL_DO_GET_CPU_HELPER)){	
+		//if((ret == EXIT_REASON_VMCALL) && (vcpu->regs[VCPU_REGS_RAX] == VMCALL_DO_GET_CPU_HELPER)){
 		//	/* Should always be called with interrupts disabled. */
 		//	HDEBUG("vmcall do_get_cpu_helper called.\n");
 		//	remote_vcpu = (struct vmx_vcpu*)vcpu->regs[VCPU_REGS_RBX];
@@ -2954,7 +2954,7 @@ int vmx_launch(unsigned int mode, unsigned int flags, struct nr_cloned_state *cl
 		//	vmx_step_instruction();
 		//	goto fast_path;
 		//}
-		
+
 		if((vmcs_readl(GUEST_RFLAGS) & RFLAGS_IF_BIT)){
 			native_irq_enable();
 
@@ -2971,9 +2971,9 @@ int vmx_launch(unsigned int mode, unsigned int flags, struct nr_cloned_state *cl
 			printk(KERN_ERR "Okernel: NR stack overflow detected.\n");
 			break;
 		}
-		
+
 		vmx_put_cpu(vcpu);
-		
+
 		if(ret==VMX_EXIT_REASONS_FAILED_VMENTRY){
 			HDEBUG("vmentry failed (%#x)\n", ret);
 			break;
@@ -3015,7 +3015,7 @@ int vmx_launch(unsigned int mode, unsigned int flags, struct nr_cloned_state *cl
 				} else {
 					HDEBUG("ok: protected access denied for pid:=(%d)\n",
 					       current->pid);
-					/* 
+					/*
 					   Map in 'dummy' page for now  - need to be careful not to
 					   create another vulnerability.
 					*/
@@ -3025,7 +3025,7 @@ int vmx_launch(unsigned int mode, unsigned int flags, struct nr_cloned_state *cl
 				vmx_put_cpu(vcpu);
 				continue;
 			}
-			
+
 			if(!(pml2_e =  find_pd_entry(vcpu, gp_addr))){
 				HDEBUG("NULL pml2 entry for gp_addr (%#lx)\n", gp_addr);
 			} else {
@@ -3078,7 +3078,7 @@ int vmx_launch(unsigned int mode, unsigned int flags, struct nr_cloned_state *cl
 		HDEBUG("Done handling exit condition, looping...\n");
 	}
 
-	/* something went wrong - legitimate exit would have been through the 
+	/* something went wrong - legitimate exit would have been through the
 	 * do_exit() kernel path.  (Likely) this may (will) cause a problem if irqs were
 	 * disabled / locks held, etc. in cloned thread on vmexit
 	 * fault - we will have inconsistent kernel state we will need
@@ -3091,8 +3091,8 @@ int vmx_launch(unsigned int mode, unsigned int flags, struct nr_cloned_state *cl
 	return 0;
 }
 
-		
-	
+
+
 /*-------------------------------------------------------------------------------------*/
 /*  end: vmx__launch releated code                                                     */
 /*-------------------------------------------------------------------------------------*/
@@ -3243,12 +3243,12 @@ void ok_init_protected_pages(void)
 	int i;
 	struct page *pg;
 	struct page_ext *pg_ext;
-	
+
 	if(!static_branch_unlikely(&okernel_inited)){
 		printk("ok: ext page info not available - can't init protected pages.\n");
 		return;
 	}
-	
+
 	spin_lock(&ok_protected_pg_lock);
 	pg = alloc_pages(GFP_KERNEL, order_base_2(OK_NR_PROTECTED_PAGES));
 	if(!pg){
@@ -3285,7 +3285,7 @@ void ok_init_protected_pages(void)
 
 unsigned long ok_get_protected_dummy_paddr(void)
 {
-	
+
 	return (page_to_phys(ok_protected_dummy_page));
 }
 
@@ -3294,10 +3294,10 @@ void ok_release_protected_pages(void)
 	struct page *pg;
 	struct page_ext *pg_ext;
 	int i;
-	
+
 	spin_lock(&ok_protected_pg_lock);
 	pg = ok_protected_page;
-	
+
 	for(i = 0; i < OK_NR_PROTECTED_PAGES; i++){
 		pg_ext = lookup_page_ext(pg + i);
 		clear_bit(PAGE_EXT_OK_PROTECTED, &pg_ext->flags);
@@ -3319,7 +3319,7 @@ struct page *ok_alloc_protected_page(void)
 	int i;
 	struct page *pg;
 	struct page_ext *pg_ext;
-	
+
 	spin_lock(&ok_protected_pg_lock);
 	i = find_first_zero_bit(ok_protected_pg_bitmap, OK_NR_PROTECTED_PAGES);
 	if(i < OK_NR_PROTECTED_PAGES){
@@ -3353,10 +3353,10 @@ int __ok_free_protected_page(struct page *pg)
 	unsigned long pfn;
 	int ret = 0;
 	struct page_ext *pg_ext;
-	
+
 
 	pfn = page_to_pfn(pg);
-	
+
 	if((pfn < ok_protected_pfn_start) || (pfn > ok_protected_pfn_end)){
 		printk("OK: tried to free invalid protected page (%#lx) pfn (%#lx) vaddr (%#lx)\n",
 		       (unsigned long)(pg), page_to_pfn(pg), (unsigned long)page_address(pg));
@@ -3379,21 +3379,21 @@ fail:
 int ok_free_protected_page(struct page *pg)
 {
 	int ret;
-	
+
 	spin_lock(&ok_protected_pg_lock);
 
 	ret = __ok_free_protected_page(pg);
-	
+
 	spin_unlock(&ok_protected_pg_lock);
 	return ret;
 }
 
 void ok_free_protected_page_by_id(pid_t pid)
 {
-	/* 
-	   (in-efficiently) scan protected pages and free ones allocated to the given (p)id 
-	   Will likely use container id + refcnt in future for container wide 
-	   allocations. Probably better to maintain a per-id hash-map / list of allocations. 
+	/*
+	   (in-efficiently) scan protected pages and free ones allocated to the given (p)id
+	   Will likely use container id + refcnt in future for container wide
+	   allocations. Probably better to maintain a per-id hash-map / list of allocations.
 	*/
 
 	int i;
@@ -3403,10 +3403,10 @@ void ok_free_protected_page_by_id(pid_t pid)
 	if(!okernel_enabled){
 		return;
 	}
-	
+
 	spin_lock(&ok_protected_pg_lock);
 	pg = ok_protected_page;
-	
+
 	for(i = 0; i < OK_NR_PROTECTED_PAGES; i++){
 		if((pg_ext = lookup_page_ext(pg + i))){
 			if(pg_ext->pid == pid){
@@ -3436,7 +3436,7 @@ bool ok_allow_protected_access(unsigned long phys_addr)
 int __init vmx_init(void)
 {
 	int r, cpu;
-	
+
         if (!cpu_has_vmx()) {
 		printk(KERN_ERR "vmx: CPU does not support VT-x\n");
 		return -EIO;
@@ -3444,7 +3444,7 @@ int __init vmx_init(void)
 
 	if (setup_vmcs_config(&vmcs_config) < 0)
 		return -EIO;
-	
+
 	if (!cpu_has_vmx_vpid()) {
 		printk(KERN_ERR "vmx: CPU is missing required feature 'VPID'\n");
 		return -EIO;
@@ -3466,14 +3466,14 @@ int __init vmx_init(void)
 	if (!msr_bitmap) {
                 return -ENOMEM;
         }
-        
+
 	memset(msr_bitmap, 0x0, PAGE_SIZE);
 
         set_bit(0, vmx_vpid_bitmap); /* 0 is reserved for host */
 
 
 	/* Establish physical memory / EPT mapping limits */
-	max_phys_mem = e820_end_paddr(MAXMEM);	
+	max_phys_mem = e820_end_paddr(MAXMEM);
 
 	if(max_phys_mem > (1UL << 32)){
 		ept_limit = max_phys_mem;
@@ -3482,8 +3482,8 @@ int __init vmx_init(void)
 		ept_limit = (1UL << 32);
 		ept_no_cache_start = max_phys_mem;
 	}
-	
-	
+
+
 	for_each_possible_cpu(cpu) {
 		struct vmcs *vmxon_buf;
 
@@ -3507,14 +3507,14 @@ int __init vmx_init(void)
 		r = -EBUSY;
 		goto failed2;
 	}
-	
+
 	in_vmx_nr_mode = real_in_vmx_nr_mode;
 
 	(void)ok_init_protected_pages();
-	
+
         return 0;
 
-	
+
 failed2:
 	on_each_cpu(vmx_disable, NULL, 1);
 failed1:

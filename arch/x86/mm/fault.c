@@ -236,7 +236,7 @@ force_sig_info_fault(int si_signo, int si_code, unsigned long address,
 	info.si_code	= si_code;
 	info.si_addr	= (void __user *)address;
 	if (fault & VM_FAULT_HWPOISON_LARGE)
-		lsb = hstate_index_to_shift(VM_FAULT_GET_HINDEX(fault)); 
+		lsb = hstate_index_to_shift(VM_FAULT_GET_HINDEX(fault));
 	if (fault & VM_FAULT_HWPOISON)
 		lsb = PAGE_SHIFT;
 	info.si_addr_lsb = lsb;
@@ -500,7 +500,7 @@ NOKPROBE_SYMBOL(vmalloc_fault);
 
 #ifdef CONFIG_CPU_SUP_AMD
 static const char errata93_warning[] =
-KERN_ERR 
+KERN_ERR
 "******* Your BIOS seems to not contain a fix for K8 errata #93\n"
 "******* Working around it, but it may cause SEGVs or burn power.\n"
 "******* Please consider a BIOS update.\n"
@@ -868,7 +868,7 @@ __bad_area_nosemaphore(struct pt_regs *regs, unsigned long error_code,
                                address, error_code);
                }
 #endif
-#endif		
+#endif
 		/*
 		 * It's possible to have interrupts off here:
 		 */
@@ -1399,7 +1399,7 @@ retry:
                        HDEBUG("Current mm vma mappings done.\n");
                }
 #endif
-#endif		
+#endif
 		bad_area(regs, error_code, address);
 		return;
 	}
@@ -1420,7 +1420,7 @@ retry:
 #endif
                                HDEBUG("ptregs before do_page_fault_r done.\n");
                        }
-#endif			
+#endif
 			bad_area(regs, error_code, address);
 			return;
 		}
@@ -1432,7 +1432,7 @@ retry:
                        HDEBUG("calling bad area 4\n");
                }
 #endif
-#endif		
+#endif
 		bad_area(regs, error_code, address);
 		return;
 	}

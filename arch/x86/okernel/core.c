@@ -1,18 +1,18 @@
-/* 
+/*
  * linux/arch/x86/okernel/core.c
- * 
+ *
  * Copyright (C) 2015 - Chris Dalton (cid@hpe.com), HPE Corp.
  * Suport for splitting the kernel into inner and outer regions,
  * with the aim of achieving some degree of intra-kernel protection.
  * Processes marked as 'OKERNEL' run under vmx non-root mode (x86).
- * They enter the kernel in that mode too (outer-kernel mode) 
+ * They enter the kernel in that mode too (outer-kernel mode)
  * thus giving a (inner kernel - running in root-mode vmx on x86)
  * a control point where restrictions can be put in place, e.g. enforce
  * something like a vMMU interface, as in 'Nested Kernel', Dautenhahn,
- *  et al. 
- *  
+ *  et al.
+ *
  * For basic vmx setup we re-use some of the existing kvm / dune
- * code (in vmx.c / vmx.h). 
+ * code (in vmx.c / vmx.h).
  *
  */
 #include <linux/errno.h>
@@ -100,10 +100,10 @@ void okernel_dump_stack_info(void)
 void __noclone okernel_enter_test(unsigned long flags)
 {
 	int i;
-	
+
 	HDEBUG("called - flags (%lx) pid(%d)\n", flags, current->pid);
 	for(i = 0; i < 10; i++){
-		
+
 		HDEBUG("pid (%d) Calling schedule_timeout (%d)...\n", current->pid, i);
 		set_current_state(TASK_INTERRUPTIBLE);
 		schedule_timeout(2*HZ);
@@ -116,14 +116,14 @@ void __noclone okernel_enter_test(unsigned long flags)
 asmlinkage void __noclone okernel_enter_fork_debug(void)
 {
 	unsigned long fs;
-	
+
 	HDEBUG("Returning from okernel_enter_fork (pid=%d)\n",
 		current->pid);
 	rdmsrl(MSR_FS_BASE, fs);
 	HDEBUG("MSR_FS_BASE (%#lx) curr (%#lx)\n",
-		fs ,current->okernel_fork_fs_base); 
+		fs ,current->okernel_fork_fs_base);
 	BXMAGICBREAK;
-		
+
 	HDEBUG("initial state in return from okernel_enter_fork :\n");
 #if defined(CONFIG_TRACE_IRQFLAGS) && defined(CONFIG_PROVE_LOCKING)
 	HDEBUG("current->h_irqs_en (%d)\n",
@@ -146,7 +146,7 @@ asmlinkage int okernel_enter_core(unsigned int mode, unsigned long flags)
 	 * allows us to save stack space. */
 
 	struct nr_cloned_state *cloned_thread = kmalloc(sizeof(struct nr_cloned_state), GFP_KERNEL);
-	
+
 	unsigned long rbp,rsp,rflags,cr2,rax,rcx,rdx,rbx,rsi,rdi,r8,r9,r10,r11,r12,r13,r14,r15;
 	int ret;
 
@@ -154,7 +154,7 @@ asmlinkage int okernel_enter_core(unsigned int mode, unsigned long flags)
 		HDEBUG("Failed to allocate cloned thread structure.\n");
 		BUG();
 	}
-		
+
 	HDEBUG("called - mode (%u)\n", mode);
 
 	cloned_thread->msr_fs_base = 0;
@@ -169,68 +169,68 @@ asmlinkage int okernel_enter_core(unsigned int mode, unsigned long flags)
 	}
 
 	cr2 = read_cr2();
-	
+
 	asm volatile ("mov %%rbp,%0" : "=rm" (rbp));
-	
+
 	HDEBUG("cloned thread rbp will be set to  (%#lx)\n", rbp);
-	
+
 	cloned_thread->rbp = rbp;
 
 	HDEBUG("cloned thread cr2 will be set to  (%#lx)\n", cr2);
 	cloned_thread->cr2 = cr2;
-	
+
 	asm volatile ("mov %%rax,%0" : "=rm" (rax));
 	HDEBUG("cloned thread rax will be set to  (%#lx)\n", rax);
 	cloned_thread->rax = rax;
-	
+
 	asm volatile ("mov %%rcx,%0" : "=rm" (rcx));
 	HDEBUG("cloned thread rcx will be set to  (%#lx)\n", rcx);
 	cloned_thread->rcx = rcx;
-	
+
 	asm volatile ("mov %%rdx,%0" : "=rm" (rdx));
 	HDEBUG("cloned thread rdx will be set to  (%#lx)\n", rdx);
 	cloned_thread->rdx = rdx;
-	
+
 	asm volatile ("mov %%rdx,%0" : "=rm" (rbx));
 	HDEBUG("cloned thread rbx will be set to  (%#lx)\n", rbx);
 	cloned_thread->rbx = rbx;
-	
+
 	asm volatile ("mov %%rsi,%0" : "=rm" (rsi));
 	HDEBUG("cloned thread rsi will be set to  (%#lx)\n", rsi);
 	cloned_thread->rsi = rsi;
-	
+
 	asm volatile ("mov %%rdi,%0" : "=rm" (rdi));
 	HDEBUG("cloned thread rdi will be set to  (%#lx)\n", rdi);
 	cloned_thread->rdi = rdi;
-	
+
 	asm volatile ("mov %%r8,%0" : "=rm" (r8));
 	HDEBUG("cloned thread r8 will be set to  (%#lx)\n", r8);
 	cloned_thread->r8 = r8;
-	
+
 	asm volatile ("mov %%r9,%0" : "=rm" (r9));
 	HDEBUG("cloned thread r9 will be set to  (%#lx)\n", r9);
 	cloned_thread->r9 = r9;
-	
+
 	asm volatile ("mov %%r10,%0" : "=rm" (r10));
 	HDEBUG("cloned thread r10 will be set to  (%#lx)\n", r10);
 	cloned_thread->r10 = r10;
-	
+
 	asm volatile ("mov %%r11,%0" : "=rm" (r11));
 	HDEBUG("cloned thread r11 will be set to  (%#lx)\n", r11);
 	cloned_thread->r11 = r11;
-	
+
 	asm volatile ("mov %%r12,%0" : "=rm" (r12));
 	HDEBUG("cloned thread r12 will be set to  (%#lx)\n", r12);
 	cloned_thread->r12 = r12;
-	
+
 	asm volatile ("mov %%r13,%0" : "=rm" (r13));
 	HDEBUG("cloned thread r13 will be set to  (%#lx)\n", r13);
 	cloned_thread->r13 = r13;
-	
+
 	asm volatile ("mov %%r14,%0" : "=rm" (r14));
 	HDEBUG("cloned thread r14 will be set to  (%#lx)\n", r14);
 	cloned_thread->r14 = r14;
-	
+
 	asm volatile ("mov %%r15,%0" : "=rm" (r15));
 	HDEBUG("cloned thread r15 will be set to  (%#lx)\n", r15);
 	cloned_thread->r15 = r15;
@@ -238,10 +238,10 @@ asmlinkage int okernel_enter_core(unsigned int mode, unsigned long flags)
 	asm volatile ( "pushf\n\t"
 		       "pop %0"
 		       : "=g"(rflags) );
-	
+
 	cloned_thread->rflags = rflags;
 	HDEBUG("cloned thread rflags will be set to  (%#lx)\n", rflags);
-	
+
 	asm("mov $.Lc_ret_from_vmlaunch_label, %0" : "=r"(tmpl));
 	HDEBUG("cloned thread RIP will be set to: (%#lx)\n", tmpl);
 	cloned_thread->rip = tmpl;
@@ -254,21 +254,21 @@ asmlinkage int okernel_enter_core(unsigned int mode, unsigned long flags)
 	HDEBUG("cloned thread rsp will be set to  (%#lx)\n", rsp);
 
 	cloned_thread->rsp = rsp;
-	
+
 	BXMAGICBREAK;
 
 	//barrier();
 
 	ret =  vmx_launch(mode, flags, cloned_thread);
-	
+
 	if(ret){
 		printk(KERN_ERR "vmx_launch failed for pid <%d> ret (%d) mode (%u) flags (%lu)\n",
 		       current->pid, ret, mode, flags);
 		BUG();
 	}
-	
+
 	asm volatile(".Lc_ret_from_vmlaunch_label: ");
-	
+
 	/* Be careful what we do here as the C register state may not
 	   be the same as the compiler is expecting (since we are
 	   jumping straight to this point with state restored from a
@@ -319,7 +319,7 @@ long ok_device_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 	unsigned long p_addr;
 	char *p;
 	unsigned long *v_addr;
-	
+
 	HDEBUG("called.\n");
 	switch(cmd)
 	{
@@ -329,11 +329,11 @@ long ok_device_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 			printk("ok: failed to alloc protected page.\n");
 			return -EINVAL;
 		}
-				
+
 		phys_addr = page_to_phys(pg);
 
 		printk("ok: allocated protected page at phys addr (%#lx)\n", phys_addr);
-		
+
 		if(copy_to_user((void*)arg, &phys_addr, sizeof(unsigned long))){
 			return -EFAULT;
 		}
@@ -348,21 +348,21 @@ long ok_device_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 	case OKERNEL_PROTECTED_PAGE_READ:
 		copy_from_user(&pd, (void*)arg, sizeof(struct protected_data));
 		p_addr = pd.p_addr;
-		
+
 		printk("OK page reaad: Passed physical Address <%#lx>\n", p_addr);
-		
+
 		/* In range? */
 		pfn = __phys_to_pfn(p_addr);
-		
+
 		if((pfn < ok_protected_pfn_start) || (pfn > ok_protected_pfn_end)){
 			return -EINVAL;
 		}
-		
-		
+
+
 		v_addr = phys_to_virt(p_addr);
 		printk("OK: Kernel virtual address <%p>\n", v_addr);
 		p = (char*)v_addr;
-		
+
 		printk("OK: Read from p_addr/vaddr (%#lx/%#lx) in kernel: %s\n",
 		       p_addr, (unsigned long)v_addr, p);
 		copy_to_user(pd.p_data, p, PAGE_SIZE);
@@ -370,20 +370,20 @@ long ok_device_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 	case OKERNEL_PROTECTED_PAGE_WRITE:
 		copy_from_user(&pd, (void*)arg, sizeof(struct protected_data));
 		p_addr = pd.p_addr;
-		
+
 		printk("OK page write: Passed physical Address <%#lx>\n", p_addr);
-		
+
 		/* In range? */
 		pfn = __phys_to_pfn(p_addr);
-		
+
 		if((pfn < ok_protected_pfn_start) || (pfn > ok_protected_pfn_end)){
 			return -EINVAL;
 		}
-		
+
 		v_addr = phys_to_virt(p_addr);
-		
+
 		printk("OK: Kernel virtual address <%p>\n", v_addr);
-		
+
 		p = (char*)v_addr;
 		memset(p, 0, PAGE_SIZE);
 		copy_from_user(p, pd.p_data, PAGE_SIZE-1);
@@ -397,7 +397,7 @@ long ok_device_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 		HDEBUG("cmd is OKERNEL_ON_CMD with arg (%lu) for pid (%d)\n",
 			val, current->pid);
 
-		
+
 		if(val != 1){
 			HDEBUG("OKERNEL_ON_CMD arg not 1.\n");
 			return -EINVAL;
@@ -411,18 +411,18 @@ long ok_device_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 		if(is_in_vmx_nr_mode()){
 			printk(KERN_CRIT "NR: Calling okernel_enter in  NR mode kernel...shouldn't get here!!\n");
 		}
-		
+
 		ret = okernel_enter(OKERNEL_ENTER_IOCTL);
 
 		if(is_in_vmx_nr_mode()){
 			BXMAGICBREAK;
 
 			HDEBUG("Returning from okernel_enter (IOCTL_LAUNCH).\n");
-			
+
 			//dump_stack();
 			BXMAGICBREAK;
 			ti = current_thread_info();
-			
+
 			HDEBUG("initial state in return from okernel_enter (IOCTL_LAUNCH):\n");
 #if defined(CONFIG_TRACE_IRQFLAGS) && defined(CONFIG_PROVE_LOCKING)
 			HDEBUG("current->h_irqs_en (%d)\n",
@@ -432,7 +432,7 @@ long ok_device_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 				in_atomic(), irqs_disabled(), current->pid, current->comm);
 			HDEBUG("preempt_count (%#x) rcu_preempt_depth (%#x)\n",
 				preempt_count(), rcu_preempt_depth());
-			
+
 			HDEBUG("------------------------------------------------------------------\n");
 			HDEBUG("set state for return through kernel to upace from okernel_enter:\n");
 #if defined(CONFIG_TRACE_IRQFLAGS) && defined(CONFIG_PROVE_LOCKING)
@@ -456,10 +456,10 @@ long ok_device_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 		unset_vmx_r_mode();
 		break;
 	default:
-	
+
 		printk(KERN_ERR "okernel invalid IOCTL cmd.\n");
 		return -ENODEV;
-		
+
 	}
 nr_exit:
 	return 0;
@@ -483,9 +483,9 @@ static struct file_operations fops={
 
 static int __init okernel_init(void)
 {
-	
+
 	HDEBUG("Start initialization...\n");
-	
+
 	major_no = register_chrdev(0, DEVICE_NAME, &fops);
 	HDEBUG("Creating Device Major_no : %d\n", major_no);
 	okernel_dev_class = class_create(THIS_MODULE, DEVICE_NAME);
@@ -497,7 +497,7 @@ static int __init okernel_init(void)
 		okernel_enabled = 0;
 		return -1;
 	}
-	
+
 	okernel_enabled = 1;
 	okernel_dump_stack_info();
 	HDEBUG("Enabled, initialization done.\n");

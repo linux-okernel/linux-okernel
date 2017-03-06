@@ -129,7 +129,7 @@ static inline void cr4_clear_bits(unsigned long mask)
                cr4 &= ~(X86_CR4_VMXE);
        }
 #endif
-	
+
 	if ((cr4 & ~mask) != cr4) {
 		cr4 &= ~mask;
 		this_cpu_write(cpu_tlbstate.cr4, cr4);

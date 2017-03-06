@@ -1,15 +1,15 @@
-/* 
+/*
  * linux/include/linux/okernel.h
- * 
+ *
  * Copyright (C) 2015 - Chris Dalton (cid@hpe.com), HPE Corp.
  * Suport for splitting the kernel into inner and outer regions,
  * with the aim of achieving some degree of intra-kernel protection.
  * Processes marked as 'OKERNEL' run under vmx non-root mode (x86).
- * They enter the kernel in that mode too (outer-kernel mode) 
+ * They enter the kernel in that mode too (outer-kernel mode)
  * thus giving a (inner kernel - running in root-mode vmx on x86)
  * a control point where restrictions can be put in place, e.g. enforce
  * something like a vMMU interface, as in 'Nested Kernel', Dautenhahn,
- *  et al. 
+ *  et al.
  */
 
 #ifndef _LINUX_OKERNEL_H
@@ -18,14 +18,14 @@
 #include <asm/special_insns.h>
 #include <asm/percpu.h>
 
-/* 
- * Flags to control initial vmx non-root mode setup from user-space 
- * and subsequent scheduling / fork, etc. behaviour.  
+/*
+ * Flags to control initial vmx non-root mode setup from user-space
+ * and subsequent scheduling / fork, etc. behaviour.
  * Applies to task struct okernel entry for a process. By default, this
- * is set to OKERNEL_OFF. A userspace process can set the state to 
+ * is set to OKERNEL_OFF. A userspace process can set the state to
  * OKERNEL_ON_EXEC before exec'ing a program executable. Within the exec
  * handling in the kernel, this flag is checked to see whether to launch
- * the executable within a VMX container. Processes runnning within a 
+ * the executable within a VMX container. Processes runnning within a
  * VMX container have task->okernel set to OKERNEL_ACTIVE.
  *
  *
@@ -91,7 +91,7 @@ int ok_free_protected_page(struct page *pg);
 #define HDEBUG(fmt, args...)  trace_printk( KERN_ERR "%s: cpu(%d) pid(%d) %s: " fmt , vmx_nr_mode()?"NR":"R ", raw_smp_processor_id(), current->pid,__func__, ## args)
 //#define HDEBUG(fmt, args...)  printk( KERN_ERR "%s: cpu(%d) pid(%d) %s: " fmt , vmx_nr_mode()?"NR":"R ", raw_smp_processor_id(), current->pid,__func__, ## args)
 #else
-#define HDEBUG(fmt, args...) 
+#define HDEBUG(fmt, args...)
 #endif
 //#define HPL_DEBUG2
 #ifdef HPE_DEBUG2
@@ -122,7 +122,7 @@ static inline bool vmx_nr_mode(void)
 	unsigned long cr4;
 
 	cr4 = native_read_cr4();
-	
+
 	if(cr4 & X86_CR4_VMXE)
 		return false;
 	return true;
@@ -163,5 +163,5 @@ void okernel_schedule_helper(void);
 void okernel_dump_stack_info(void);
 bool __ok_protected_phys_addr(unsigned long paddr);
 void ok_free_protected_page_by_id(pid_t pid);
-#endif 
+#endif
 #endif /* _LINUX_OKERNEL_H */
