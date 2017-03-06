@@ -64,6 +64,11 @@
  * Reset by start_kernel()->sched_init()->init_idle()->init_idle_preempt_count().
  */
 #define INIT_PREEMPT_COUNT	PREEMPT_OFFSET
+#if defined(CONFIG_OKERNEL)
+#define INIT_NR_PREEMPT_COUNT_OFFSET   0
+#define INIT_NR_MODE   0
+#define INIT_R_MODE    0
+#endif
 
 /*
  * Initial preempt_count value; reflects the preempt_count schedule invariant
