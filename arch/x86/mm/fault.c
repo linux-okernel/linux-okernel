@@ -1416,7 +1416,7 @@ retry:
                                HDEBUG("calling bad area 3 (regs->sp=%#lx)\n", regs->sp);
                                HDEBUG("ptregs before do_page_fault_r call: \n");
 #ifdef HPE_DEBUG
-                               show_regs(regs);
+                               __show_regs(regs, 1);
 #endif
                                HDEBUG("ptregs before do_page_fault_r done.\n");
                        }
