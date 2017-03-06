@@ -40,8 +40,8 @@ static __always_inline void preempt_count_set(int pc)
 static __always_inline int nr_preempt_count_offset(void)
 {
        return raw_cpu_read_4(__nr_preempt_count_offset);
- }
- 
+}
+
 static __always_inline void nr_preempt_count_set_offset(int pc)
 {
        raw_cpu_write_4(__nr_preempt_count_offset, pc);
