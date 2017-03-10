@@ -715,6 +715,77 @@ int add_ept_page_perms(struct vmx_vcpu *vcpu, u64 paddr)
 	return 0;
 }
 
+int clear_ept_page_flag(struct vmx_vcpu *vcpu, u64 paddr, unsigned long flag)
+{
+	unsigned long *pml2_e;
+	unsigned long *pml1_e;
+	unsigned long *ept_page_entry;
+
+	if(!(pml2_e =  find_pd_entry(vcpu, paddr))){
+		HDEBUG("NULL pml2 entry for paddr (%#lx)\n",
+		       (unsigned long)paddr);
+		return 0;
+	}
+
+	/* check if 2M or 4K mapping entry */
+	if((*pml2_e & EPT_2M_PAGE)){
+		HDEBUG("2MB mapping ept entry for paddr (%#lx).\n",
+			(unsigned long)paddr);
+		ept_page_entry = pml2_e;
+	} else {
+		/* Need to find the 4k page entry */
+
+		if(!(pml1_e = find_pt_entry(vcpu, paddr))){
+			HDEBUG("failed to find pte for (%#lx)\n",
+			       (unsigned long)paddr);
+			return 0;
+		}
+		/*
+		HDEBUG("4KB mapping ept entry for paddr (%#lx).\n",
+		       (unsigned long)paddr);
+		*/
+		ept_page_entry = pml1_e;
+	}
+	*ept_page_entry &= ~(flag);
+	return 1;
+}
+
+int set_ept_page_rw(struct vmx_vcpu *vcpu, u64 paddr)
+{
+	/* Page not PT/PD. This function just makes an EPT page entry writable. */
+
+	unsigned long *pml2_e;
+	unsigned long *pml1_e;
+	unsigned long *ept_page_entry;
+
+	if(!(pml2_e =  find_pd_entry(vcpu, paddr))){
+		HDEBUG("NULL pml2 entry for paddr (%#lx)\n",
+		       (unsigned long)paddr);
+		return 0;
+	}
+
+	/* check if 2M or 4K mapping entry */
+	if((*pml2_e & EPT_2M_PAGE)){
+		HDEBUG("2MB mapping ept entry for paddr (%#lx).\n",
+			(unsigned long)paddr);
+		ept_page_entry = pml2_e;
+	} else {
+		/* Need to find the 4k page entry */
+
+		if(!(pml1_e = find_pt_entry(vcpu, paddr))){
+			HDEBUG("failed to find pte for (%#lx)\n",
+			       (unsigned long)paddr);
+			return 0;
+		}
+		HDEBUG("4KB mapping ept entry for paddr (%#lx).\n",
+		       (unsigned long)paddr);
+		ept_page_entry = pml1_e;
+	}
+
+	*ept_page_entry |= EPT_W;
+	return 1;
+}
+
 /* Need to sort out code duplication amongst replace/modify/rmap ept pages */
 int remap_ept_page(struct vmx_vcpu *vcpu, u64 paddr, u64 new_paddr)
 {
@@ -765,6 +836,131 @@ int remap_ept_page(struct vmx_vcpu *vcpu, u64 paddr, u64 new_paddr)
 
 	HDEBUG("Done for pa (%#lx)\n", (unsigned long)paddr);
 	return 1;
+}
+
+void old_set_kernel_text_ept_nw(struct vmx_vcpu *vcpu)
+{
+	/*
+	 * Remove write from kernel text region
+	 *  Duplicate the logic in init_64.c:set_kernel_text_ro for now
+	 *  We split into 4k pages as this should work in all cases
+         *  It would be more efficient to align EPT (lower) with kernel (upper)
+         *  page sizes
+	 */
+	unsigned long start = PFN_ALIGN(_text);
+	// unsigned long end = PFN_ALIGN(__stop___ex_table);
+	unsigned long end = (unsigned long) &__end_rodata_hpage_align;
+	unsigned long vaddr;
+	unsigned long paddr;
+	unsigned long paddr_2m_aligned;
+	unsigned long flag = EPT_W;
+
+	HDEBUG("Value of _text is (%#lx)\n", (unsigned long)_text);
+	HDEBUG("Value of __stop___ex_table is (%#lx)\n", (unsigned long)__stop___ex_table);
+	HDEBUG("Start is (%#lx) end is (%#lx)\n", start, end);
+	HDEBUG("Value of PAGE_SIZE is (%#lx)\n", (unsigned long)PAGE_SIZE);
+	HDEBUG("PAGESIZE2M is (%#lx)\n", (unsigned long) PAGESIZE2M);
+	vaddr = start;
+
+	for (vaddr = start; vaddr < end; vaddr += PAGE_SIZE){
+		paddr = virt_to_phys((void *)vaddr);
+		paddr_2m_aligned = paddr & ~(PAGESIZE2M - 1);
+		//HDEBUG("Split_2M_mapping on vaddr(%#lx) phys(%#lx) aligned to (%#lx)\n", vaddr, paddr, paddr_2m_aligned);
+		if (!split_2M_mapping(vcpu, paddr_2m_aligned))
+		{
+			HDEBUG("Failed to split 2M mapping for phys(%#lx) virt(%#lx).\n", paddr_2m_aligned, vaddr);
+		}
+		//HDEBUG("Clear EPT Flag (%#lx) on phys(%#lx)\n", flag, paddr);
+		if (!clear_ept_page_flag(vcpu, paddr, flag))
+		{
+			HDEBUG("EPT set RO failed.\n");
+			BUG();
+		}
+	}
+}
+
+void set_kernel_text_ept_nw(struct vmx_vcpu *vcpu)
+{
+	unsigned long start = PFN_ALIGN(_text);
+	//unsigned long end = (unsigned long) &__end_rodata_hpage_align;
+	unsigned long end = (unsigned long) PFN_ALIGN(&__stop___ex_table);
+	unsigned long flag = EPT_W;
+	unsigned long vaddr, paddr, p2m;
+
+	HDEBUG("Entered\n");
+	vaddr = start & ~(PAGESIZE2M - 1);
+	if (start != vaddr) {
+		HDEBUG("Start address (%#lx) is not 2M aligned\n", start);
+		return;
+	}
+	for (; vaddr < end; vaddr += PAGESIZE2M){
+		paddr = virt_to_phys((void *)vaddr);
+		p2m = paddr & ~(PAGESIZE2M - 1);
+		if (p2m != paddr) {
+			HDEBUG("Physical address %#lx for virtual address %#lx"
+			       "is not 2M aligned\n", paddr, vaddr);
+			BUG();
+		}
+		if (!clear_ept_page_flag(vcpu, paddr, flag))
+		{
+			HDEBUG("EPT set NW failed.\n");
+			BUG();
+		}
+	}
+}
+
+void set_kernel_data_ept_nx(struct vmx_vcpu *vcpu)
+{
+	unsigned long text_end = PFN_ALIGN(&__stop___ex_table);
+	unsigned long all_end = roundup((unsigned long)_brk_end, PMD_SIZE);
+	unsigned long flag = EPT_X;
+	unsigned long vaddr, paddr, p2m;
+
+	HDEBUG("Entered\n");
+	vaddr = text_end & ~(PAGESIZE2M - 1);
+	if (text_end != vaddr) {
+		HDEBUG("text_end address (%#lx) is not 2M aligned\n", text_end);
+		return;
+	}
+	for (; vaddr < all_end; vaddr += PAGESIZE2M){
+		paddr = virt_to_phys((void *)vaddr);
+		p2m = paddr & ~(PAGESIZE2M - 1);
+		if (p2m != paddr) {
+			HDEBUG("Physical address %#lx for virtual address %#lx"
+			       "is not 2M aligned\n", paddr, vaddr);
+			BUG();
+		}
+		if (!clear_ept_page_flag(vcpu, paddr, flag))
+		{
+			HDEBUG("EPT set NX failed.\n");
+			BUG();
+		}
+	}
+
+}
+
+void protect_kernel_integrity(struct vmx_vcpu *vcpu)
+{
+	/*
+	 * This protection is aligned with init_64:set_kernel_text_ro
+	 * and init_64:mark_rodata_ro
+	 * Here we use EPT to ensure it cannot be tampered with by the
+	 * okernel
+	 * Currently we assume the kernel is using 2M pages
+	 */
+	unsigned long start = PFN_ALIGN(_text);
+	unsigned long text_end = PFN_ALIGN(&__stop___ex_table);
+	unsigned long rodata_start = PFN_ALIGN(__start_rodata);
+	unsigned long rodata_end = PFN_ALIGN(&__end_rodata);
+	unsigned long end = (unsigned long) &__end_rodata_hpage_align;
+	
+	HDEBUG("start is %#lx\n", start);
+	HDEBUG("text_end is %#lx\n", text_end);
+	HDEBUG("rodata_start is %#lx\n", rodata_start);
+	HDEBUG("rodata_end is %#lx\n", rodata_end);
+	HDEBUG("end is %#lx\n", end);
+	set_kernel_text_ept_nw(vcpu);
+	set_kernel_data_ept_nx(vcpu);
 }
 
 /* We just clone the bottom page of the stack for now */
@@ -1047,11 +1243,10 @@ int vt_ept_2M_init(struct vmx_vcpu *vcpu)
 	       (unsigned long)pml4_phys);
 
        vcpu->ept_root = pml4_phys;
+       protect_kernel_integrity(vcpu);
        return 1;
 }
 /* End: imported code from original BV prototype */
-
-
 
 static inline bool cpu_has_secondary_exec_ctrls(void)
 {
@@ -3073,6 +3268,16 @@ int vmx_launch(unsigned int mode, unsigned int flags, struct nr_cloned_state *cl
 			if(qual & 0x80){
 				gv_addr = (u64)vmcs_readl(GUEST_LINEAR_ADDRESS);
 				HDEBUG("gva=%#lx\n", gv_addr);
+				if(set_ept_page_rw(vcpu, gp_addr)){
+					HDEBUG("Grant EPT RW");
+					vpid_sync_context(vcpu->vpid);
+					vmx_put_cpu(vcpu);
+					continue;
+				} else {
+					HDEBUG("EPT set RW failed.\n");
+					BUG();
+				}
+				
 			}
 			vmx_put_cpu(vcpu);
 			break;
@@ -3122,8 +3327,9 @@ int vmx_launch(unsigned int mode, unsigned int flags, struct nr_cloned_state *cl
 	 * fault - we will have inconsistent kernel state we will need
 	 * to sort out.
 	 */
-	HDEBUG("leaving vmexit() loop (VPID %d) - ret (%x) - trigger BUG() for now...\n",
-	       vcpu->vpid, ret);
+	qual = vmcs_readl(EXIT_QUALIFICATION);
+	HDEBUG("leaving vmexit() loop (VPID %d) ret(%x) qual(%lx) "
+	       "- trigger BUG() for now...\n", vcpu->vpid, ret, qual);
 	vmx_destroy_vcpu(vcpu);
 	BUG();
 	return 0;
