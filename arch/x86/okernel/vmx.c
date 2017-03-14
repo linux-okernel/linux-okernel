@@ -1874,44 +1874,26 @@ void do_4k_split(struct vmx_vcpu *vcpu){
 	}
 }
 
-void old_set_kernel_text_ept_nw(struct vmx_vcpu *vcpu)
+unsigned long  guest_physical_page_address(unsigned long addr)
 {
-	/*
-	 * Remove write from kernel text region
-	 *  Duplicate the logic in init_64.c:set_kernel_text_ro for now
-	 *  We split into 4k pages as this should work in all cases
-         *  It would be more efficient to align EPT (lower) with kernel (upper)
-         *  page sizes
-	 */
-	unsigned long start = PFN_ALIGN(_text);
-	// unsigned long end = PFN_ALIGN(__stop___ex_table);
-	unsigned long end = (unsigned long) &__end_rodata_hpage_align;
-	unsigned long vaddr;
-	unsigned long paddr;
-	unsigned long paddr_2m_aligned;
-	unsigned long flag = EPT_W;
+	/* find the guest physical page address , or 0 if not mapped*/
+	pte_t *kpte;
+	unsigned int level;
+	unsigned long umask = ~(((unsigned long) (-1)) << 51);
+	/*need to mask out upper 51 bits*/
 
-	HDEBUG("Value of _text is (%#lx)\n", (unsigned long)_text);
-	HDEBUG("Value of __stop___ex_table is (%#lx)\n", (unsigned long)__stop___ex_table);
-	HDEBUG("Start is (%#lx) end is (%#lx)\n", start, end);
-	HDEBUG("Value of PAGE_SIZE is (%#lx)\n", (unsigned long)PAGE_SIZE);
-	HDEBUG("PAGESIZE2M is (%#lx)\n", (unsigned long) PAGESIZE2M);
-	vaddr = start;
-
-	for (vaddr = start; vaddr < end; vaddr += PAGE_SIZE){
-		paddr = virt_to_phys((void *)vaddr);
-		paddr_2m_aligned = paddr & ~(PAGESIZE2M - 1);
-		//HDEBUG("Split_2M_mapping on vaddr(%#lx) phys(%#lx) aligned to (%#lx)\n", vaddr, paddr, paddr_2m_aligned);
-		if (!split_2M_mapping(vcpu, paddr_2m_aligned))
-		{
-			HDEBUG("Failed to split 2M mapping for phys(%#lx) virt(%#lx).\n", paddr_2m_aligned, vaddr);
-		}
-		//HDEBUG("Clear EPT Flag (%#lx) on phys(%#lx)\n", flag, paddr);
-		if (!clear_ept_page_flag(vcpu, paddr, flag))
-		{
-			HDEBUG("EPT set RO failed.\n");
-			BUG();
-		}
+	kpte = lookup_address(addr, &level);
+	if (!kpte){
+		return 0;
+	}
+	if (level == 1){
+		return kpte->pte & ~(PAGE_SIZE-1) & umask;
+	}
+	if (level == 2){
+		return kpte->pte & ~(PAGESIZE2M-1) & umask;
+	} else {
+		HDEBUG("Unsupported page level %d\n", level);
+		return 0;
 	}
 }
 
@@ -1930,13 +1912,22 @@ void set_kernel_text_ept_nw(struct vmx_vcpu *vcpu)
 		return;
 	}
 	for (; vaddr < end; vaddr += PAGESIZE2M){
-		paddr = virt_to_phys((void *)vaddr);
+		//paddr = virt_to_phys((void *)vaddr);
+		paddr = guest_physical_page_address(vaddr);
+		HDEBUG("paddr:%#lx virt_to_phys says:%#lx\n", paddr,
+		       (unsigned long)virt_to_phys((void *)vaddr));
+		if (!paddr) {
+			HDEBUG("vaddr:%#lx NOT MAPPED", paddr);
+			continue;
+		}
+
 		p2m = paddr & ~(PAGESIZE2M - 1);
 		if (p2m != paddr) {
 			HDEBUG("Physical address %#lx for virtual address %#lx"
 			       "is not 2M aligned\n", paddr, vaddr);
 			BUG();
 		}
+		HDEBUG("Clear EPT_W on va %#lx pa %#lx\n", vaddr, paddr);
 		if (!clear_ept_page_flag(vcpu, paddr, flag))
 		{
 			HDEBUG("EPT set NW failed.\n");
