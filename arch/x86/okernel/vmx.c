@@ -1171,20 +1171,16 @@ void set_kernel_text_ept_x(struct vmx_vcpu *vcpu)
 	unsigned long flag = EPT_X;
 	unsigned long vaddr, paddr, p2m;
 	unsigned int level;
-
-	HDEBUG("Entered\n");
-	vaddr = start & ~(PAGESIZE2M - 1);
-	if (start != vaddr) {
-		HDEBUG("Start address (%#lx) is not 2M aligned\n", start);
-		return;
-	}
-	for (; vaddr < end; vaddr += PAGESIZE2M){
-		//paddr = virt_to_phys((void *)vaddr);
+	for (vaddr = start; vaddr < end; vaddr += PAGE_SIZE){
 		paddr = guest_physical_page_address(vaddr, &level);
-		HDEBUG("paddr:%#lx virt_to_phys says:%#lx\n", paddr,
-		       (unsigned long)virt_to_phys((void *)vaddr));
-		if (!paddr) {
-			HDEBUG("vaddr:%#lx NOT MAPPED", paddr);
+		/*
+		 * We have to split every time as the physical memory
+		 * is being used for 4k pages
+		 */
+		if (!split_2M_mapping(vcpu, paddr & ~(PAGESIZE2M -1))){
+			printk(KERN_ERR "okernel %s: couldn't split "
+			       "2MB mapping for (%#lx)\n",
+			       __func__, (unsigned long)paddr);
 			continue;
 		}
 
@@ -1219,12 +1215,9 @@ void set_modules_ept_x(struct vmx_vcpu *vcpu)
 		return;
 	}
 	for (; vaddr < end; vaddr += PAGESIZE2M){
-		//paddr = virt_to_phys((void *)vaddr);
 		paddr = guest_physical_page_address(vaddr, &level);
-		HDEBUG("paddr:%#lx virt_to_phys says:%#lx\n", paddr,
-		       (unsigned long)virt_to_phys((void *)vaddr));
 		if (!paddr) {
-			HDEBUG("vaddr:%#lx NOT MAPPED", paddr);
+			/* vaddr NOT MAPPED */
 			continue;
 		}
 		if (level == 1){
