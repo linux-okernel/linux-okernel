@@ -1572,6 +1572,95 @@ void set_clr_module_flags_4k(struct vmx_vcpu *vcpu, unsigned long start,
 		}
 	}
 }
+void set_kernel_text_ept_x(struct vmx_vcpu *vcpu)
+{
+	unsigned long start = PFN_ALIGN(_text);
+	//unsigned long end = (unsigned long) &__end_rodata_hpage_align;
+	unsigned long end = (unsigned long) PFN_ALIGN(&__stop___ex_table);
+	unsigned long flag = EPT_X;
+	unsigned long vaddr, paddr, p2m;
+	unsigned int level;
+
+	HDEBUG("Entered\n");
+	vaddr = start & ~(PAGESIZE2M - 1);
+	if (start != vaddr) {
+		HDEBUG("Start address (%#lx) is not 2M aligned\n", start);
+		return;
+	}
+	for (; vaddr < end; vaddr += PAGESIZE2M){
+		//paddr = virt_to_phys((void *)vaddr);
+		paddr = guest_physical_page_address(vaddr, &level);
+		HDEBUG("paddr:%#lx virt_to_phys says:%#lx\n", paddr,
+		       (unsigned long)virt_to_phys((void *)vaddr));
+		if (!paddr) {
+			HDEBUG("vaddr:%#lx NOT MAPPED", paddr);
+			continue;
+		}
+
+		p2m = paddr & ~(PAGESIZE2M - 1);
+		if (p2m != paddr) {
+			HDEBUG("Physical address %#lx for virtual address %#lx"
+			       "is not 2M aligned\n", paddr, vaddr);
+			BUG();
+		}
+		HDEBUG("Set EPT_X on va %#lx pa %#lx\n", vaddr, paddr);
+		if (!set_ept_page_flag(vcpu, paddr, flag))
+		{
+			HDEBUG("EPT set EPT_X failed.\n");
+			BUG();
+		}
+	}
+}
+
+void set_modules_ept_x(struct vmx_vcpu *vcpu)
+{
+	unsigned long start = PFN_ALIGN(MODULES_VADDR);
+	//unsigned long end = (unsigned long) &__end_rodata_hpage_align;
+	unsigned long end = PFN_ALIGN(MODULES_END);
+	unsigned long flag = EPT_X;
+	unsigned long vaddr, paddr, p2m;
+	unsigned int level;
+
+	HDEBUG("Entered\n");
+	vaddr = start & ~(PAGESIZE2M - 1);
+	if (start != vaddr) {
+		HDEBUG("Start address (%#lx) is not 2M aligned\n", start);
+		return;
+	}
+	for (; vaddr < end; vaddr += PAGESIZE2M){
+		//paddr = virt_to_phys((void *)vaddr);
+		paddr = guest_physical_page_address(vaddr, &level);
+		HDEBUG("paddr:%#lx virt_to_phys says:%#lx\n", paddr,
+		       (unsigned long)virt_to_phys((void *)vaddr));
+		if (!paddr) {
+			HDEBUG("vaddr:%#lx NOT MAPPED", paddr);
+			continue;
+		}
+		if (level == 1){
+			p2m = paddr & ~(PAGESIZE2M - 1);
+			HDEBUG("Splitting 2M page %#lx for virt address %#lx\n",
+			       p2m, vaddr);
+			//BUG();
+			if(!(split_2M_mapping(vcpu, p2m))){
+				printk(KERN_ERR "okernel %s: couldn't split 2MB mapping for (%#lx)\n",
+				       __func__, (unsigned long)paddr);
+				continue;
+
+			}
+		} else if (level > 2) {
+			printk(KERN_ERR "okernel %s: unsupported page level\n",
+			       __func__);
+			return;
+		}
+		HDEBUG("Set EPT_X on va %#lx pa %#lx\n", vaddr, paddr);
+		if (!set_ept_page_flag(vcpu, paddr, flag))
+		{
+			HDEBUG("EPT set EPT_X failed.\n");
+			BUG();
+		}
+	}
+}
+
 
 void set_clr_vmem_ept_flags(struct vmx_vcpu *vcpu, unsigned long start,
 		       unsigned long end, unsigned long s_flags,
