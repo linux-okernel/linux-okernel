@@ -2099,6 +2099,12 @@ static __init int setup_vmcs_config(struct vmcs_config *vmcs_conf)
 		_cpu_based_exec_control &= ~CPU_BASED_CR8_LOAD_EXITING &
 					   ~CPU_BASED_CR8_STORE_EXITING;
 
+	if (cpu_has_vmx_ept_mode_ctl()){
+		printk("Mode-based execute control for EPT available\n");
+	} else {
+		printk("Mode-based execute control for EPT unavailable\n");
+	}
+	
 	if (_cpu_based_exec_control & CPU_BASED_ACTIVATE_SECONDARY_CONTROLS) {
 		min2 = 0;
 		/* INVPCID will operate normally without exit as long as INVLPG exiting is 0 */
