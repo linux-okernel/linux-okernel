@@ -1630,6 +1630,12 @@ static __init int setup_vmcs_config(struct vmcs_config *vmcs_conf)
 		_cpu_based_exec_control &= ~CPU_BASED_CR8_LOAD_EXITING &
 					   ~CPU_BASED_CR8_STORE_EXITING;
 
+	if (cpu_has_vmx_ept_mode_ctl()){
+		printk("Mode-based execute control for EPT available\n");
+	} else {
+		printk("Mode-based execute control for EPT unavailable\n");
+	}
+	
 	if (_cpu_based_exec_control & CPU_BASED_ACTIVATE_SECONDARY_CONTROLS) {
 		min2 = 0;
 		/* INVPCID will operate normally without exit as long as INVLPG exiting is 0 */
@@ -3118,7 +3124,11 @@ void check_gpa(struct vmx_vcpu *vcpu, unsigned long addr)
 		HDEBUG("EPT_X set\n");
 	}
 }
-#define debugprintk(fmt, args...)  printk( KERN_ERR "%s: cpu(%d) pid(%d) %s: " fmt , vmx_nr_mode()?"NR":"R ", raw_smp_processor_id(), current->pid,__func__, ## args)
+
+#define debugprintk(fmt, args...)  printk( KERN_ERR "%s: cpu(%d) pid(%d) %s: " \
+					   fmt , vmx_nr_mode()?"NR":"R ", \
+					   raw_smp_processor_id(), \
+					   current->pid,__func__, ## args)
 int handle_EPT_violation(struct vmx_vcpu *vcpu)
 {
 	/*
@@ -3146,6 +3156,13 @@ int handle_EPT_violation(struct vmx_vcpu *vcpu)
 //		debugprintk("gva=%#lx\n", gv_addr);
 		check_gva(gv_addr);
 		check_gpa(vcpu, gp_addr);
+		/*
+		 * If it's gva is in user space & it's not a protected
+		 * kernel region grant the request.
+		 * If it's kernel memory, grant it and log it for now
+		 * eventually only change kernel memory permissions for
+		 * authorized processes
+		 */
 		if(set_ept_page_flag(vcpu, gp_addr, EPT_W |EPT_R | EPT_X)){
 			HDEBUG("Grant EPT RWX");
 			vpid_sync_context(vcpu->vpid);
