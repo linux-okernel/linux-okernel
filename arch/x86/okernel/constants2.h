@@ -184,6 +184,12 @@ struct intr_info {
 #define PAGESIZE2M_MASK			(PAGESIZE2M - 1)
 #define PAGESIZE4M_MASK			(PAGESIZE4M - 1)
 
+/* 
+ * Bits 63:52 are ignored by the processor so use 52 denoted
+ * an integrity protected page
+ */ 
+#define OK_IP                           0x0010000000000000UL
+
 /* Mapping limits of each type of page table in Gbytes. */
 #define PML4E_MAP_LIMIT 512
 #define PML3E_MAP_LIMIT 1

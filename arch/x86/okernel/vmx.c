@@ -759,16 +759,6 @@ unsigned long *ept_page_entry(struct vmx_vcpu *vcpu, u64 paddr)
 	return ept_page_entry;
 }
 
-int clear_ept_page_flag(struct vmx_vcpu *vcpu, u64 paddr, unsigned long flag)
-{
-	unsigned long *epte = ept_page_entry(vcpu, paddr);
-	if (!epte) {
-		return 0;
-	}
-	*epte &= ~(flag);
-	return 1;
-}
-
 int is_set_ept_page_flag(struct vmx_vcpu *vcpu, u64 paddr, unsigned long flag)
 {
 	unsigned long *epte = ept_page_entry(vcpu, paddr);
@@ -778,13 +768,15 @@ int is_set_ept_page_flag(struct vmx_vcpu *vcpu, u64 paddr, unsigned long flag)
 	return *epte & flag;
 }
 
-int set_ept_page_flag(struct vmx_vcpu *vcpu, u64 paddr, unsigned long flag)
+int set_clr_ept_page_flags(struct vmx_vcpu *vcpu, u64 paddr,
+			    unsigned long s_flags, unsigned long c_flags)
 {
 	unsigned long *epte = ept_page_entry(vcpu, paddr);
 	if (!epte) {
 		return 0;
 	}
-	*epte |= flag;
+	*epte |= s_flags;
+	*epte &= ~(c_flags);
 	return 1;
 }
 
@@ -868,13 +860,10 @@ unsigned long  guest_physical_page_address(unsigned long addr,
 	}
 }
 
-void mod_vmem_ept_flag_4k(struct vmx_vcpu *vcpu, unsigned long start,
-			  unsigned long end, unsigned long flag,
-			  int set)
+void set_clr_vmem_ept_flags_4k(struct vmx_vcpu *vcpu, unsigned long start,
+			  unsigned long end, unsigned long s_flags,
+			  unsigned long c_flags)
 {
-	/*
-	 * set 0 to clear, non-0 to set
-	 */
 	unsigned long vaddr, paddr;
 	unsigned int level;
 	for (vaddr = start; vaddr < end; vaddr += PAGE_SIZE){
@@ -889,33 +878,19 @@ void mod_vmem_ept_flag_4k(struct vmx_vcpu *vcpu, unsigned long start,
 			       __func__, (unsigned long)paddr);
 			continue;
 		}
-		if (set){
-			HDEBUG("Set flag %#lx on va %#lx pa %#lx\n",
-			       flag, vaddr, paddr);
-			if (!set_ept_page_flag(vcpu, paddr, flag))
-			{
-				HDEBUG("EPT set flag failed.\n");
-				BUG();
-			}
-		} else {
-			HDEBUG("Set flag %#lx on va %#lx pa %#lx\n",
-			       flag, vaddr, paddr);
-			if (!set_ept_page_flag(vcpu, paddr, flag))
-			{
-				HDEBUG("EPT set flag failed.\n");
-				BUG();
-			}
+		HDEBUG("Set flags %#lx clear flags %#lx on va %#lx pa %#lx\n",
+		       s_flags, c_flags, vaddr, paddr);
+		if (!set_clr_ept_page_flags(vcpu, paddr, s_flags, c_flags)){
+			HDEBUG("EPT set_clear_ept_page_flag failed.\n");
+			BUG();
 		}
 	}
 }
 
-void mod_vmem_ept_flag(struct vmx_vcpu *vcpu, unsigned long start,
-		       unsigned long end, unsigned long flag,
-		       int set)
+void set_clr_vmem_ept_flags(struct vmx_vcpu *vcpu, unsigned long start,
+		       unsigned long end, unsigned long s_flags,
+		       unsigned long c_flags)
 {
-	/*
-	 * set 0 to clear, non-0 to set
-	 */
 	unsigned long vaddr, paddr, end_4k;
 	unsigned int level;
 
@@ -933,7 +908,8 @@ void mod_vmem_ept_flag(struct vmx_vcpu *vcpu, unsigned long start,
 		}
 		if (level == 1){
 			end_4k = (vaddr + PAGESIZE2M) & ~(PAGESIZE2M-1);
-			mod_vmem_ept_flag_4k(vcpu, vaddr, end_4k, flag, set);
+			set_clr_vmem_ept_flags_4k(vcpu, vaddr, end_4k,
+						   s_flags, c_flags);
 			continue;
 		} else if (level > 2) {
 			printk(KERN_ERR "okernel %s: unsupported page level\n",
@@ -941,39 +917,14 @@ void mod_vmem_ept_flag(struct vmx_vcpu *vcpu, unsigned long start,
 			return;
 		}
 		/* Update 2M page mapping*/
-		if (set){
-			HDEBUG("Set flag %#lx on va %#lx pa %#lx\n",
-			       flag, vaddr, paddr);
-			if (!set_ept_page_flag(vcpu, paddr, flag))
-			{
-				HDEBUG("EPT set flag failed.\n");
-				BUG();
-			}
-		} else{
-			HDEBUG("Clear flag %#lx on va %#lx pa %#lx\n",
-			       flag, vaddr, paddr);
-			if (!clear_ept_page_flag(vcpu, paddr, flag))
-			{
-				HDEBUG("EPT clear flag failed.\n");
-				BUG();
-			}
+		HDEBUG("Set flag %#lx clear flag %#lx on va %#lx pa %#lx\n",
+		       s_flags, c_flags, vaddr, paddr);
+		if (!set_clr_ept_page_flags(vcpu, paddr, s_flags, c_flags)){
+			HDEBUG("EPT set_clear_ept_page_flag failed.\n");
+			BUG();
 		}
 	}
-
 }
-
-void set_vmem_ept_flag(struct vmx_vcpu *vcpu, unsigned long start,
-		       unsigned long end, unsigned long flag)
-{
-	mod_vmem_ept_flag(vcpu, start, end, flag, 1);
-}
-
-void clear_vmem_ept_flag(struct vmx_vcpu *vcpu, unsigned long start,
-		       unsigned long end, unsigned long flag)
-{
-	mod_vmem_ept_flag(vcpu, start, end, flag, 0);
-}
-
 
 void set_modules_ept_x(struct vmx_vcpu *vcpu)
 {
@@ -981,7 +932,7 @@ void set_modules_ept_x(struct vmx_vcpu *vcpu)
 	unsigned long end = PFN_ALIGN(MODULES_END);
 
 	HDEBUG("Entered\n");
-	set_vmem_ept_flag(vcpu, start, end, EPT_X);
+	set_clr_vmem_ept_flags(vcpu, start, end, (EPT_X | OK_IP), 0);
 }
 
 void set_kernel_text_ept_x(struct vmx_vcpu *vcpu)
@@ -990,7 +941,7 @@ void set_kernel_text_ept_x(struct vmx_vcpu *vcpu)
 	unsigned long end = (unsigned long) &__end_rodata_hpage_align;
 
 	HDEBUG("Entered\n");
-	set_vmem_ept_flag(vcpu, start, end, EPT_X);
+	set_clr_vmem_ept_flags(vcpu, start, end, (EPT_X | OK_IP), 0);
 }
 
 void set_kernel_text_ept_nw(struct vmx_vcpu *vcpu)
@@ -999,14 +950,14 @@ void set_kernel_text_ept_nw(struct vmx_vcpu *vcpu)
 	unsigned long end = (unsigned long) &__end_rodata_hpage_align;
 
 	HDEBUG("Entered\n");
-	clear_vmem_ept_flag(vcpu, start, end, EPT_W);
+	set_clr_vmem_ept_flags(vcpu, start, end, OK_IP, EPT_W);
 }
 
 void set_kernel_data_ept_nx(struct vmx_vcpu *vcpu)
 {
 	unsigned long text_end = PFN_ALIGN(&__stop___ex_table);
 	unsigned long all_end = roundup((unsigned long)_brk_end, PMD_SIZE);
-	clear_vmem_ept_flag(vcpu, text_end, all_end, EPT_X);
+	set_clr_vmem_ept_flags(vcpu, text_end, all_end, OK_IP, EPT_X);
 }
 
 void protect_kernel_integrity(struct vmx_vcpu *vcpu)
@@ -3147,15 +3098,25 @@ int handle_EPT_violation(struct vmx_vcpu *vcpu)
 		check_gva(gv_addr);
 		check_gpa(vcpu, gp_addr);
 		/*
-		 * If it's gva is in user space & it's not a protected
+		 * If the gva is in user space & it's not a protected
 		 * kernel region grant the request.
+		 * Need to tag kernel protected memory in page tables
+		 * 
+		 * When user space memory is released we need to remove
+		 * the grant so it can be reallocated (see xpfo use of page_ext)
+		 *
+		 * Don't need to worry about this, if we have mode-based
+		 * execute control for EPT, as can set it so EPT_X is only
+		 * required for supervisor mode
+		 *
 		 * If it's kernel memory, grant it and log it for now
 		 * eventually only change kernel memory permissions for
 		 * authorized processes
 
 
 		 */
-		if(set_ept_page_flag(vcpu, gp_addr, EPT_W |EPT_R | EPT_X)){
+		if(set_clr_ept_page_flags(vcpu, gp_addr,
+					 EPT_W |EPT_R | EPT_X, 0)){
 			HDEBUG("Grant EPT RWX");
 			vpid_sync_context(vcpu->vpid);
 			vmx_put_cpu(vcpu);
