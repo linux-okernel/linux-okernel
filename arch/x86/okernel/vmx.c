@@ -3152,6 +3152,8 @@ int handle_EPT_violation(struct vmx_vcpu *vcpu)
 		 * If it's kernel memory, grant it and log it for now
 		 * eventually only change kernel memory permissions for
 		 * authorized processes
+
+
 		 */
 		if(set_ept_page_flag(vcpu, gp_addr, EPT_W |EPT_R | EPT_X)){
 			HDEBUG("Grant EPT RWX");
