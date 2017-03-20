@@ -1573,13 +1573,10 @@ void set_clr_module_flags_4k(struct vmx_vcpu *vcpu, unsigned long start,
 	}
 }
 
-void mod_vmem_ept_flag(struct vmx_vcpu *vcpu, unsigned long start,
-		       unsigned long end, unsigned long flag,
-		       int set)
+void set_clr_vmem_ept_flags(struct vmx_vcpu *vcpu, unsigned long start,
+		       unsigned long end, unsigned long s_flags,
+		       unsigned long c_flags)
 {
-	/*
-	 * set 0 to clear, non-0 to set
-	 */
 	unsigned long vaddr, paddr, end_4k;
 	unsigned int level;
 
@@ -1597,7 +1594,8 @@ void mod_vmem_ept_flag(struct vmx_vcpu *vcpu, unsigned long start,
 		}
 		if (level == 1){
 			end_4k = (vaddr + PAGESIZE2M) & ~(PAGESIZE2M-1);
-			mod_vmem_ept_flag_4k(vcpu, vaddr, end_4k, flag, set);
+			set_clr_vmem_ept_flags_4k(vcpu, vaddr, end_4k,
+						   s_flags, c_flags);
 			continue;
 		} else if (level > 2) {
 			printk(KERN_ERR "okernel %s: unsupported page level\n",
@@ -1605,39 +1603,14 @@ void mod_vmem_ept_flag(struct vmx_vcpu *vcpu, unsigned long start,
 			return;
 		}
 		/* Update 2M page mapping*/
-		if (set){
-			HDEBUG("Set flag %#lx on va %#lx pa %#lx\n",
-			       flag, vaddr, paddr);
-			if (!set_ept_page_flag(vcpu, paddr, flag))
-			{
-				HDEBUG("EPT set flag failed.\n");
-				BUG();
-			}
-		} else{
-			HDEBUG("Clear flag %#lx on va %#lx pa %#lx\n",
-			       flag, vaddr, paddr);
-			if (!clear_ept_page_flag(vcpu, paddr, flag))
-			{
-				HDEBUG("EPT clear flag failed.\n");
-				BUG();
-			}
+		HDEBUG("Set flag %#lx clear flag %#lx on va %#lx pa %#lx\n",
+		       s_flags, c_flags, vaddr, paddr);
+		if (!set_clr_ept_page_flags(vcpu, paddr, s_flags, c_flags)){
+			HDEBUG("EPT set_clear_ept_page_flag failed.\n");
+			BUG();
 		}
 	}
-
 }
-
-void set_vmem_ept_flag(struct vmx_vcpu *vcpu, unsigned long start,
-		       unsigned long end, unsigned long flag)
-{
-	mod_vmem_ept_flag(vcpu, start, end, flag, 1);
-}
-
-void clear_vmem_ept_flag(struct vmx_vcpu *vcpu, unsigned long start,
-		       unsigned long end, unsigned long flag)
-{
-	mod_vmem_ept_flag(vcpu, start, end, flag, 0);
-}
-
 
 void set_modules_ept_x(struct vmx_vcpu *vcpu)
 {
@@ -1645,7 +1618,7 @@ void set_modules_ept_x(struct vmx_vcpu *vcpu)
 	unsigned long end = PFN_ALIGN(MODULES_END);
 
 	HDEBUG("Entered\n");
-	set_vmem_ept_flag(vcpu, start, end, EPT_X);
+	set_clr_vmem_ept_flags(vcpu, start, end, (EPT_X | OK_IP), 0);
 }
 
 void set_kernel_text_ept_x(struct vmx_vcpu *vcpu)
@@ -1654,7 +1627,7 @@ void set_kernel_text_ept_x(struct vmx_vcpu *vcpu)
 	unsigned long end = (unsigned long) &__end_rodata_hpage_align;
 
 	HDEBUG("Entered\n");
-	set_vmem_ept_flag(vcpu, start, end, EPT_X);
+	set_clr_vmem_ept_flags(vcpu, start, end, (EPT_X | OK_IP), 0);
 }
 
 void set_kernel_text_ept_nw(struct vmx_vcpu *vcpu)
@@ -1663,7 +1636,7 @@ void set_kernel_text_ept_nw(struct vmx_vcpu *vcpu)
 	unsigned long end = (unsigned long) &__end_rodata_hpage_align;
 
 	HDEBUG("Entered\n");
-	clear_vmem_ept_flag(vcpu, start, end, EPT_W);
+	set_clr_vmem_ept_flags(vcpu, start, end, OK_IP, EPT_W);
 }
 
 void set_clr_vmem_ept_flags(struct vmx_vcpu *vcpu, unsigned long start,
