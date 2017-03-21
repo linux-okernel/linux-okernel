@@ -1923,7 +1923,7 @@ void set_clr_vmem_ept_flags_4k(struct vmx_vcpu *vcpu, unsigned long start,
 		HDEBUG("Set flags %#lx clear flags %#lx on va %#lx pa %#lx\n",
 		       s_flags, c_flags, vaddr, paddr);
 		if (!set_clr_ept_page_flags(vcpu, paddr, s_flags, c_flags)){
-			HDEBUG("EPT set_clear_ept_page_flag failed.\n");
+			HDEBUG("EPT set_clr_ept_page_flags failed.\n");
 			BUG();
 		}
 	}
@@ -1962,70 +1962,43 @@ void set_clr_vmem_ept_flags(struct vmx_vcpu *vcpu, unsigned long start,
 		HDEBUG("Set flag %#lx clear flag %#lx on va %#lx pa %#lx\n",
 		       s_flags, c_flags, vaddr, paddr);
 		if (!set_clr_ept_page_flags(vcpu, paddr, s_flags, c_flags)){
-			HDEBUG("EPT set_clear_ept_page_flag failed.\n");
+			HDEBUG("EPT set_clr_ept_page_flags failed.\n");
 			BUG();
 		}
 	}
 }
 
-void set_modules_ept_x(struct vmx_vcpu *vcpu)
-{
-	unsigned long start = PFN_ALIGN(MODULES_VADDR);
-	unsigned long end = PFN_ALIGN(MODULES_END);
-
-	HDEBUG("Entered\n");
-	set_clr_vmem_ept_flags(vcpu, start, end, (EPT_X | OK_IP), 0);
-}
-
-void set_kernel_text_ept_x(struct vmx_vcpu *vcpu)
-{
-	unsigned long start = PFN_ALIGN(_text);
-	unsigned long end = (unsigned long) &__end_rodata_hpage_align;
-
-	HDEBUG("Entered\n");
-	set_clr_vmem_ept_flags(vcpu, start, end, (EPT_X | OK_IP), 0);
-}
-
-void set_kernel_text_ept_nw(struct vmx_vcpu *vcpu)
-{
-	unsigned long start = PFN_ALIGN(_text);
-	unsigned long end = (unsigned long) &__end_rodata_hpage_align;
-
-	HDEBUG("Entered\n");
-	set_clr_vmem_ept_flags(vcpu, start, end, OK_IP, EPT_W);
-}
-
-void set_kernel_data_ept_nx(struct vmx_vcpu *vcpu)
-{
-	unsigned long text_end = PFN_ALIGN(&__stop___ex_table);
-	unsigned long all_end = roundup((unsigned long)_brk_end, PMD_SIZE);
-	set_clr_vmem_ept_flags(vcpu, text_end, all_end, OK_IP, EPT_X);
-}
-
 void protect_kernel_integrity(struct vmx_vcpu *vcpu)
 {
 	/*
-	 * This protection is aligned with init_64:set_kernel_text_ro
-	 * and init_64:mark_rodata_ro
+	 *
+	 * Assume default EPT protections remove EPT_X
+	 *
+	 * We try to align this protection with init_64:mark_rodata_ro
 	 * Here we use EPT to ensure it cannot be tampered with by the
-	 * okernel
-	 * Currently we assume the kernel is using 2M pages
+	 * okernel. We assume EPT_X is already removed, so we don't
+	 * have to unset it explicitly, rather it is set where needed.
 	 */
-	unsigned long start = PFN_ALIGN(_text);
+	unsigned long text_start = PFN_ALIGN(_text);
 	unsigned long text_end = PFN_ALIGN(&__stop___ex_table);
-	unsigned long rodata_start = PFN_ALIGN(__start_rodata);
-	unsigned long rodata_end = PFN_ALIGN(&__end_rodata);
 	unsigned long end = (unsigned long) &__end_rodata_hpage_align;
-	
-	HDEBUG("start is %#lx\n", start);
-	HDEBUG("text_end is %#lx\n", text_end);
-	HDEBUG("rodata_start is %#lx\n", rodata_start);
-	HDEBUG("rodata_end is %#lx\n", rodata_end);
-	HDEBUG("end is %#lx\n", end);
-	set_kernel_text_ept_nw(vcpu);
-	set_kernel_text_ept_x(vcpu);
-	set_kernel_data_ept_nx(vcpu);
-	set_modules_ept_x(vcpu);
+	unsigned long s_mods = PFN_ALIGN(MODULES_VADDR);
+	unsigned long e_mods = PFN_ALIGN(MODULES_END);
+
+	/* Protect read-only data */
+	set_clr_vmem_ept_flags(vcpu, text_start, end, OK_IP, EPT_W);
+
+	/* Set execute for kernel text*/
+	set_clr_vmem_ept_flags(vcpu, text_start, text_end, EPT_X | OK_IP, 0);
+
+	/* Set modules executable and read-ony*/
+	set_clr_vmem_ept_flags(vcpu, s_mods, e_mods, (EPT_X | OK_IP), EPT_W);
+
+	HDEBUG("text_start [PFN_ALIGN(_text)] is %#lx\n", text_start);
+	HDEBUG("text_end [PFN_ALIGN(&__stop___ex_table)] is %#lx\n", text_end);
+	HDEBUG("end  [&__end_rodata_hpage_align] is %#lx\n", end);
+	HDEBUG("Start modules %#lx\n", s_mods);
+	HDEBUG("End modules %#lx\n", e_mods);
 }
 
 /* We just clone the bottom page of the stack for now */
