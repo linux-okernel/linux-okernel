@@ -1086,7 +1086,7 @@ void set_clr_vmem_ept_flags(struct vmx_vcpu *vcpu, unsigned long start,
 		HDEBUG("Set flag %#lx clear flag %#lx on va %#lx pa %#lx\n",
 		       s_flags, c_flags, vaddr, paddr);
 		if (!set_clr_ept_page_flags(vcpu, paddr, s_flags, c_flags)){
-			HDEBUG("EPT set_clear_ept_page_flag failed.\n");
+			HDEBUG("EPT set_clr_ept_page_flags failed.\n");
 			BUG();
 		}
 	}
@@ -3414,6 +3414,7 @@ void check_gpa(struct vmx_vcpu *vcpu, unsigned long addr)
 		HDEBUG("EPT_X set\n");
 	}
 }
+
 
 static inline int is_user_space(unsigned long vaddr)
 {
