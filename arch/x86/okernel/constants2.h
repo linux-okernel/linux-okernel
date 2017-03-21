@@ -188,7 +188,8 @@ struct intr_info {
  * Bits 63:52 are ignored by the processor so use 52 denoted
  * an integrity protected page
  */ 
-#define OK_IP                           0x0010000000000000UL
+#define OK_IP                           (1UL << 52)
+#define USER_HI_MEM                     0X00007FFFFFFFFFFFUL
 
 /* Mapping limits of each type of page table in Gbytes. */
 #define PML4E_MAP_LIMIT 512
