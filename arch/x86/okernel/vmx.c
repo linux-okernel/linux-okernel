@@ -881,7 +881,7 @@ void set_clr_vmem_ept_flags_4k(struct vmx_vcpu *vcpu, unsigned long start,
 		HDEBUG("Set flags %#lx clear flags %#lx on va %#lx pa %#lx\n",
 		       s_flags, c_flags, vaddr, paddr);
 		if (!set_clr_ept_page_flags(vcpu, paddr, s_flags, c_flags)){
-			HDEBUG("EPT set_clear_ept_page_flag failed.\n");
+			HDEBUG("EPT set_clr_ept_page_flags failed.\n");
 			BUG();
 		}
 	}
@@ -920,70 +920,43 @@ void set_clr_vmem_ept_flags(struct vmx_vcpu *vcpu, unsigned long start,
 		HDEBUG("Set flag %#lx clear flag %#lx on va %#lx pa %#lx\n",
 		       s_flags, c_flags, vaddr, paddr);
 		if (!set_clr_ept_page_flags(vcpu, paddr, s_flags, c_flags)){
-			HDEBUG("EPT set_clear_ept_page_flag failed.\n");
+			HDEBUG("EPT set_clr_ept_page_flags failed.\n");
 			BUG();
 		}
 	}
 }
 
-void set_modules_ept_x(struct vmx_vcpu *vcpu)
-{
-	unsigned long start = PFN_ALIGN(MODULES_VADDR);
-	unsigned long end = PFN_ALIGN(MODULES_END);
-
-	HDEBUG("Entered\n");
-	set_clr_vmem_ept_flags(vcpu, start, end, (EPT_X | OK_IP), 0);
-}
-
-void set_kernel_text_ept_x(struct vmx_vcpu *vcpu)
-{
-	unsigned long start = PFN_ALIGN(_text);
-	unsigned long end = (unsigned long) &__end_rodata_hpage_align;
-
-	HDEBUG("Entered\n");
-	set_clr_vmem_ept_flags(vcpu, start, end, (EPT_X | OK_IP), 0);
-}
-
-void set_kernel_text_ept_nw(struct vmx_vcpu *vcpu)
-{
-	unsigned long start = PFN_ALIGN(_text);
-	unsigned long end = (unsigned long) &__end_rodata_hpage_align;
-
-	HDEBUG("Entered\n");
-	set_clr_vmem_ept_flags(vcpu, start, end, OK_IP, EPT_W);
-}
-
-void set_kernel_data_ept_nx(struct vmx_vcpu *vcpu)
-{
-	unsigned long text_end = PFN_ALIGN(&__stop___ex_table);
-	unsigned long all_end = roundup((unsigned long)_brk_end, PMD_SIZE);
-	set_clr_vmem_ept_flags(vcpu, text_end, all_end, OK_IP, EPT_X);
-}
-
 void protect_kernel_integrity(struct vmx_vcpu *vcpu)
 {
 	/*
-	 * This protection is aligned with init_64:set_kernel_text_ro
-	 * and init_64:mark_rodata_ro
+	 *
+	 * Assume default EPT protections remove EPT_X
+	 *
+	 * We try to align this protection with init_64:mark_rodata_ro
 	 * Here we use EPT to ensure it cannot be tampered with by the
-	 * okernel
-	 * Currently we assume the kernel is using 2M pages
+	 * okernel. We assume EPT_X is already removed, so we don't
+	 * have to unset it explicitly, rather it is set where needed.
 	 */
-	unsigned long start = PFN_ALIGN(_text);
+	unsigned long text_start = PFN_ALIGN(_text);
 	unsigned long text_end = PFN_ALIGN(&__stop___ex_table);
-	unsigned long rodata_start = PFN_ALIGN(__start_rodata);
-	unsigned long rodata_end = PFN_ALIGN(&__end_rodata);
 	unsigned long end = (unsigned long) &__end_rodata_hpage_align;
-	
-	HDEBUG("start is %#lx\n", start);
-	HDEBUG("text_end is %#lx\n", text_end);
-	HDEBUG("rodata_start is %#lx\n", rodata_start);
-	HDEBUG("rodata_end is %#lx\n", rodata_end);
-	HDEBUG("end is %#lx\n", end);
-	set_kernel_text_ept_nw(vcpu);
-	set_kernel_text_ept_x(vcpu);
-	set_kernel_data_ept_nx(vcpu);
-	set_modules_ept_x(vcpu);
+	unsigned long s_mods = PFN_ALIGN(MODULES_VADDR);
+	unsigned long e_mods = PFN_ALIGN(MODULES_END);
+
+	/* Protect read-only data */
+	set_clr_vmem_ept_flags(vcpu, text_start, end, OK_IP, EPT_W);
+
+	/* Set execute for kernel text*/
+	set_clr_vmem_ept_flags(vcpu, text_start, text_end, EPT_X | OK_IP, 0);
+
+	/* Set modules executable and read-ony*/
+	set_clr_vmem_ept_flags(vcpu, s_mods, e_mods, (EPT_X | OK_IP), EPT_W);
+
+	HDEBUG("text_start [PFN_ALIGN(_text)] is %#lx\n", text_start);
+	HDEBUG("text_end [PFN_ALIGN(&__stop___ex_table)] is %#lx\n", text_end);
+	HDEBUG("end  [&__end_rodata_hpage_align] is %#lx\n", end);
+	HDEBUG("Start modules %#lx\n", s_mods);
+	HDEBUG("End modules %#lx\n", e_mods);
 }
 
 /* We just clone the bottom page of the stack for now */
@@ -998,8 +971,6 @@ int clone_kstack2(struct vmx_vcpu *vcpu, unsigned long perms)
 	n_pages = THREAD_SIZE / PAGESIZE;
 
 	BUG_ON(n_pages != 4);
-
-
 
 	k_stack  = (unsigned long)current->stack;
 
@@ -3054,7 +3025,7 @@ void check_gva(unsigned long addr)
 
 void check_gpa(struct vmx_vcpu *vcpu, unsigned long addr)
 {
-	HDEBUG("2M aligned address is %#lx\n", addr & ~(PAGESIZE2M - 1));
+	HDEBUG("Checking EPT perms for %#lx\n", addr);
 	if (is_set_ept_page_flag(vcpu, addr, EPT_R)){
 		HDEBUG("EPT_R set\n");
 	}
@@ -3070,6 +3041,17 @@ void check_gpa(struct vmx_vcpu *vcpu, unsigned long addr)
 					   fmt , vmx_nr_mode()?"NR":"R ", \
 					   raw_smp_processor_id(), \
 					   current->pid,__func__, ## args)
+
+static inline int is_user_space(unsigned long vaddr)
+{
+	return (vaddr <= USER_HI_MEM);
+}
+
+static inline int is_module_space (unsigned long vaddr)
+{
+	return (vaddr >= MODULES_VADDR && vaddr <= MODULES_END);
+}
+
 int handle_EPT_violation(struct vmx_vcpu *vcpu)
 {
 	/*
@@ -3094,9 +3076,9 @@ int handle_EPT_violation(struct vmx_vcpu *vcpu)
 	if(qual & 0x80){
 		gv_addr = (u64)vmcs_readl(GUEST_LINEAR_ADDRESS);
 		HDEBUG("gva=%#lx\n", gv_addr);
-//		debugprintk("gva=%#lx\n", gv_addr);
 		check_gva(gv_addr);
 		check_gpa(vcpu, gp_addr);
+//		debugprintk("gva=%#lx\n", gv_addr);
 		/*
 		 * If the gva is in user space & it's not a protected
 		 * kernel region grant the request.
@@ -3112,18 +3094,39 @@ int handle_EPT_violation(struct vmx_vcpu *vcpu)
 		 * If it's kernel memory, grant it and log it for now
 		 * eventually only change kernel memory permissions for
 		 * authorized processes
-
-
 		 */
-		if(set_clr_ept_page_flags(vcpu, gp_addr,
-					 EPT_W |EPT_R | EPT_X, 0)){
-			HDEBUG("Grant EPT RWX");
-			vpid_sync_context(vcpu->vpid);
-			vmx_put_cpu(vcpu);
-			return 1;
+		if (is_set_ept_page_flag(vcpu, gp_addr, OK_IP)){
+			HDEBUG("EPT violation on kernel protected memory\n");
+				return 0;
+		}
+		if (is_user_space(gv_addr)){
+			if(set_clr_ept_page_flags(vcpu, gp_addr,
+						  EPT_W |EPT_R | EPT_X, 0)){
+				HDEBUG("Grant EPT RWX for user space\n.");
+				vpid_sync_context(vcpu->vpid);
+				vmx_put_cpu(vcpu);
+				return 1;
+			} else {
+				HDEBUG("set_clr_ept_page_flags failed.\n");
+				BUG();
+			}
 		} else {
-			HDEBUG("EPT set RW failed.\n");
-			BUG();
+			/* Only allow execution if its a module*/
+			if (is_module_space(gv_addr) && (qual & EPT_X)){
+				unsigned long flags = EPT_X | EPT_R | OK_IP;
+				if (set_clr_ept_page_flags(vcpu, gp_addr,
+							   flags, 0)){
+					HDEBUG("Grant EPT RX for module.\n");
+				vpid_sync_context(vcpu->vpid);
+				vmx_put_cpu(vcpu);
+				return 1;
+				} else {
+					HDEBUG("set_clr_ept_page_flags failed.\n");
+					BUG();
+				}
+			}
+			HDEBUG("Can't handle kernel space EPT Violation");
+			return 0;
 		}
 	}
 	if(!(pml2_e =  find_pd_entry(vcpu, gp_addr))){
