@@ -1455,6 +1455,39 @@ void set_clr_module_ept_flags(struct vmx_vcpu *vcpu)
 	HDEBUG("End modules %#lx\n", end);
 }
 
+
+void check_mapped(struct vmx_vcpu *vcpu, unsigned long addr)
+{
+	unsigned long start = PFN_ALIGN(_text);
+	unsigned long end = PFN_ALIGN(&__stop___ex_table);
+	unsigned long match = addr & ~(PAGESIZE2M - 1);
+	unsigned long vaddr, paddr, end_4k;
+	unsigned int level;
+	pgprot_t prot;
+
+	TDEBUG("Entered\n");
+	vaddr = start & ~(PAGESIZE2M - 1);
+	if (start != vaddr) {
+		TDEBUG("Start address (%#lx) is not 2M aligned\n", start);
+	}
+	TDEBUG("Looking for pa #%lx\n", match);
+	for (; vaddr < end; vaddr += PAGESIZE2M){
+		paddr = guest_physical_page_address(vaddr, &level, &prot);
+		if (!paddr) {
+			/* vaddr NOT MAPPED */
+			continue;
+		}
+		if (paddr == match){
+			TDEBUG("pa %#lx is at va %#lx\n", match, vaddr);
+			return;
+		}
+	}
+	TDEBUG("No Match Found /n");
+	return;
+}
+
+
+
 void ept_flags_from_prot(pgprot_t prot, unsigned long *s_flags,
 			unsigned long *c_flags)
 {
