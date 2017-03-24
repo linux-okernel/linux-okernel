@@ -778,6 +778,7 @@ int set_clr_ept_page_flags(struct vmx_vcpu *vcpu, u64 paddr,
 	}
 	*epte |= s_flags;
 	*epte &= ~(c_flags);
+	TDEBUG("Physical addr %#lx flags %#lx\n", paddr, c_flags | s_flags);
 	return 1;
 }
 
@@ -1059,15 +1060,15 @@ void set_clr_vmem_ept_flags(struct vmx_vcpu *vcpu, unsigned long start,
 {
 	unsigned long vaddr, paddr, end_4k;
 	unsigned int level;
+	pgprot_t prot;
 
 	HDEBUG("Entered\n");
 	vaddr = start & ~(PAGESIZE2M - 1);
 	if (start != vaddr) {
 		HDEBUG("Start address (%#lx) is not 2M aligned\n", start);
-		return;
 	}
 	for (; vaddr < end; vaddr += PAGESIZE2M){
-		paddr = guest_physical_page_address(vaddr, &level);
+		paddr = guest_physical_page_address(vaddr, &level, &prot);
 		if (!paddr) {
 			/* vaddr NOT MAPPED */
 			continue;
@@ -1083,6 +1084,8 @@ void set_clr_vmem_ept_flags(struct vmx_vcpu *vcpu, unsigned long start,
 			return;
 		}
 		/* Update 2M page mapping*/
+		TDEBUG("Set flag %#lx clear flag %#lx on va %#lx pa %#lx\n",
+		       s_flags, c_flags, vaddr, paddr);
 		HDEBUG("Set flag %#lx clear flag %#lx on va %#lx pa %#lx\n",
 		       s_flags, c_flags, vaddr, paddr);
 		if (!set_clr_ept_page_flags(vcpu, paddr, s_flags, c_flags)){
@@ -3632,6 +3635,9 @@ int handle_EPT_violation(struct vmx_vcpu *vcpu)
 				BUG();
 			}
 		}
+		HDEBUG("Can't handle kernel space EPT Violation");
+		BUG();
+		return 0;
 	}
 	if(!(pml2_e =  find_pd_entry(vcpu, gpa))){
 		HDEBUG("NULL pml2 entry for gpa (%#lx)\n", gpa);
