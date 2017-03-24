@@ -189,6 +189,7 @@ struct intr_info {
  * an integrity protected page
  */ 
 #define OK_IP                           (1UL << 52)
+/* Taken the memory map description in Documentation/x86/x86_64/mm.txt */
 #define USER_HI_MEM                     0X00007FFFFFFFFFFFUL
 
 /* Mapping limits of each type of page table in Gbytes. */
