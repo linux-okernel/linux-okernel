@@ -242,7 +242,7 @@ int vmcall6(unsigned int cmd, unsigned long arg1, unsigned long arg2, unsigned l
 	unsigned long rax;
 	register long r10 asm("r10") = arg3;
 	register long r11 asm("r11") = arg4;
-	register long r12 asm("r12") = arg4;
+	register long r12 asm("r12") = arg5;
 
 	asm volatile(".byte 0x0F,0x01,0xC1\n" ::"a"(cmd),"b"(arg1),"c"(arg2), "r"(r10), "r"(r11), "r"(r12));
 	asm volatile ("mov %%rax,%0" : "=rm" (rax));
