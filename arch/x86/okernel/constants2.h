@@ -188,7 +188,8 @@ struct intr_info {
  * Bits 63:52 are ignored by the processor so use 52 denoted
  * an integrity protected page
  */ 
-#define OK_IP                           (1UL << 52)
+#define OK_TEXT                           (1UL << 52)
+#define OK_MOD                            (1UL << 53)
 /* Taken the memory map description in Documentation/x86/x86_64/mm.txt */
 #define USER_HI_MEM                     0X00007FFFFFFFFFFFUL
 
