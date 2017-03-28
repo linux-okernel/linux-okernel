@@ -778,7 +778,6 @@ int set_clr_ept_page_flags(struct vmx_vcpu *vcpu, u64 paddr,
 	}
 	*epte |= s_flags;
 	*epte &= ~(c_flags);
-	TDEBUG("Physical addr %#lx flags %#lx\n", paddr, c_flags | s_flags);
 	return 1;
 }
 
@@ -3538,7 +3537,11 @@ int handle_EPT_violation(struct vmx_vcpu *vcpu)
 		} else if (is_user_space(gva)){
 			if(set_clr_ept_page_flags(vcpu, gpa,
 						  EPT_W |EPT_R | EPT_X, 0)){
-				TDEBUG("Grant EPT RWX for user space\n.");
+				TDEBUG("Grant EPT RWX for OK_MOD space"
+				       "Physical address %#lx "
+				       " at guest virtual %#lx",
+				       gpa, gva);
+				
 				vpid_sync_context(vcpu->vpid);
 				vmx_put_cpu(vcpu);
 				return 1;
@@ -3563,9 +3566,6 @@ int handle_EPT_violation(struct vmx_vcpu *vcpu)
 				BUG();
 			}
 		}
-		HDEBUG("Can't handle kernel space EPT Violation");
-		BUG();
-		return 0;
 	}
 	if(!(pml2_e =  find_pd_entry(vcpu, gpa))){
 		HDEBUG("NULL pml2 entry for gpa (%#lx)\n", gpa);
