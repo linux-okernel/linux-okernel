@@ -778,7 +778,6 @@ int set_clr_ept_page_flags(struct vmx_vcpu *vcpu, u64 paddr,
 	}
 	*epte |= s_flags;
 	*epte &= ~(c_flags);
-	TDEBUG("Physical addr %#lx flags %#lx\n", paddr, c_flags | s_flags);
 	return 1;
 }
 
@@ -888,8 +887,6 @@ void set_clr_vmem_ept_flags_4k(struct vmx_vcpu *vcpu, unsigned long start,
 			       __func__, (unsigned long)paddr);
 			continue;
 		}
-		TDEBUG("Set flag %#lx clear flag %#lx on va %#lx pa %#lx\n",
-		       s_flags, c_flags, vaddr, paddr);
 		HDEBUG("Set flags %#lx clear flags %#lx on va %#lx pa %#lx\n",
 		       s_flags, c_flags, vaddr, paddr);
 		if (!set_clr_ept_page_flags(vcpu, paddr, s_flags, c_flags)){
@@ -977,7 +974,6 @@ unsigned long find_vaddr(struct vmx_vcpu *vcpu, unsigned long paddr,
 	return 0;
 }
 
-
 unsigned long mod_addr(struct vmx_vcpu *vcpu, unsigned long paddr){
 	unsigned long start = PFN_ALIGN(MODULES_VADDR);
 	unsigned long end = PFN_ALIGN(MODULES_END);
@@ -992,6 +988,7 @@ unsigned long text_addr(struct vmx_vcpu *vcpu, unsigned long paddr)
 
 	return find_vaddr(vcpu, paddr, start, end);
 }
+
 
 void ept_flags_from_prot(pgprot_t prot, unsigned long *s_flags,
 			unsigned long *c_flags)
@@ -1330,7 +1327,6 @@ void protect_kernel_integrity(struct vmx_vcpu *vcpu)
 
 	/* Set protection for modules*/
 	set_clr_module_ept_flags(vcpu);
-
 
 	HDEBUG("text_start [PFN_ALIGN(_text)] is %#lx\n", text_start);
 	HDEBUG("text_end [PFN_ALIGN(&__stop___ex_table)] is %#lx\n", text_end);
@@ -3420,7 +3416,6 @@ void check_gpa(struct vmx_vcpu *vcpu, unsigned long addr)
 	}
 }
 
-
 static inline int is_user_space(unsigned long vaddr)
 {
 	return (vaddr <= USER_HI_MEM);
@@ -3695,9 +3690,6 @@ int handle_EPT_violation(struct vmx_vcpu *vcpu)
 				BUG();
 			}
 		}
-		HDEBUG("Can't handle kernel space EPT Violation");
-		BUG();
-		return 0;
 	}
 	if(!(pml2_e =  find_pd_entry(vcpu, gpa))){
 		HDEBUG("NULL pml2 entry for gpa (%#lx)\n", gpa);
