@@ -4184,9 +4184,6 @@ int handle_EPT_violation(struct vmx_vcpu *vcpu)
 				BUG();
 			}
 		}
-		HDEBUG("Can't handle kernel space EPT Violation");
-		BUG();
-		return 0;
 	}
 	if(!(pml2_e =  find_pd_entry(vcpu, gpa))){
 		HDEBUG("NULL pml2 entry for gpa (%#lx)\n", gpa);
