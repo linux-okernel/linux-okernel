@@ -778,7 +778,6 @@ int set_clr_ept_page_flags(struct vmx_vcpu *vcpu, u64 paddr,
 	}
 	*epte |= s_flags;
 	*epte &= ~(c_flags);
-	TDEBUG("Physical addr %#lx flags %#lx\n", paddr, c_flags | s_flags);
 	return 1;
 }
 
@@ -3624,9 +3623,6 @@ int handle_EPT_violation(struct vmx_vcpu *vcpu)
 				BUG();
 			}
 		}
-		HDEBUG("Can't handle kernel space EPT Violation");
-		BUG();
-		return 0;
 	}
 	if(!(pml2_e =  find_pd_entry(vcpu, gpa))){
 		HDEBUG("NULL pml2 entry for gpa (%#lx)\n", gpa);
