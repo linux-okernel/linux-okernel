@@ -1509,7 +1509,6 @@ unsigned long text_addr(struct vmx_vcpu *vcpu, unsigned long paddr)
 	return find_vaddr(vcpu, paddr, start, end);
 }
 
-
 void ept_flags_from_prot(pgprot_t prot, unsigned long *s_flags,
 			unsigned long *c_flags)
 {
@@ -1838,12 +1837,12 @@ void protect_kernel_integrity(struct vmx_vcpu *vcpu)
 	/*
 	 * Protect read-only data can't set OK_TEXT as some pages get released
 	 * and reused - need to hook memory management code if we want to set
-	 * OK_TEXT
+	 * OK_IP
 	 */
 	set_clr_vmem_ept_flags(vcpu, text_start, end, 0, EPT_W);
 
 	/* Set execute for kernel text*/
-	set_clr_vmem_ept_flags(vcpu, text_start, text_end, EPT_X | OK_TEXT, 0);
+	set_clr_vmem_ept_flags(vcpu, text_start, text_end, EPT_X | OK_IP, 0);
 
 	/* Set protection for modules*/
 	set_clr_module_ept_flags(vcpu);
