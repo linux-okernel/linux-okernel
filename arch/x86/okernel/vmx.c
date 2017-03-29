@@ -859,7 +859,8 @@ unsigned long  guest_physical_page_address(unsigned long addr,
 		return kpte->pte & ~(PAGESIZE2M-1) & umask;
 	} else {
 		HDEBUG("Unsupported page level %d\n", *level);
-		return 0;
+		BUG();
+		//return 0;
 	}
 }
 
@@ -934,14 +935,13 @@ void set_clr_vmem_ept_flags(struct vmx_vcpu *vcpu, unsigned long start,
 	}
 }
 
-unsigned long text_addr(struct vmx_vcpu *vcpu, unsigned long paddr)
+unsigned long find_vaddr(struct vmx_vcpu *vcpu, unsigned long paddr,
+			 unsigned long start, unsigned long end)
 {
 	/*
-	 * Returns the vaddr within the kernel text if the physical
-	 * address is mapped into the kernel text virtual address space
+	 * Returns the vaddr within the given range if the physical
+	 * address is mapped there
 	 */
-	unsigned long start = PFN_ALIGN(_text);
-	unsigned long end = PFN_ALIGN(&__stop___ex_table);
 	unsigned long vaddr, pa, ps, match;
 	unsigned int level;
 	pgprot_t prot;
@@ -974,6 +974,22 @@ unsigned long text_addr(struct vmx_vcpu *vcpu, unsigned long paddr)
 	return 0;
 }
 
+
+unsigned long mod_addr(struct vmx_vcpu *vcpu, unsigned long paddr){
+	unsigned long start = PFN_ALIGN(MODULES_VADDR);
+	unsigned long end = PFN_ALIGN(MODULES_END);
+
+	return find_vaddr(vcpu, paddr, start, end);
+}
+
+unsigned long text_addr(struct vmx_vcpu *vcpu, unsigned long paddr)
+{
+	unsigned long start = PFN_ALIGN(_text);
+	unsigned long end = PFN_ALIGN(&__stop___ex_table);
+
+	return find_vaddr(vcpu, paddr, start, end);
+}
+
 void ept_flags_from_prot(pgprot_t prot, unsigned long *s_flags,
 			unsigned long *c_flags)
 {
@@ -996,7 +1012,7 @@ void ept_flags_from_prot(pgprot_t prot, unsigned long *s_flags,
 unsigned long rx_nowrite(unsigned long flags)
 {
 	if ((flags & EPT_X) && (flags & EPT_W)){
-		TDEBUG("WARNING WX module memory\n");
+		HLOG("WARNING WX module memory\n");
 	}
 	return ((flags & EPT_X) && !(flags & EPT_W));
 }
@@ -1025,7 +1041,8 @@ void set_clr_module_flags_4k(struct vmx_vcpu *vcpu, unsigned long start,
 		}
 		ept_flags_from_prot(prot, &s_flags, &c_flags);
 		if (rx_nowrite(s_flags)){
-			s_flags |= OK_MOD;
+			HDEBUG("Set OK_IP on module address\n");
+			s_flags |= OK_IP;
 		}
 		HDEBUG("Set flags %#lx clear flags %#lx on va %#lx pa %#lx\n",
 		       s_flags, c_flags, vaddr, paddr);
@@ -1067,7 +1084,8 @@ void set_clr_module_ept_flags(struct vmx_vcpu *vcpu)
 		/* Update 2M page mapping */
 		ept_flags_from_prot(prot, &s_flags, &c_flags);
 		if (rx_nowrite(s_flags)){
-			s_flags |= OK_MOD;
+			s_flags |= OK_IP;
+			HDEBUG("Set OK_IP on module address\n");
 		}
 		HDEBUG("Set flag %#lx clear flag %#lx on va %#lx pa %#lx\n",
 		       s_flags, c_flags, vaddr, paddr);
@@ -1096,14 +1114,14 @@ void protect_kernel_integrity(struct vmx_vcpu *vcpu)
 	unsigned long end = (unsigned long) &__end_rodata_hpage_align;
 
 	/* 
-	 * Protect read-only data can't set OK_TEXT as some pages get released
+	 * Protect read-only data can't set OK_IP as some pages get released
 	 * and reused - need to hook memory management code if we want to set
-	 * OK_TEXT
+	 * OK_IP
 	 */
 	set_clr_vmem_ept_flags(vcpu, text_start, end, 0, EPT_W);
 
 	/* Set execute for kernel text*/
-	set_clr_vmem_ept_flags(vcpu, text_start, text_end, EPT_X | OK_TEXT, 0);
+	set_clr_vmem_ept_flags(vcpu, text_start, text_end, EPT_X | OK_IP, 0);
 
 	/* Set protection for modules*/
 	set_clr_module_ept_flags(vcpu);
@@ -3201,6 +3219,34 @@ static inline int is_module_space (unsigned long vaddr)
 	return (vaddr >= MODULES_VADDR && vaddr <= MODULES_END);
 }
 
+static inline int is_text_space (unsigned long vaddr)
+{
+	unsigned long text_start = PFN_ALIGN(_text);
+	unsigned long text_end = PFN_ALIGN(&__stop___ex_table);
+	return (vaddr >= text_start && vaddr <= text_end);
+}
+
+static inline int need_integrity_flag(unsigned long va, unsigned long s_flags)
+{
+	if ((is_module_space(va) | is_text_space(va)) &&
+	    rx_nowrite(s_flags)) {
+		return 1;
+	} else {
+		return 0;
+	}
+}
+
+static inline void set_clr_ok_ip(unsigned long gva, unsigned long *s_flags,
+				 unsigned long *c_flags)
+{
+	if (!(is_user_space(gva)) && need_integrity_flag(gva, *s_flags)) {
+		*s_flags |= OK_IP;
+	} else {
+		*c_flags |= OK_IP;
+	}
+}
+
+
 int handle_EPT_violation(struct vmx_vcpu *vcpu)
 {
 	/*
@@ -3223,7 +3269,7 @@ int handle_EPT_violation(struct vmx_vcpu *vcpu)
 
 	/* Bit 7 in exit qualification set if 'guest' virtual address valid */
 	if(qual & 0x80){
-		unsigned long *epte, alias, s_flags, c_flags, eprot, n_eprot;
+		unsigned long *epte, mapped, s_flags, c_flags, eprot, n_eprot;
 		int level;
 		pgprot_t prot;
 
@@ -3252,53 +3298,44 @@ int handle_EPT_violation(struct vmx_vcpu *vcpu)
 		 * controls supervisor mode.
 		 * 
 		 */
-		if (is_set_ept_page_flag(vcpu, gpa, OK_MOD)){
-			
-			if(set_clr_ept_page_flags(vcpu, gpa,
-						  EPT_W |EPT_R | EPT_X, 0)){
-				TDEBUG("Grant EPT RWX for OK_MOD space"
-				       "Physical address %#lx "
-				       " at guest virtual %#lx",
-				       gpa, gva);
-				
-				vpid_sync_context(vcpu->vpid);
-				vmx_put_cpu(vcpu);
-				return 1;
-			} else {
-				HDEBUG("set_clr_ept_page_flags failed.\n");
+		if (is_set_ept_page_flag(vcpu, gpa, OK_IP)){
+			epte = ept_page_entry(vcpu, gpa);
+			mapped = text_addr(vcpu, gpa);
+			if (!mapped) {
+				mapped = mod_addr(vcpu, gpa);
+			}
+			if (!guest_physical_page_address(gva, &level, &prot)){
+				HLOG("No guest page table entry for %#lx\n",
+					gva);
 				BUG();
 			}
-
-		} else if (is_set_ept_page_flag(vcpu, gpa, OK_TEXT)){
-			epte = ept_page_entry(vcpu, gpa);
-			alias = text_addr(vcpu, gpa);
-			BUG_ON(!guest_physical_page_address(gva, &level, &prot));
 			ept_flags_from_prot(prot, &s_flags, &c_flags);
 			eprot = *epte & (EPT_W | EPT_R | EPT_X);
-			ept_flags_from_prot(prot, &s_flags, &c_flags);
-			if (is_user_space(gva) && (alias)){
-				HDEBUG("User space alias for kernel text\n");
+			if (is_user_space(gva) && (mapped)){
+				HLOG("User space alias for kernel\n");
 				BUG();
 				return 0;
 			}
-			if (alias) {
+			/* if already mapped, it's either a change or alias */
+			if (mapped) {
+				/* New prots = guest prot + old prot */
 				n_eprot = s_flags | eprot;
-				TDEBUG("Physical address %#lx with EPT prot %#lx"
-				       " alias for kernel text at %#lx "
-				       "being created "
-				       "%#lx, new EPT prot %#lx\n",
-				       gpa, eprot, alias, gva, n_eprot);
+				HLOG("Physical address %#lx with EPT prot %#lx"
+				       " alias or change for kernel protected "
+				       " code mapped at %#lx being created "
+				       "at %#lx, new EPT prot %#lx\n",
+				       gpa, eprot, mapped, gva, n_eprot);
 				if(!set_clr_ept_page_flags(vcpu, gpa, n_eprot,
 							   0)){
 					BUG();
 				}
 			} else {
-				n_eprot = s_flags;
-				TDEBUG("Physical address %#lx with EPT prot %#lx"
+				set_clr_ok_ip(gva, &s_flags, &c_flags);
+				HLOG("Physical address %#lx with EPT prot %#lx"
 				       " no longer at original mapping "
 				       "New mapping created at guest virtual "
 				       "%#lx, new EPT prot %#lx\n",
-				       gpa, eprot, gva, n_eprot);
+				       gpa, eprot, gva, s_flags);
 				if(!set_clr_ept_page_flags(vcpu, gpa, s_flags,
 							   c_flags)){
 					BUG();
@@ -3313,10 +3350,12 @@ int handle_EPT_violation(struct vmx_vcpu *vcpu)
 			 */
 			BUG_ON(!guest_physical_page_address(gva, &level, &prot));
 			ept_flags_from_prot(prot, &s_flags, &c_flags);
+			set_clr_ok_ip(gva, &s_flags, &c_flags);
 			if (set_clr_ept_page_flags(vcpu, gpa,
 						   s_flags, c_flags)){
-				HDEBUG("Set %#lx clear %#lx for module.\n",
-				       s_flags, c_flags);
+				HLOG("Set %#lx clear %#lx for module "
+				       "physical address %#lx virtual %#lx\n",
+				       s_flags, c_flags, gpa, gva);
 				vpid_sync_context(vcpu->vpid);
 				vmx_put_cpu(vcpu);
 				return 1;
@@ -3336,17 +3375,14 @@ int handle_EPT_violation(struct vmx_vcpu *vcpu)
 				BUG();
 			}
 		} else {
-			TDEBUG("Other kernel space EPT Violation"
-			       " gpa %#lx va %#lx\n", gpa, gva);
 			BUG_ON(!guest_physical_page_address(gva, &level, &prot));
-			/*
-			 * Get the prot flags and set them
-			 */
 			ept_flags_from_prot(prot, &s_flags, &c_flags);
+			set_clr_ok_ip(gva, &s_flags, &c_flags);
 			if (set_clr_ept_page_flags(vcpu, gpa,
 						   s_flags, c_flags)){
-				HDEBUG("Set %#lx clear %#lx for module.\n",
-				       s_flags, c_flags);
+				HLOG("Kernel space EPT Violation gpa %#lx "
+				       "va %#lx set %#lx clear %#lx\n",
+				       gpa, gva, s_flags, c_flags);
 				vpid_sync_context(vcpu->vpid);
 				vmx_put_cpu(vcpu);
 				return 1;
