@@ -2427,14 +2427,13 @@ void set_clr_module_ept_flags(struct vmx_vcpu *vcpu)
 	HDEBUG("End modules %#lx\n", end);
 }
 
-unsigned long text_addr(struct vmx_vcpu *vcpu, unsigned long paddr)
+unsigned long find_vaddr(struct vmx_vcpu *vcpu, unsigned long paddr,
+			 unsigned long start, unsigned long end)
 {
 	/*
-	 * Returns the vaddr within the kernel text if the physical
-	 * address is mapped into the kernel text virtual address space
+	 * Returns the vaddr within the given range if the physical
+	 * address is mapped there
 	 */
-	unsigned long start = PFN_ALIGN(_text);
-	unsigned long end = PFN_ALIGN(&__stop___ex_table);
 	unsigned long vaddr, pa, ps, match;
 	unsigned int level;
 	pgprot_t prot;
@@ -2467,6 +2466,22 @@ unsigned long text_addr(struct vmx_vcpu *vcpu, unsigned long paddr)
 	return 0;
 }
 
+
+unsigned long mod_addr(struct vmx_vcpu *vcpu, unsigned long paddr){
+	unsigned long start = PFN_ALIGN(MODULES_VADDR);
+	unsigned long end = PFN_ALIGN(MODULES_END);
+
+	return find_vaddr(vcpu, paddr, start, end);
+}
+
+unsigned long text_addr(struct vmx_vcpu *vcpu, unsigned long paddr)
+{
+	unsigned long start = PFN_ALIGN(_text);
+	unsigned long end = PFN_ALIGN(&__stop___ex_table);
+
+	return find_vaddr(vcpu, paddr, start, end);
+}
+
 void ept_flags_from_prot(pgprot_t prot, unsigned long *s_flags,
 			unsigned long *c_flags)
 {
@@ -2489,7 +2504,7 @@ void ept_flags_from_prot(pgprot_t prot, unsigned long *s_flags,
 unsigned long rx_nowrite(unsigned long flags)
 {
 	if ((flags & EPT_X) && (flags & EPT_W)){
-		TDEBUG("WARNING WX module memory\n");
+		HLOG("WARNING WX module memory\n");
 	}
 	return ((flags & EPT_X) && !(flags & EPT_W));
 }
@@ -2518,7 +2533,8 @@ void set_clr_module_flags_4k(struct vmx_vcpu *vcpu, unsigned long start,
 		}
 		ept_flags_from_prot(prot, &s_flags, &c_flags);
 		if (rx_nowrite(s_flags)){
-			s_flags |= OK_MOD;
+			HDEBUG("Set OK_IP on module address\n");
+			s_flags |= OK_IP;
 		}
 		HDEBUG("Set flags %#lx clear flags %#lx on va %#lx pa %#lx\n",
 		       s_flags, c_flags, vaddr, paddr);
@@ -2560,7 +2576,8 @@ void set_clr_module_ept_flags(struct vmx_vcpu *vcpu)
 		/* Update 2M page mapping */
 		ept_flags_from_prot(prot, &s_flags, &c_flags);
 		if (rx_nowrite(s_flags)){
-			s_flags |= OK_MOD;
+			s_flags |= OK_IP;
+			HDEBUG("Set OK_IP on module address\n");
 		}
 		HDEBUG("Set flag %#lx clear flag %#lx on va %#lx pa %#lx\n",
 		       s_flags, c_flags, vaddr, paddr);
@@ -2591,12 +2608,12 @@ void protect_kernel_integrity(struct vmx_vcpu *vcpu)
 	/*
 	 * Protect read-only data can't set OK_TEXT as some pages get released
 	 * and reused - need to hook memory management code if we want to set
-	 * OK_TEXT
+	 * OK_IP
 	 */
 	set_clr_vmem_ept_flags(vcpu, text_start, end, 0, EPT_W);
 
 	/* Set execute for kernel text*/
-	set_clr_vmem_ept_flags(vcpu, text_start, text_end, EPT_X | OK_TEXT, 0);
+	set_clr_vmem_ept_flags(vcpu, text_start, text_end, EPT_X | OK_IP, 0);
 
 	/* Set protection for modules*/
 	set_clr_module_ept_flags(vcpu);
