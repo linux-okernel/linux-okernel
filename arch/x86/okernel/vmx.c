@@ -2604,6 +2604,8 @@ static struct vmx_vcpu * vmx_create_vcpu(struct nr_cloned_state* cloned_thread)
 
 	vcpu->cloned_thread = cloned_thread;
 
+	sprintf(vcpu->debug, "%s", VCPU_DEBUG_INIT);
+
 	vmx_setup_initial_guest_state(vcpu);
 
 	vmx_put_cpu(vcpu);
@@ -3139,6 +3141,9 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu, int nr_irqs_enabled)
 		BXMAGICBREAK;
 	} else if(cmd == VMCALL_DOEXIT){
 		code = (long)vcpu->regs[VCPU_REGS_RBX];
+ 		if (strlen(vcpu->debug) > strlen(VCPU_DEBUG_INIT)){
+			HDEBUG3("Content of debug buffer: %s", vcpu->debug);
+		}
 		HDEBUG("calling do_exit(%ld)...\n", code);
 		vmx_destroy_vcpu(vcpu);
 		do_exit(code);
@@ -3315,9 +3320,20 @@ int handle_EPT_violation(struct vmx_vcpu *vcpu)
 				mapped = mod_addr(vcpu, gpa);
 			}
 			if (!guest_physical_page_address(gva, &level, &prot)){
-				HLOG("No guest page table entry for %#lx\n",
-					gva);
-				BUG();
+				/* wierdness :-(*/
+				sprintf(vcpu->debug,
+					"No guest page table entry for %#lx "
+					"mapped T/F %lu\n",
+					gva, mapped);
+				if(set_clr_ept_page_flags(vcpu, gpa,
+						  EPT_W |EPT_R | EPT_X, 0)){
+					vpid_sync_context(vcpu->vpid);
+					vmx_put_cpu(vcpu);
+					return 1;
+				} else {
+					HDEBUG("set_clr_ept_page_flags failed.\n");
+					BUG();
+				}
 			}
 			ept_flags_from_prot(prot, &s_flags, &c_flags);
 			eprot = *epte & (EPT_W | EPT_R | EPT_X);
