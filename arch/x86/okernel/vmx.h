@@ -189,8 +189,9 @@ struct vmx_vcpu {
 	struct nr_cloned_state *cloned_thread;
 	unsigned int *nr_stack_canary;
 	void *syscall_tbl;
-
+	char debug[200];
 };
+#define VCPU_DEBUG_INIT "\n"
 
 extern __init int vmx_init(void);
 extern void vmx_exit(void);
