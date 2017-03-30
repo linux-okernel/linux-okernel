@@ -102,11 +102,17 @@ int ok_free_protected_page(struct page *pg);
 #else
 #define HDEBUG(fmt, args...)
 #endif
-//#define HPL_DEBUG2
+//#define HPE_DEBUG2
 #ifdef HPE_DEBUG2
 #define HDEBUG2(fmt, args...) trace_printk( KERN_ERR "%s: cpu(%d) pid(%d) %s: " fmt, vmx_nr_mode()?"NR":"R ", raw_smp_processor_id(), current->pid,__func__, ## args)
 #else
 #define HDEBUG2(fmt, args...)
+#endif
+#define HPE_DEBUG3
+#ifdef HPE_DEBUG3
+#define HDEBUG3(fmt, args...) trace_printk( KERN_ERR "%s: cpu(%d) pid(%d) %s: " fmt, vmx_nr_mode()?"NR":"R ", raw_smp_processor_id(), current->pid,__func__, ## args)
+#else
+#define HDEBUG3(fmt, args...)
 #endif
 
 
