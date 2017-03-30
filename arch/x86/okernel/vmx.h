@@ -198,6 +198,7 @@ struct vmx_vcpu {
 	/* Pointer to next entry in circular log*/
 	int lp;
 };
+#define VCPU_DEBUG_INIT "\n"
 
 extern __init int vmx_init(void);
 extern void vmx_exit(void);
