@@ -1250,14 +1250,14 @@ void protect_kernel_integrity(struct vmx_vcpu *vcpu)
 	unsigned long end = (unsigned long) &__end_rodata_hpage_align;
 
 	/* 
-	 * Protect read-only data can't set OK_IP as some pages get released
+	 * Protect read-only data can't set OK_TEXT as some pages get released
 	 * and reused - need to hook memory management code if we want to set
-	 * OK_IP
+	 * OK_TEXT
 	 */
 	set_clr_vmem_ept_flags(vcpu, text_start, end, 0, EPT_W);
 
 	/* Set execute for kernel text*/
-	set_clr_vmem_ept_flags(vcpu, text_start, text_end, EPT_X | OK_IP, 0);
+	set_clr_vmem_ept_flags(vcpu, text_start, text_end, EPT_X | OK_TEXT, 0);
 
 	/* Set protection for modules*/
 	set_clr_module_ept_flags(vcpu);
