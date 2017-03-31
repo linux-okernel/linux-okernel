@@ -1561,8 +1561,8 @@ void set_clr_module_flags_4k(struct vmx_vcpu *vcpu, unsigned long start,
 		}
 		ept_flags_from_prot(prot, &s_flags, &c_flags);
 		if (rx_nowrite(s_flags)){
-			HDEBUG("Set OK_IP on module address\n");
-			s_flags |= OK_IP;
+			HDEBUG("Set OK_MOD on module address\n");
+			s_flags |= OK_MOD;
 		}
 		HDEBUG("Set flags %#lx clear flags %#lx on va %#lx pa %#lx\n",
 		       s_flags, c_flags, vaddr, paddr);
@@ -1604,8 +1604,8 @@ void set_clr_module_ept_flags(struct vmx_vcpu *vcpu)
 		/* Update 2M page mapping */
 		ept_flags_from_prot(prot, &s_flags, &c_flags);
 		if (rx_nowrite(s_flags)){
-			s_flags |= OK_IP;
-			HDEBUG("Set OK_IP on module address\n");
+			s_flags |= OK_MOD;
+			HDEBUG("Set OK_MOD on module address\n");
 		}
 		HDEBUG("Set flag %#lx clear flag %#lx on va %#lx pa %#lx\n",
 		       s_flags, c_flags, vaddr, paddr);
@@ -1636,12 +1636,12 @@ void protect_kernel_integrity(struct vmx_vcpu *vcpu)
 	/*
 	 * Protect read-only data can't set OK_TEXT as some pages get released
 	 * and reused - need to hook memory management code if we want to set
-	 * OK_IP
+	 * OK_TEXT
 	 */
 	set_clr_vmem_ept_flags(vcpu, text_start, end, 0, EPT_W);
 
 	/* Set execute for kernel text*/
-	set_clr_vmem_ept_flags(vcpu, text_start, text_end, EPT_X | OK_IP, 0);
+	set_clr_vmem_ept_flags(vcpu, text_start, text_end, EPT_X | OK_TEXT, 0);
 
 	/* Set protection for modules*/
 	set_clr_module_ept_flags(vcpu);
