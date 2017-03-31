@@ -1041,8 +1041,8 @@ void set_clr_module_flags_4k(struct vmx_vcpu *vcpu, unsigned long start,
 		}
 		ept_flags_from_prot(prot, &s_flags, &c_flags);
 		if (rx_nowrite(s_flags)){
-			HDEBUG("Set OK_IP on module address\n");
-			s_flags |= OK_IP;
+			HDEBUG("Set OK_MOD on module address\n");
+			s_flags |= OK_MOD;
 		}
 		HDEBUG("Set flags %#lx clear flags %#lx on va %#lx pa %#lx\n",
 		       s_flags, c_flags, vaddr, paddr);
@@ -1084,8 +1084,8 @@ void set_clr_module_ept_flags(struct vmx_vcpu *vcpu)
 		/* Update 2M page mapping */
 		ept_flags_from_prot(prot, &s_flags, &c_flags);
 		if (rx_nowrite(s_flags)){
-			s_flags |= OK_IP;
-			HDEBUG("Set OK_IP on module address\n");
+			s_flags |= OK_MOD;
+			HDEBUG("Set OK_MOD on module address\n");
 		}
 		HDEBUG("Set flag %#lx clear flag %#lx on va %#lx pa %#lx\n",
 		       s_flags, c_flags, vaddr, paddr);
@@ -1114,14 +1114,14 @@ void protect_kernel_integrity(struct vmx_vcpu *vcpu)
 	unsigned long end = (unsigned long) &__end_rodata_hpage_align;
 
 	/* 
-	 * Protect read-only data can't set OK_IP as some pages get released
+	 * Protect read-only data can't set OK_TEXT as some pages get released
 	 * and reused - need to hook memory management code if we want to set
-	 * OK_IP
+	 * OK_TEXT
 	 */
 	set_clr_vmem_ept_flags(vcpu, text_start, end, 0, EPT_W);
 
 	/* Set execute for kernel text*/
-	set_clr_vmem_ept_flags(vcpu, text_start, text_end, EPT_X | OK_IP, 0);
+	set_clr_vmem_ept_flags(vcpu, text_start, text_end, EPT_X | OK_TEXT, 0);
 
 	/* Set protection for modules*/
 	set_clr_module_ept_flags(vcpu);
@@ -3251,16 +3251,102 @@ static inline int need_integrity_flag(unsigned long va, unsigned long s_flags)
 	}
 }
 
-static inline void set_clr_ok_ip(unsigned long gva, unsigned long *s_flags,
+static inline void set_clr_ok_tags(unsigned long gva, unsigned long *s_flags,
 				 unsigned long *c_flags)
 {
+	/*
 	if (!(is_user_space(gva)) && need_integrity_flag(gva, *s_flags)) {
-		*s_flags |= OK_IP;
+		*s_flags |= OK_TEXT;
 	} else {
-		*c_flags |= OK_IP;
+		*c_flags |= OK_TEXT;
 	}
+	*/
+	if ((is_text_space(gva)) && rx_nowrite(*s_flags)) {
+		*s_flags |= OK_TEXT;
+		*c_flags |= OK_MOD;
+	} else if ((is_module_space(gva)) && rx_nowrite(*s_flags)){
+		*s_flags |= OK_MOD;
+		*c_flags |= OK_TEXT;
+	} else {
+		*c_flags |= (OK_MOD | OK_TEXT);
+	}
+
 }
 
+int page_walk_ept_viol(struct vmx_vcpu *vcpu, unsigned long gpa,
+		       unsigned long qual)
+{
+	unsigned long s_flags, c_flags;
+	HLOG("ENTERED\n");
+	if (is_set_ept_page_flag(vcpu, gpa, OK_TEXT | OK_MOD)) {
+		HLOG("Clearing OK_TEXT and OK_MOD, allocated to page tables\n");
+	}
+	s_flags = qual & EPT_PERM_MASK;
+	c_flags = ((~s_flags) & EPT_PERM_MASK);
+	c_flags |= OK_TEXT | OK_MOD;
+	if(set_clr_ept_page_flags(vcpu, gpa, s_flags, c_flags)){
+		vpid_sync_context(vcpu->vpid);
+		vmx_put_cpu(vcpu);
+		return 1;
+	} else {
+		HDEBUG("set_clr_ept_page_flags failed.\n");
+		BUG();
+	}
+	return 0;
+}
+
+int noguest_pte(struct vmx_vcpu *vcpu, unsigned long gpa, unsigned long gva,
+		unsigned long qual, unsigned long mapped)
+{
+	/*
+	 * Occasionally we get guest virtual address with no guest page
+	 * table entry. Further using the HDEBUG machinery seems to cause
+	 * a deadlock
+	 */
+	unsigned long s_flags, c_flags;
+	s_flags = qual & EPT_PERM_MASK;
+	c_flags = (~s_flags) & EPT_PERM_MASK;
+	if (!mapped) {
+		c_flags |= (OK_TEXT | OK_MOD);
+		sprintf(vcpu->debug, "No guest page table entry for %#lx"
+			" no kernel mapping detected for physical address %#lx",
+			gva, gpa);
+		if (is_set_ept_page_flag(vcpu, gpa, OK_TEXT)){
+			sprintf(vcpu->debug,
+				" previously tagged protected text\n");
+		} else if (is_set_ept_page_flag(vcpu, gpa, OK_MOD)){
+			sprintf(vcpu->debug,
+				" previously tagged protected module space\n");
+		} else{
+			sprintf(vcpu->debug,
+				" not previously tagged\n");
+		}
+	} else {
+		sprintf(vcpu->debug, "No guest page table entry for %#lx"
+		       " kernel alias detected for physical address %#lx"
+			" at %#lx",
+			gva, gpa, mapped);
+		if (is_set_ept_page_flag(vcpu, gpa, OK_TEXT)){
+			sprintf(vcpu->debug,
+				" tagged protected text\n");
+		} else if (is_set_ept_page_flag(vcpu, gpa, OK_MOD)){
+			sprintf(vcpu->debug,
+				" tagged protected module space\n");
+		} else{
+			sprintf(vcpu->debug,
+				" not tagged\n");
+		}
+	}
+	if(set_clr_ept_page_flags(vcpu, gpa, s_flags, c_flags)){
+		vpid_sync_context(vcpu->vpid);
+		vmx_put_cpu(vcpu);
+		return 1;
+	} else {
+		HDEBUG("set_clr_ept_page_flags failed.\n");
+		BUG();
+	}
+	return 0;
+}
 
 int handle_EPT_violation(struct vmx_vcpu *vcpu)
 {
@@ -3287,6 +3373,10 @@ int handle_EPT_violation(struct vmx_vcpu *vcpu)
 		unsigned long *epte, mapped, s_flags, c_flags, eprot, n_eprot;
 		int level;
 		pgprot_t prot;
+		/* Bit 8 is cleared if it's a page walk or update of accessed*/
+		if (!(qual & 0x100)){
+				return page_walk_ept_viol(vcpu, gpa, qual);
+		}
 
 		gva = (u64)vmcs_readl(GUEST_LINEAR_ADDRESS);
 		HDEBUG("gva=%#lx\n", gva);
@@ -3313,27 +3403,14 @@ int handle_EPT_violation(struct vmx_vcpu *vcpu)
 		 * controls supervisor mode.
 		 * 
 		 */
-		if (is_set_ept_page_flag(vcpu, gpa, OK_IP)){
+		if (is_set_ept_page_flag(vcpu, gpa, OK_TEXT | OK_MOD)){
 			epte = ept_page_entry(vcpu, gpa);
 			mapped = text_addr(vcpu, gpa);
 			if (!mapped) {
 				mapped = mod_addr(vcpu, gpa);
 			}
 			if (!guest_physical_page_address(gva, &level, &prot)){
-				/* wierdness :-(*/
-				sprintf(vcpu->debug,
-					"No guest page table entry for %#lx "
-					"mapped T/F %lu\n",
-					gva, mapped);
-				if(set_clr_ept_page_flags(vcpu, gpa,
-						  EPT_W |EPT_R | EPT_X, 0)){
-					vpid_sync_context(vcpu->vpid);
-					vmx_put_cpu(vcpu);
-					return 1;
-				} else {
-					HDEBUG("set_clr_ept_page_flags failed.\n");
-					BUG();
-				}
+				return noguest_pte(vcpu, gpa, gva, qual, mapped);
 			}
 			ept_flags_from_prot(prot, &s_flags, &c_flags);
 			eprot = *epte & (EPT_W | EPT_R | EPT_X);
@@ -3356,7 +3433,7 @@ int handle_EPT_violation(struct vmx_vcpu *vcpu)
 					BUG();
 				}
 			} else {
-				set_clr_ok_ip(gva, &s_flags, &c_flags);
+				set_clr_ok_tags(gva, &s_flags, &c_flags);
 				HLOG("Physical address %#lx with EPT prot %#lx"
 				       " no longer at original mapping "
 				       "New mapping created at guest virtual "
@@ -3376,7 +3453,7 @@ int handle_EPT_violation(struct vmx_vcpu *vcpu)
 			 */
 			BUG_ON(!guest_physical_page_address(gva, &level, &prot));
 			ept_flags_from_prot(prot, &s_flags, &c_flags);
-			set_clr_ok_ip(gva, &s_flags, &c_flags);
+			set_clr_ok_tags(gva, &s_flags, &c_flags);
 			if (set_clr_ept_page_flags(vcpu, gpa,
 						   s_flags, c_flags)){
 				HLOG("Set %#lx clear %#lx for module "
@@ -3403,7 +3480,7 @@ int handle_EPT_violation(struct vmx_vcpu *vcpu)
 		} else {
 			BUG_ON(!guest_physical_page_address(gva, &level, &prot));
 			ept_flags_from_prot(prot, &s_flags, &c_flags);
-			set_clr_ok_ip(gva, &s_flags, &c_flags);
+			set_clr_ok_tags(gva, &s_flags, &c_flags);
 			if (set_clr_ept_page_flags(vcpu, gpa,
 						   s_flags, c_flags)){
 				HLOG("Kernel space EPT Violation gpa %#lx "
