@@ -3660,11 +3660,7 @@ int handle_EPT_violation(struct vmx_vcpu *vcpu)
 		} else if (is_user_space(gva)){
 			if(set_clr_ept_page_flags(vcpu, gpa,
 						  EPT_W |EPT_R | EPT_X, 0)){
-				TDEBUG("Grant EPT RWX for OK_MOD space"
-				       "Physical address %#lx "
-				       " at guest virtual %#lx",
-				       gpa, gva);
-				
+				HDEBUG("Grant EPT RWX for user space\n.");
 				vpid_sync_context(vcpu->vpid);
 				vmx_put_cpu(vcpu);
 				return 1;
