@@ -1053,73 +1053,6 @@ void set_clr_module_flags_4k(struct vmx_vcpu *vcpu, unsigned long start,
 	}
 }
 
-void set_clr_vmem_ept_flags(struct vmx_vcpu *vcpu, unsigned long start,
-		       unsigned long end, unsigned long s_flags,
-		       unsigned long c_flags)
-{
-	unsigned long vaddr, paddr, end_4k;
-	unsigned int level;
-
-	HDEBUG("Entered\n");
-	vaddr = start & ~(PAGESIZE2M - 1);
-	if (start != vaddr) {
-		HDEBUG("Start address (%#lx) is not 2M aligned\n", start);
-	}
-	for (; vaddr < end; vaddr += PAGESIZE2M){
-		paddr = guest_physical_page_address(vaddr, &level, &prot);
-		if (!paddr) {
-			/* vaddr NOT MAPPED */
-			continue;
-		}
-		if (level == 1){
-			end_4k = (vaddr + PAGESIZE2M) & ~(PAGESIZE2M-1);
-			set_clr_vmem_ept_flags_4k(vcpu, vaddr, end_4k,
-						   s_flags, c_flags);
-			continue;
-		} else if (level > 2) {
-			printk(KERN_ERR "okernel %s: unsupported page level\n",
-			       __func__);
-			return;
-		}
-		/* Update 2M page mapping*/
-		TDEBUG("Set flag %#lx clear flag %#lx on va %#lx pa %#lx\n",
-		       s_flags, c_flags, vaddr, paddr);
-		HDEBUG("Set flag %#lx clear flag %#lx on va %#lx pa %#lx\n",
-		       s_flags, c_flags, vaddr, paddr);
-		if (!set_clr_ept_page_flags(vcpu, paddr, s_flags, c_flags)){
-			HDEBUG("EPT set_clr_ept_page_flags failed.\n");
-			BUG();
-		}
-	}
-}
-
-void set_modules_ept_x(struct vmx_vcpu *vcpu)
-{
-	unsigned long start = PFN_ALIGN(MODULES_VADDR);
-	unsigned long end = PFN_ALIGN(MODULES_END);
-
-	HDEBUG("Entered\n");
-	set_clr_vmem_ept_flags(vcpu, start, end, (EPT_X | OK_IP), 0);
-}
-
-void set_kernel_text_ept_x(struct vmx_vcpu *vcpu)
-{
-	unsigned long start = PFN_ALIGN(_text);
-	unsigned long end = (unsigned long) &__end_rodata_hpage_align;
-
-	HDEBUG("Entered\n");
-	set_clr_vmem_ept_flags(vcpu, start, end, (EPT_X | OK_IP), 0);
-}
-
-void set_kernel_text_ept_nw(struct vmx_vcpu *vcpu)
-{
-	unsigned long start = PFN_ALIGN(_text);
-	unsigned long end = (unsigned long) &__end_rodata_hpage_align;
-
-	HDEBUG("Entered\n");
-	set_clr_vmem_ept_flags(vcpu, start, end, OK_IP, EPT_W);
-}
-
 void set_clr_module_ept_flags(struct vmx_vcpu *vcpu)
 {
 	unsigned long start = PFN_ALIGN(MODULES_VADDR);
@@ -3498,11 +3431,7 @@ int handle_EPT_violation(struct vmx_vcpu *vcpu)
 		} else if (is_user_space(gva)){
 			if(set_clr_ept_page_flags(vcpu, gpa,
 						  EPT_W |EPT_R | EPT_X, 0)){
-				TDEBUG("Grant EPT RWX for OK_MOD space"
-				       "Physical address %#lx "
-				       " at guest virtual %#lx",
-				       gpa, gva);
-				
+				HDEBUG("Grant EPT RWX for user space\n.");
 				vpid_sync_context(vcpu->vpid);
 				vmx_put_cpu(vcpu);
 				return 1;
