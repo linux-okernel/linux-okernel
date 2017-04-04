@@ -3343,8 +3343,6 @@ static struct vmx_vcpu * vmx_create_vcpu(struct nr_cloned_state* cloned_thread)
 
 	vcpu->cloned_thread = cloned_thread;
 
-	sprintf(vcpu->debug, "%s", VCPU_DEBUG_INIT);
-
 	vmx_setup_initial_guest_state(vcpu);
 
 	vmx_put_cpu(vcpu);
@@ -3905,9 +3903,6 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu, int nr_irqs_enabled)
 		BXMAGICBREAK;
 	} else if(cmd == VMCALL_DOEXIT){
 		code = (long)vcpu->regs[VCPU_REGS_RBX];
- 		if (strlen(vcpu->debug) > strlen(VCPU_DEBUG_INIT)){
-			HDEBUG3("Content of debug buffer: %s", vcpu->debug);
-		}
 		HDEBUG("calling do_exit(%ld)...\n", code);
 		vmx_destroy_vcpu(vcpu);
 		do_exit(code);
