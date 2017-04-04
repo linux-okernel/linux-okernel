@@ -2806,8 +2806,6 @@ static struct vmx_vcpu * vmx_create_vcpu(struct nr_cloned_state* cloned_thread)
 
 	vcpu->cloned_thread = cloned_thread;
 
-	sprintf(vcpu->debug, "%s", VCPU_DEBUG_INIT);
-
 	vmx_setup_initial_guest_state(vcpu);
 
 	vmx_put_cpu(vcpu);
@@ -3343,9 +3341,6 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu, int nr_irqs_enabled)
 		BXMAGICBREAK;
 	} else if(cmd == VMCALL_DOEXIT){
 		code = (long)vcpu->regs[VCPU_REGS_RBX];
- 		if (strlen(vcpu->debug) > strlen(VCPU_DEBUG_INIT)){
-			HDEBUG3("Content of debug buffer: %s", vcpu->debug);
-		}
 		HDEBUG("calling do_exit(%ld)...\n", code);
 		vmx_destroy_vcpu(vcpu);
 		do_exit(code);
@@ -3475,6 +3470,25 @@ static inline void set_clr_ok_tags(unsigned long gva, unsigned long *s_flags,
 
 }
 
+void flags_from_qual(unsigned long qual, unsigned long *s, unsigned long *c)
+{
+	/* 
+	 * Note if EPT_W or EPT_X is set, then EPT_R must be set
+	 * Otherwise we will get an EPT_Misconfiguration induced VMExit
+	 */
+	*s = 0;
+	if (qual & EPT_R){
+		*s |= EPT_R;
+	}
+	if (qual & EPT_W){
+		*s |= EPT_W | EPT_R;
+	}
+	if (qual & EPT_X){
+		*s |= EPT_X | EPT_R;
+	}
+	*c = ((~*s) & EPT_PERM_MASK);
+}
+
 int page_walk_ept_viol(struct vmx_vcpu *vcpu, unsigned long gpa,
 		       unsigned long qual)
 {
@@ -3483,8 +3497,7 @@ int page_walk_ept_viol(struct vmx_vcpu *vcpu, unsigned long gpa,
 	if (is_set_ept_page_flag(vcpu, gpa, OK_TEXT | OK_MOD)) {
 		HLOG("Clearing OK_TEXT and OK_MOD, allocated to page tables\n");
 	}
-	s_flags = qual & EPT_PERM_MASK;
-	c_flags = ((~s_flags) & EPT_PERM_MASK);
+	flags_from_qual(qual, &s_flags, &c_flags);
 	c_flags |= OK_TEXT | OK_MOD;
 	if(set_clr_ept_page_flags(vcpu, gpa, s_flags, c_flags)){
 		vpid_sync_context(vcpu->vpid);
@@ -3502,43 +3515,33 @@ int noguest_pte(struct vmx_vcpu *vcpu, unsigned long gpa, unsigned long gva,
 {
 	/*
 	 * Occasionally we get guest virtual address with no guest page
-	 * table entry. Further using the HDEBUG machinery seems to cause
-	 * a deadlock
+	 * table entry.
 	 */
 	unsigned long s_flags, c_flags;
-	s_flags = qual & EPT_PERM_MASK;
-	c_flags = (~s_flags) & EPT_PERM_MASK;
+	flags_from_qual(qual, &s_flags, &c_flags);
 	if (!mapped) {
 		c_flags |= (OK_TEXT | OK_MOD);
-		sprintf(vcpu->debug, "No guest page table entry for %#lx"
-			" no kernel mapping detected for physical address %#lx",
-			gva, gpa);
+		HLOG("No guest page table entry for %#lx no kernel mapping "
+		     "detected for physical address %#lx", gva, gpa);
 		if (is_set_ept_page_flag(vcpu, gpa, OK_TEXT)){
-			sprintf(vcpu->debug,
-				" previously tagged protected text\n");
+			HLOG("previously tagged protected text\n");
 		} else if (is_set_ept_page_flag(vcpu, gpa, OK_MOD)){
-			sprintf(vcpu->debug,
-				" previously tagged protected module space\n");
+			HLOG("previously tagged protected module space\n");
 		} else{
-			sprintf(vcpu->debug,
-				" not previously tagged\n");
+			HLOG("not previously tagged\n");
 		}
 	} else {
-		sprintf(vcpu->debug, "No guest page table entry for %#lx"
-		       " kernel alias detected for physical address %#lx"
-			" at %#lx",
-			gva, gpa, mapped);
+		HLOG("No guest page table entry for %#lx kernel alias detected "
+		     "for physical address %#lx at %#lx", gva, gpa, mapped);
 		if (is_set_ept_page_flag(vcpu, gpa, OK_TEXT)){
-			sprintf(vcpu->debug,
-				" tagged protected text\n");
+			HLOG("tagged protected text\n");
 		} else if (is_set_ept_page_flag(vcpu, gpa, OK_MOD)){
-			sprintf(vcpu->debug,
-				" tagged protected module space\n");
+			HLOG("tagged protected module space\n");
 		} else{
-			sprintf(vcpu->debug,
-				" not tagged\n");
+			HLOG("not tagged\n");
 		}
 	}
+	HLOG("Setting %#lx, clearing %#lx\n", s_flags, c_flags);
 	if(set_clr_ept_page_flags(vcpu, gpa, s_flags, c_flags)){
 		vpid_sync_context(vcpu->vpid);
 		vmx_put_cpu(vcpu);
@@ -3636,7 +3639,7 @@ int handle_EPT_violation(struct vmx_vcpu *vcpu)
 				}
 			} else {
 				set_clr_ok_tags(gva, &s_flags, &c_flags);
-				HLOG("Physical address %#lx with EPT prot %#lx"
+				HDEBUG("Physical address %#lx with EPT prot %#lx"
 				       " no longer at original mapping "
 				       "New mapping created at guest virtual "
 				       "%#lx, new EPT prot %#lx\n",
@@ -3658,7 +3661,7 @@ int handle_EPT_violation(struct vmx_vcpu *vcpu)
 			set_clr_ok_tags(gva, &s_flags, &c_flags);
 			if (set_clr_ept_page_flags(vcpu, gpa,
 						   s_flags, c_flags)){
-				HLOG("Set %#lx clear %#lx for module "
+				HDEBUG("Set %#lx clear %#lx for module "
 				       "physical address %#lx virtual %#lx\n",
 				       s_flags, c_flags, gpa, gva);
 				vpid_sync_context(vcpu->vpid);
@@ -3925,7 +3928,7 @@ int vmx_launch(unsigned int mode, unsigned int flags, struct nr_cloned_state *cl
 		}
 
 		if(*(vcpu->nr_stack_canary) != NR_STACK_END_MAGIC){
-			HDEBUG("NR stack overflow detected.\n");
+			HLOG("NR stack overflow detected.\n");
 			printk(KERN_ERR "Okernel: NR stack overflow detected.\n");
 			break;
 		}
@@ -3933,11 +3936,11 @@ int vmx_launch(unsigned int mode, unsigned int flags, struct nr_cloned_state *cl
 		vmx_put_cpu(vcpu);
 
 		if(ret==VMX_EXIT_REASONS_FAILED_VMENTRY){
-			HDEBUG("vmentry failed (%#x)\n", ret);
+			HLOG("vmentry failed (%#x)\n", ret);
 			break;
 		} else if((ret == EXIT_REASON_EXTERNAL_INTERRUPT)){
 			/* We should be handling interrupts in NR-mode at the moment...*/
-			HDEBUG("vmexit on external interrupt.\n");
+			HLOG("vmexit on external interrupt.\n");
 			break;
 		} else if (ret == EXIT_REASON_CPUID){
 			HDEBUG("cpuid called.\n");
@@ -3953,25 +3956,33 @@ int vmx_launch(unsigned int mode, unsigned int flags, struct nr_cloned_state *cl
 			       (unsigned int)(qual & CR_REG_ACCESS_TYPE),
 			       (unsigned int)(qual & CR_REG_ACCESS_GP),
 			       (unsigned long)vcpu->regs[VCPU_REGS_RCX]);
-			HDEBUG("Unsupported CR access.\n");
+			HLOG("Unsupported CR access.\n");
 			break;
 		} else if (ret == EXIT_REASON_EPT_VIOLATION){
 			if (handle_EPT_violation(vcpu)){
 				continue;
 			}
 			vmx_put_cpu(vcpu);
+			HLOG("Unhandled EPT Violation\n");
 			break;
 		} else if (ret == EXIT_REASON_EPT_MISCONFIG){
 			vmx_get_cpu(vcpu);
 			gp_addr = vmcs_readl(GUEST_PHYSICAL_ADDRESS);
 			vmx_put_cpu(vcpu);
-			HDEBUG("ept misconfig exit - gpa=%#lx\n", gp_addr);
+			HLOG("ept misconfig exit - gpa=%#lx\n", gp_addr);
 			if(!(pml2_e =  find_pd_entry(vcpu, gp_addr))){
 				printk(KERN_ERR "okernel: NULL pml2 entry for gp_addr (%#lx)\n",
 				       gp_addr);
 			} else {
-				HDEBUG("ept entry for gpa=%#lx is (%#lx)\n", gp_addr, *pml2_e);
+				unsigned long *epte;
+				if (!(epte = ept_page_entry(vcpu, gp_addr))){
+					HLOG("no pte; plm2 entry for gpa=%#lx is (%#lx)\n", gp_addr, *pml2_e);
+				} else{
+					HLOG("no pte; plm2 entry for gpa=%#lx is (%#lx)\n", gp_addr, *pml2_e);
+					HLOG("ept entry for gpa=%#lx is (%#lx)\n", gp_addr, *epte);
+				}
 			}
+			HLOG("EPT Misconfig\n");
 			break;
 		} else if (ret == EXIT_REASON_EXCEPTION_NMI) {
 			vmx_get_cpu(vcpu);
@@ -3990,12 +4001,15 @@ int vmx_launch(unsigned int mode, unsigned int flags, struct nr_cloned_state *cl
 				}
 			}
 			vmx_put_cpu(vcpu);
+			HLOG("NMI Exception\n");
 			break;
 		} else {
 			vmx_get_cpu(vcpu);
 			HDEBUG("unhandled exit: reason %#x, exit qualification %#lx\n",
 			       ret, vmcs_readl(EXIT_QUALIFICATION));
 			vmx_put_cpu(vcpu);
+			HLOG("unhandled exit: reason %#x, exit qualification %#lx\n",
+			       ret, vmcs_readl(EXIT_QUALIFICATION));
 			break;
 		}
 		HDEBUG("Done handling exit condition, looping...\n");
@@ -4008,7 +4022,7 @@ int vmx_launch(unsigned int mode, unsigned int flags, struct nr_cloned_state *cl
 	 * to sort out.
 	 */
 	qual = vmcs_readl(EXIT_QUALIFICATION);
-	HDEBUG("leaving vmexit() loop (VPID %d) ret(%x) qual(%lx) "
+	HLOG("leaving vmexit() loop (VPID %d) ret(%x) qual(%lx) "
 	       "- trigger BUG() for now...\n", vcpu->vpid, ret, qual);
 	vmx_destroy_vcpu(vcpu);
 	BUG();
