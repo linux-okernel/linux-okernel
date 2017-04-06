@@ -73,8 +73,10 @@
 #include <asm/virtext.h>
 #include <asm/percpu.h>
 //#include <asm/paravirt.h>
+#include <asm/pgtable_types.h>
 #include <asm/preempt.h>
 #include <asm/tlbflush.h>
+#include <asm/setup.h>
 
 #include "constants2.h"
 #include "vmx.h"
@@ -487,6 +489,7 @@ int split_2M_mapping(struct vmx_vcpu* vcpu, u64 paddr)
 	int i = 0;
 	u64 p_base_addr;
 	u64 addr;
+	unsigned long pml1_attrs;
 
 	if((paddr & (PAGESIZE2M -1)) != 0){
 		printk(KERN_ERR "okernel: 2MB unaligned addr passed to is_2M_mapping.\n");
@@ -509,6 +512,11 @@ int split_2M_mapping(struct vmx_vcpu* vcpu, u64 paddr)
 	/* 2M region base address */
 
 	p_base_addr = (*pml2_e & ~(PAGESIZE2M-1));
+	pml1_attrs = (*pml2_e & PDE_ATTR_MASK & ~EPT_2M_PAGE);
+	/* 
+	 * Intel SDM says EPT_2M_PAGE is ignored in PL1 4k entries
+	 * But we are using it for sanity checking
+	 */
 
 	HDEBUG("base EPT physical addr for table 2M split (%#lx) paddr (%#lx)\n",
 		(unsigned long)p_base_addr, (unsigned long)paddr);
@@ -547,11 +555,14 @@ int split_2M_mapping(struct vmx_vcpu* vcpu, u64 paddr)
 
 	for(i = 0; i < n_entries; i++){
 		addr = p_base_addr + i*PAGESIZE;
+		q[i] = addr | pml1_attrs;
+		/*
 		if(no_cache_region(addr, PAGESIZE)){
-			q[i] = addr | EPT_R | EPT_W | EPT_X;
+			q[i] = addr | EPT_R | EPT_W ;
 		} else {
-			q[i] = addr | EPT_R | EPT_W | EPT_X | EPT_CACHE_2 | EPT_CACHE_3;
+			q[i] = addr | EPT_R | EPT_W | EPT_CACHE_2 | EPT_CACHE_3;
 		}
+		*/
 	}
 
 	*pml2_e = pt[0].phys + EPT_R + EPT_W + EPT_X;
@@ -573,8 +584,8 @@ void* replace_ept_page(struct vmx_vcpu *vcpu, u64 paddr, unsigned long perms)
 	HDEBUG("Check or split 2M mapping at (%#lx)\n", (unsigned long)split_addr);
 
 	if(!(split_2M_mapping(vcpu, split_addr))){
-		printk(KERN_ERR "okernel: couldn't split 2MB mapping for (%#lx)\n",
-		       (unsigned long)paddr);
+		printk(KERN_ERR "okernel: %s couldn't split 2MB mapping for (%#lx)\n",
+		       __func__, (unsigned long)paddr);
 		return NULL;
 	}
 
@@ -648,8 +659,8 @@ int modify_ept_physaddr_perms(struct vmx_vcpu *vcpu, u64 paddr, unsigned long pe
 	HDEBUG("Check or split 2M mapping at (%#lx)\n", (unsigned long)split_addr);
 
 	if(!(split_2M_mapping(vcpu, split_addr))){
-		printk(KERN_ERR "okernel: couldn't split 2MB mapping for (%#lx)\n",
-		       (unsigned long)paddr);
+		printk(KERN_ERR "okernel %s: couldn't split 2MB mapping for (%#lx)\n",
+		       __func__, (unsigned long)paddr);
 		return 0;
 	}
 
@@ -706,13 +717,69 @@ int add_ept_page_perms(struct vmx_vcpu *vcpu, u64 paddr)
 	/* Need to sort out return handling */
 	unsigned long perms;
 
-	perms = EPT_R | EPT_W | EPT_X | EPT_CACHE_2 | EPT_CACHE_3;
+	perms = EPT_R | EPT_W | EPT_CACHE_2 | EPT_CACHE_3;
 
 	if(!(modify_ept_physaddr_perms(vcpu, paddr, perms))){
 		printk("Failed to modify EPT page permissions.\n");
 		BUG();
 	}
 	return 0;
+}
+
+unsigned long *ept_page_entry(struct vmx_vcpu *vcpu, u64 paddr)
+{
+	unsigned long *pml2_e;
+	unsigned long *pml1_e;
+	unsigned long *ept_page_entry;
+
+	if(!(pml2_e =  find_pd_entry(vcpu, paddr))){
+		HDEBUG("NULL pml2 entry for paddr (%#lx)\n",
+		       (unsigned long)paddr);
+		return 0;
+	}
+
+	/* check if 2M or 4K mapping entry */
+	if((*pml2_e & EPT_2M_PAGE)){
+		HDEBUG("2MB mapping ept entry for paddr (%#lx).\n",
+			(unsigned long)paddr);
+		ept_page_entry = pml2_e;
+	} else {
+		/* Need to find the 4k page entry */
+
+		if(!(pml1_e = find_pt_entry(vcpu, paddr))){
+			HDEBUG("failed to find pte for (%#lx)\n",
+			       (unsigned long)paddr);
+			return 0;
+		}
+		/*
+		HDEBUG("4KB mapping ept entry for paddr (%#lx).\n",
+		       (unsigned long)paddr);
+		*/
+		ept_page_entry = pml1_e;
+	}
+	return ept_page_entry;
+}
+
+unsigned long is_set_ept_page_flag(struct vmx_vcpu *vcpu, u64 paddr,
+				   unsigned long flag)
+{
+	unsigned long *epte = ept_page_entry(vcpu, paddr);
+	if (!epte) {
+		return -1;
+	}
+	return *epte & flag;
+}
+
+int set_clr_ept_page_flags(struct vmx_vcpu *vcpu, u64 paddr,
+			    unsigned long s_flags, unsigned long c_flags)
+{
+	unsigned long *epte = ept_page_entry(vcpu, paddr);
+	if (!epte) {
+		return 0;
+	}
+	*epte |= s_flags;
+	*epte &= ~(c_flags);
+	return 1;
 }
 
 /* Need to sort out code duplication amongst replace/modify/rmap ept pages */
@@ -729,8 +796,8 @@ int remap_ept_page(struct vmx_vcpu *vcpu, u64 paddr, u64 new_paddr)
 	HDEBUG("Check or split 2M mapping at (%#lx)\n", (unsigned long)split_addr);
 
 	if(!(split_2M_mapping(vcpu, split_addr))){
-		printk(KERN_ERR "okernel: couldn't split 2MB mapping for (%#lx)\n",
-		       (unsigned long)paddr);
+		printk(KERN_ERR "okernel %s: couldn't split 2MB mapping for (%#lx)\n",
+		       __func__, (unsigned long)paddr);
 		return 0;
 	}
 
@@ -767,6 +834,302 @@ int remap_ept_page(struct vmx_vcpu *vcpu, u64 paddr, u64 new_paddr)
 	return 1;
 }
 
+unsigned long  guest_physical_page_address(unsigned long addr,
+					   unsigned int *level,
+					   pgprot_t *prot)
+{
+	/*
+	 * Find the guest physical page address , or 0 if not mapped
+	 * We can't use virt_to_phys((void *)vaddr) because it won't
+	 * work for module mapping space (MODULES_VADDR)
+	 */
+
+	pte_t *kpte;
+	unsigned long umask = 0x7FFFFFFFFFFFF;
+	/*need to mask out upper 51 bits*/
+
+	kpte = lookup_address(addr, level);
+	if (!kpte){
+		return 0;
+	}
+	*prot = pte_pgprot(*kpte);
+	if (*level == 1){
+		return kpte->pte & ~(PAGE_SIZE-1) & umask;
+	}
+	if (*level == 2){
+		return kpte->pte & ~(PAGESIZE2M-1) & umask;
+	} else {
+		HDEBUG("Unsupported page level %d\n", *level);
+		BUG();
+		//return 0;
+	}
+}
+
+void set_clr_vmem_ept_flags_4k(struct vmx_vcpu *vcpu, unsigned long start,
+			  unsigned long end, unsigned long s_flags,
+			  unsigned long c_flags)
+{
+	unsigned long vaddr, paddr;
+	unsigned int level;
+	pgprot_t prot;
+	for (vaddr = start; vaddr < end; vaddr += PAGE_SIZE){
+		paddr = guest_physical_page_address(vaddr, &level, &prot);
+		if (!paddr) {
+			/* vaddr NOT MAPPED */
+			continue;
+		}
+		/*
+		 * We have to split every time as the physical memory
+		 * is being used for 4k pages
+		 */
+		if (!split_2M_mapping(vcpu, paddr & ~(PAGESIZE2M -1))){
+			printk(KERN_ERR "okernel %s: couldn't split "
+			       "2MB mapping for (%#lx)\n",
+			       __func__, (unsigned long)paddr);
+			continue;
+		}
+		HDEBUG("Set flags %#lx clear flags %#lx on va %#lx pa %#lx\n",
+		       s_flags, c_flags, vaddr, paddr);
+		if (!set_clr_ept_page_flags(vcpu, paddr, s_flags, c_flags)){
+			HDEBUG("EPT set_clr_ept_page_flags failed.\n");
+			BUG();
+		}
+	}
+}
+
+void set_clr_vmem_ept_flags(struct vmx_vcpu *vcpu, unsigned long start,
+		       unsigned long end, unsigned long s_flags,
+		       unsigned long c_flags)
+{
+	unsigned long vaddr, paddr, end_4k;
+	unsigned int level;
+	pgprot_t prot;
+
+	HDEBUG("Entered\n");
+	vaddr = start & ~(PAGESIZE2M - 1);
+	if (start != vaddr) {
+		HDEBUG("Start address (%#lx) is not 2M aligned\n", start);
+	}
+	for (; vaddr < end; vaddr += PAGESIZE2M){
+		paddr = guest_physical_page_address(vaddr, &level, &prot);
+		if (!paddr) {
+			/* vaddr NOT MAPPED */
+			continue;
+		}
+		if (level == 1){
+			end_4k = (vaddr + PAGESIZE2M) & ~(PAGESIZE2M-1);
+			set_clr_vmem_ept_flags_4k(vcpu, vaddr, end_4k,
+						   s_flags, c_flags);
+			continue;
+		} else if (level > 2) {
+			printk(KERN_ERR "okernel %s: unsupported page level\n",
+			       __func__);
+			return;
+		}
+		/* Update 2M page mapping*/
+		HDEBUG("Set flag %#lx clear flag %#lx on va %#lx pa %#lx\n",
+		       s_flags, c_flags, vaddr, paddr);
+		if (!set_clr_ept_page_flags(vcpu, paddr, s_flags, c_flags)){
+			HDEBUG("EPT set_clr_ept_page_flags failed.\n");
+			BUG();
+		}
+	}
+}
+
+unsigned long find_vaddr(struct vmx_vcpu *vcpu, unsigned long paddr,
+			 unsigned long start, unsigned long end)
+{
+	/*
+	 * Returns the vaddr within the given range if the physical
+	 * address is mapped there
+	 */
+	unsigned long vaddr, pa, ps, match;
+	unsigned int level;
+	pgprot_t prot;
+
+	vaddr = start & ~(PAGESIZE2M - 1);
+	if (start != vaddr) {
+		HDEBUG("Start address (%#lx) is not 2M aligned\n", start);
+	}
+	for (; vaddr < end; vaddr += ps){
+		pa = guest_physical_page_address(vaddr, &level, &prot);
+		if (level == 1){
+			ps = PAGE_SIZE;
+			match = paddr & PAGE_MASK;
+		} else if (level == 2){
+			ps = PAGESIZE2M;
+			match = paddr & ~(PAGESIZE2M - 1);
+		}else {
+			HDEBUG("Unsupported page size, level %u\n", level);
+			return 0;
+		}
+		if (!pa) {
+			/* vaddr NOT MAPPED */
+			continue;
+		}
+		if (pa == match){
+			return vaddr;
+		}
+	}
+	/* No match found so not mapped in the text region*/
+	return 0;
+}
+
+unsigned long mod_addr(struct vmx_vcpu *vcpu, unsigned long paddr){
+	unsigned long start = PFN_ALIGN(MODULES_VADDR);
+	unsigned long end = PFN_ALIGN(MODULES_END);
+
+	return find_vaddr(vcpu, paddr, start, end);
+}
+
+unsigned long text_addr(struct vmx_vcpu *vcpu, unsigned long paddr)
+{
+	unsigned long start = PFN_ALIGN(_text);
+	unsigned long end = PFN_ALIGN(&__stop___ex_table);
+
+	return find_vaddr(vcpu, paddr, start, end);
+}
+
+void ept_flags_from_prot(pgprot_t prot, unsigned long *s_flags,
+			unsigned long *c_flags)
+{
+	*s_flags = 0;
+	*c_flags = 0;
+	if (pgprot_val(prot) & pgprot_val(__pgprot(_PAGE_NX))){
+		*c_flags |= EPT_X;
+	} else {
+		*s_flags |= EPT_X;
+	}
+	if (pgprot_val(prot) & pgprot_val(__pgprot(_PAGE_RW))){
+		*s_flags |= EPT_R | EPT_W;
+	} else {
+		*s_flags |= EPT_R;
+		*c_flags |= EPT_W;
+	}
+}
+
+unsigned long rx_nowrite(unsigned long flags)
+{
+	if ((flags & EPT_X) && (flags & EPT_W)){
+		HLOG("WARNING WX module memory\n");
+	}
+	return ((flags & EPT_X) && !(flags & EPT_W));
+}
+
+void set_clr_module_flags_4k(struct vmx_vcpu *vcpu, unsigned long start,
+			  unsigned long end)
+{
+	unsigned long vaddr, paddr, s_flags, c_flags;
+	unsigned int level;
+	pgprot_t prot;
+	for (vaddr = start; vaddr < end; vaddr += PAGE_SIZE){
+		paddr = guest_physical_page_address(vaddr, &level, &prot);
+		if (!paddr) {
+			/* vaddr NOT MAPPED */
+			continue;
+		}
+		/*
+		 * We have to split every time as the physical memory
+		 * is being used for 4k pages
+		 */
+		if (!split_2M_mapping(vcpu, paddr & ~(PAGESIZE2M -1))){
+			printk(KERN_ERR "okernel %s: couldn't split "
+			       "2MB mapping for (%#lx)\n",
+			       __func__, (unsigned long)paddr);
+			continue;
+		}
+		ept_flags_from_prot(prot, &s_flags, &c_flags);
+		if (rx_nowrite(s_flags)){
+			HDEBUG("Set OK_MOD on module address\n");
+			s_flags |= OK_MOD;
+		}
+		HDEBUG("Set flags %#lx clear flags %#lx on va %#lx pa %#lx\n",
+		       s_flags, c_flags, vaddr, paddr);
+		if (!set_clr_ept_page_flags(vcpu, paddr, s_flags, c_flags)){
+			HDEBUG("EPT set_clr_ept_page_flags failed.\n");
+			BUG();
+		}
+	}
+}
+
+void set_clr_module_ept_flags(struct vmx_vcpu *vcpu)
+{
+	unsigned long start = PFN_ALIGN(MODULES_VADDR);
+	unsigned long end = PFN_ALIGN(MODULES_END);
+	unsigned long vaddr, paddr, end_4k, s_flags, c_flags;
+	unsigned int level;
+	pgprot_t prot;
+
+	HDEBUG("Entered\n");
+	vaddr = start & ~(PAGESIZE2M - 1);
+	if (start != vaddr) {
+		HDEBUG("Start address (%#lx) is not 2M aligned\n", start);
+	}
+	for (vaddr = start; vaddr < end; vaddr += PAGESIZE2M){
+		paddr = guest_physical_page_address(vaddr, &level, &prot);
+		if (!paddr) {
+			/* vaddr NOT MAPPED */
+			continue;
+		}
+		if (level == 1){
+			end_4k = (vaddr + PAGESIZE2M) & ~(PAGESIZE2M-1);
+			set_clr_module_flags_4k(vcpu, vaddr, end_4k);
+			continue;
+		} else if (level > 2) {
+			printk(KERN_ERR "okernel %s: unsupported page level\n",
+			       __func__);
+			return;
+		}
+		/* Update 2M page mapping */
+		ept_flags_from_prot(prot, &s_flags, &c_flags);
+		if (rx_nowrite(s_flags)){
+			s_flags |= OK_MOD;
+			HDEBUG("Set OK_MOD on module address\n");
+		}
+		HDEBUG("Set flag %#lx clear flag %#lx on va %#lx pa %#lx\n",
+		       s_flags, c_flags, vaddr, paddr);
+		if (!set_clr_ept_page_flags(vcpu, paddr, s_flags, c_flags)){
+			HDEBUG("EPT set_clr_ept_page_flags failed.\n");
+			BUG();
+		}
+	}
+	HDEBUG("Start modules %#lx\n", start);
+	HDEBUG("End modules %#lx\n", end);
+}
+
+void protect_kernel_integrity(struct vmx_vcpu *vcpu)
+{
+	/*
+	 *
+	 * Assume default EPT protections remove EPT_X
+	 *
+	 * We try to align this protection with init_64:mark_rodata_ro
+	 * Here we use EPT to ensure it cannot be tampered with by the
+	 * okernel. We assume EPT_X is already removed, so we don't
+	 * have to unset it explicitly, rather it is set where needed.
+	 */
+	unsigned long text_start = PFN_ALIGN(_text);
+	unsigned long text_end = PFN_ALIGN(&__stop___ex_table);
+	unsigned long end = (unsigned long) &__end_rodata_hpage_align;
+
+	/* 
+	 * Protect read-only data can't set OK_TEXT as some pages get released
+	 * and reused - need to hook memory management code if we want to set
+	 * OK_TEXT
+	 */
+	set_clr_vmem_ept_flags(vcpu, text_start, end, 0, EPT_W);
+
+	/* Set execute for kernel text*/
+	set_clr_vmem_ept_flags(vcpu, text_start, text_end, EPT_X | OK_TEXT, 0);
+
+	/* Set protection for modules*/
+	set_clr_module_ept_flags(vcpu);
+
+	HDEBUG("text_start [PFN_ALIGN(_text)] is %#lx\n", text_start);
+	HDEBUG("text_end [PFN_ALIGN(&__stop___ex_table)] is %#lx\n", text_end);
+	HDEBUG("end  [&__end_rodata_hpage_align] is %#lx\n", end);
+}
+
 /* We just clone the bottom page of the stack for now */
 int clone_kstack2(struct vmx_vcpu *vcpu, unsigned long perms)
 {
@@ -779,8 +1142,6 @@ int clone_kstack2(struct vmx_vcpu *vcpu, unsigned long perms)
 	n_pages = THREAD_SIZE / PAGESIZE;
 
 	BUG_ON(n_pages != 4);
-
-
 
 	k_stack  = (unsigned long)current->stack;
 
@@ -986,9 +1347,9 @@ int vt_ept_2M_init(struct vmx_vcpu *vcpu)
 			HDEBUG("calculated addr (i=%d) (k=%d) (n_entries=%d) (%#llx)\n", i, k, n_entries, addr);
 #endif
 			if(no_cache_region(addr,  PAGESIZE2M)){
-				q[i] = (((u64)(i + k*n_entries)) << 21) | EPT_R | EPT_W | EPT_X | EPT_2M_PAGE;
+				q[i] = (((u64)(i + k*n_entries)) << 21) | EPT_R | EPT_W | EPT_2M_PAGE;
 			} else {
-				q[i] = (((u64)(i + k*n_entries)) << 21) | EPT_R | EPT_W | EPT_X | EPT_2M_PAGE | EPT_CACHE_2 | EPT_CACHE_3;
+				q[i] = (((u64)(i + k*n_entries)) << 21) | EPT_R | EPT_W | EPT_2M_PAGE | EPT_CACHE_2 | EPT_CACHE_3;
 			}
 #if 0
 			HDEBUG("pml2[%d] entry %d=%#llx\n", k, i, q[i]);
@@ -1042,11 +1403,10 @@ int vt_ept_2M_init(struct vmx_vcpu *vcpu)
 	       (unsigned long)pml4_phys);
 
        vcpu->ept_root = pml4_phys;
+       protect_kernel_integrity(vcpu);
        return 1;
 }
 /* End: imported code from original BV prototype */
-
-
 
 static inline bool cpu_has_secondary_exec_ctrls(void)
 {
@@ -1080,6 +1440,12 @@ static inline bool cpu_has_vmx_ept(void)
 {
 	return vmcs_config.cpu_based_2nd_exec_ctrl &
 		SECONDARY_EXEC_ENABLE_EPT;
+}
+
+static inline bool cpu_has_vmx_ept_mode_ctl(void)
+{
+	return vmcs_config.cpu_based_2nd_exec_ctrl &
+		SECONDARY_EXEC_MODE_BASE_CTL;
 }
 
 static inline bool cpu_has_vmx_invept_individual_addr(void)
@@ -1337,6 +1703,11 @@ static __init int setup_vmcs_config(struct vmcs_config *vmcs_conf)
 		_cpu_based_exec_control &= ~CPU_BASED_CR8_LOAD_EXITING &
 					   ~CPU_BASED_CR8_STORE_EXITING;
 
+	if (cpu_has_vmx_ept_mode_ctl()){
+		printk("Mode-based execute control for EPT available\n");
+	} else {
+		printk("Mode-based execute control for EPT unavailable\n");
+	}
 	if (_cpu_based_exec_control & CPU_BASED_ACTIVATE_SECONDARY_CONTROLS) {
 		min2 = 0;
 #if 0
@@ -1359,12 +1730,12 @@ static __init int setup_vmcs_config(struct vmcs_config *vmcs_conf)
 			SECONDARY_EXEC_RDTSCP;
 #endif
 		/* INVPCID will operate normally without exit as long as INVLPG exiting is 0 */
+
 		opt2 =  SECONDARY_EXEC_WBINVD_EXITING |
 			SECONDARY_EXEC_ENABLE_VPID |
 			SECONDARY_EXEC_ENABLE_EPT |
 			SECONDARY_EXEC_RDTSCP |
 			SECONDARY_EXEC_ENABLE_INVPCID;
-
 		if (adjust_vmx_controls(min2, opt2,
 					MSR_IA32_VMX_PROCBASED_CTLS2,
 					&_cpu_based_2nd_exec_control) < 0)
@@ -2747,6 +3118,355 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu, int nr_irqs_enabled)
 }
 
 
+int vmexit_protected_page(struct vmx_vcpu *vcpu)
+{
+	unsigned long gp_addr = vmcs_readl(GUEST_PHYSICAL_ADDRESS);
+
+	HDEBUG("ok: EPT vmexit on protected address(%#lx)\n", gp_addr);
+	vmx_get_cpu(vcpu);
+	if(ok_allow_protected_access(gp_addr)){
+		(void)add_ept_page_perms(vcpu, gp_addr);
+		HDEBUG("ok: allowing protected access for pid:=(%d)\n",
+		       current->pid);
+	} else {
+		HDEBUG("ok: protected access denied for pid:=(%d)\n",
+		       current->pid);
+		/*
+		 * Map in 'dummy' page for now  - need to be careful 
+		 * not to create another vulnerability.
+		 */
+		(void)remap_ept_page(vcpu, gp_addr,
+				     ok_get_protected_dummy_paddr());
+	}
+	vpid_sync_context(vcpu->vpid);
+	vmx_put_cpu(vcpu);
+	return 1;
+}
+
+void check_gva(unsigned long addr)
+{
+	pte_t *kpte;
+	unsigned int level;
+	pgprot_t prot;
+
+	HDEBUG("Checking guest physical pg perms for guest virtual %#lx\n",
+	       addr);
+	kpte = lookup_address(addr, &level);
+	if (!kpte){
+		HDEBUG("Address %#lx not found in guest page tables", addr);
+		return;
+	}
+	prot = pte_pgprot(*kpte);
+	if (pgprot_val(prot) & pgprot_val(__pgprot(_PAGE_NX))){
+		HDEBUG("NX is set\n");
+	}
+	if (pgprot_val(prot) & pgprot_val(__pgprot(_PAGE_RW))){
+		HDEBUG("RW is set\n");
+	}
+}
+
+void check_gpa(struct vmx_vcpu *vcpu, unsigned long addr)
+{
+	HDEBUG("Checking EPT perms for %#lx\n", addr);
+	if (is_set_ept_page_flag(vcpu, addr, EPT_R)){
+		HDEBUG("EPT_R set\n");
+	}
+	if (is_set_ept_page_flag(vcpu, addr, EPT_W)){
+		HDEBUG("EPT_W set\n");
+	}
+	if (is_set_ept_page_flag(vcpu, addr, EPT_X)){
+		HDEBUG("EPT_X set\n");
+	}
+}
+
+static inline int is_user_space(unsigned long vaddr)
+{
+	return (vaddr <= USER_HI_MEM);
+}
+
+static inline int is_module_space (unsigned long vaddr)
+{
+	return (vaddr >= MODULES_VADDR && vaddr <= MODULES_END);
+}
+
+static inline int is_text_space (unsigned long vaddr)
+{
+	unsigned long text_start = PFN_ALIGN(_text);
+	unsigned long text_end = PFN_ALIGN(&__stop___ex_table);
+	return (vaddr >= text_start && vaddr <= text_end);
+}
+
+static inline int need_integrity_flag(unsigned long va, unsigned long s_flags)
+{
+	if ((is_module_space(va) | is_text_space(va)) &&
+	    rx_nowrite(s_flags)) {
+		return 1;
+	} else {
+		return 0;
+	}
+}
+
+static inline void set_clr_ok_tags(unsigned long gva, unsigned long *s_flags,
+				 unsigned long *c_flags)
+{
+	/*
+	if (!(is_user_space(gva)) && need_integrity_flag(gva, *s_flags)) {
+		*s_flags |= OK_TEXT;
+	} else {
+		*c_flags |= OK_TEXT;
+	}
+	*/
+	if ((is_text_space(gva)) && rx_nowrite(*s_flags)) {
+		*s_flags |= OK_TEXT;
+		*c_flags |= OK_MOD;
+	} else if ((is_module_space(gva)) && rx_nowrite(*s_flags)){
+		*s_flags |= OK_MOD;
+		*c_flags |= OK_TEXT;
+	} else {
+		*c_flags |= (OK_MOD | OK_TEXT);
+	}
+
+}
+
+void flags_from_qual(unsigned long qual, unsigned long *s, unsigned long *c)
+{
+	/* 
+	 * Note if EPT_W or EPT_X is set, then EPT_R must be set
+	 * Otherwise we will get an EPT_Misconfiguration induced VMExit
+	 */
+	*s = 0;
+	if (qual & EPT_R){
+		*s |= EPT_R;
+	}
+	if (qual & EPT_W){
+		*s |= EPT_W | EPT_R;
+	}
+	if (qual & EPT_X){
+		*s |= EPT_X | EPT_R;
+	}
+	*c = ((~*s) & EPT_PERM_MASK);
+}
+
+int page_walk_ept_viol(struct vmx_vcpu *vcpu, unsigned long gpa,
+		       unsigned long qual)
+{
+	unsigned long s_flags, c_flags;
+	HLOG("ENTERED\n");
+	if (is_set_ept_page_flag(vcpu, gpa, OK_TEXT | OK_MOD)) {
+		HLOG("Clearing OK_TEXT and OK_MOD, allocated to page tables\n");
+	}
+	flags_from_qual(qual, &s_flags, &c_flags);
+	c_flags |= OK_TEXT | OK_MOD;
+	if(set_clr_ept_page_flags(vcpu, gpa, s_flags, c_flags)){
+		vpid_sync_context(vcpu->vpid);
+		vmx_put_cpu(vcpu);
+		return 1;
+	} else {
+		HDEBUG("set_clr_ept_page_flags failed.\n");
+		BUG();
+	}
+	return 0;
+}
+
+int noguest_pte(struct vmx_vcpu *vcpu, unsigned long gpa, unsigned long gva,
+		unsigned long qual, unsigned long mapped)
+{
+	/*
+	 * Occasionally we get guest virtual address with no guest page
+	 * table entry.
+	 */
+	unsigned long s_flags, c_flags;
+	flags_from_qual(qual, &s_flags, &c_flags);
+	if (!mapped) {
+		c_flags |= (OK_TEXT | OK_MOD);
+		HLOG("No guest page table entry for %#lx no kernel mapping "
+		     "detected for physical address %#lx", gva, gpa);
+		if (is_set_ept_page_flag(vcpu, gpa, OK_TEXT)){
+			HLOG("previously tagged protected text\n");
+		} else if (is_set_ept_page_flag(vcpu, gpa, OK_MOD)){
+			HLOG("previously tagged protected module space\n");
+		} else{
+			HLOG("not previously tagged\n");
+		}
+	} else {
+		HLOG("No guest page table entry for %#lx kernel alias detected "
+		     "for physical address %#lx at %#lx", gva, gpa, mapped);
+		if (is_set_ept_page_flag(vcpu, gpa, OK_TEXT)){
+			HLOG("tagged protected text\n");
+		} else if (is_set_ept_page_flag(vcpu, gpa, OK_MOD)){
+			HLOG("tagged protected module space\n");
+		} else{
+			HLOG("not tagged\n");
+		}
+	}
+	HLOG("Setting %#lx, clearing %#lx\n", s_flags, c_flags);
+	if(set_clr_ept_page_flags(vcpu, gpa, s_flags, c_flags)){
+		vpid_sync_context(vcpu->vpid);
+		vmx_put_cpu(vcpu);
+		return 1;
+	} else {
+		HDEBUG("set_clr_ept_page_flags failed.\n");
+		BUG();
+	}
+	return 0;
+}
+
+int handle_EPT_violation(struct vmx_vcpu *vcpu)
+{
+	/*
+	 * return 1 - page granted; 0 - not granted
+	 */
+
+	unsigned long qual = vmcs_readl(EXIT_QUALIFICATION);
+	unsigned long gpa = vmcs_readl(GUEST_PHYSICAL_ADDRESS);
+	unsigned long *pml2_e;
+	unsigned long gva;
+
+	HDEBUG("ept violation exit - qualification=%#lx gpa=%#lx\n",
+	       qual, gpa);
+
+	/* Grant access to protected pages lazily */
+	if(__ok_protected_phys_addr(gpa)){
+		return vmexit_protected_page(vcpu);
+	}
+	vmx_get_cpu(vcpu);
+
+	/* Bit 7 in exit qualification set if 'guest' virtual address valid */
+	if(qual & 0x80){
+		unsigned long *epte, mapped, s_flags, c_flags, eprot, n_eprot;
+		int level;
+		pgprot_t prot;
+		/* Bit 8 is cleared if it's a page walk or update of accessed*/
+		if (!(qual & 0x100)){
+				return page_walk_ept_viol(vcpu, gpa, qual);
+		}
+
+		gva = (u64)vmcs_readl(GUEST_LINEAR_ADDRESS);
+		HDEBUG("gva=%#lx\n", gva);
+		//check_gva(gva);
+		//check_gpa(vcpu, gpa);
+		/*
+		 * If the gva is  kernel integrity memory, in an ideal world
+		 * we wouldn't need to change it. Unfortunately, sometimes
+		 * aliases are created. So we have to allow changes and log
+		 * them.
+		 * If its a user space gva which is NOT kernel integrity
+		 * protected, grant it.
+		 *
+		 * When user space memory is released we need to remove
+		 * the grant so it can be reallocated (see xpfo use of page_ext)
+		 *
+		 * We don't mark any module memory as kernel integrity protected
+		 * as it may end up being released and used for a gva.
+		 * If we can use xpfo page_ext we can also mark module memory
+		 * as kernel integrity protected.
+		 *
+		 * If we have mode based execute control for EPT, we should
+		 * not need to ever to add EPT_X to user space, as it only
+		 * controls supervisor mode.
+		 * 
+		 */
+		if (is_set_ept_page_flag(vcpu, gpa, OK_TEXT | OK_MOD)){
+			epte = ept_page_entry(vcpu, gpa);
+			mapped = text_addr(vcpu, gpa);
+			if (!mapped) {
+				mapped = mod_addr(vcpu, gpa);
+			}
+			if (!guest_physical_page_address(gva, &level, &prot)){
+				return noguest_pte(vcpu, gpa, gva, qual, mapped);
+			}
+			ept_flags_from_prot(prot, &s_flags, &c_flags);
+			eprot = *epte & (EPT_W | EPT_R | EPT_X);
+			if (is_user_space(gva) && (mapped)){
+				HLOG("User space alias for kernel\n");
+				BUG();
+				return 0;
+			}
+			/* if already mapped, it's either a change or alias */
+			if (mapped) {
+				/* New prots = guest prot + old prot */
+				n_eprot = s_flags | eprot;
+				HLOG("Physical address %#lx with EPT prot %#lx"
+				       " alias or change for kernel protected "
+				       " code mapped at %#lx being created "
+				       "at %#lx, new EPT prot %#lx\n",
+				       gpa, eprot, mapped, gva, n_eprot);
+				if(!set_clr_ept_page_flags(vcpu, gpa, n_eprot,
+							   0)){
+					BUG();
+				}
+			} else {
+				set_clr_ok_tags(gva, &s_flags, &c_flags);
+				HDEBUG("Physical address %#lx with EPT prot %#lx"
+				       " no longer at original mapping "
+				       "New mapping created at guest virtual "
+				       "%#lx, new EPT prot %#lx\n",
+				       gpa, eprot, gva, s_flags);
+				if(!set_clr_ept_page_flags(vcpu, gpa, s_flags,
+							   c_flags)){
+					BUG();
+				}
+			}
+			vpid_sync_context(vcpu->vpid);
+			vmx_put_cpu(vcpu);
+			return 1;
+		} else if (is_module_space(gva)){
+			/*
+			 * Get the prot flags and set them
+			 */
+			BUG_ON(!guest_physical_page_address(gva, &level, &prot));
+			ept_flags_from_prot(prot, &s_flags, &c_flags);
+			set_clr_ok_tags(gva, &s_flags, &c_flags);
+			if (set_clr_ept_page_flags(vcpu, gpa,
+						   s_flags, c_flags)){
+				HDEBUG("Set %#lx clear %#lx for module "
+				       "physical address %#lx virtual %#lx\n",
+				       s_flags, c_flags, gpa, gva);
+				vpid_sync_context(vcpu->vpid);
+				vmx_put_cpu(vcpu);
+				return 1;
+			} else {
+				HDEBUG("set_clr_ept_page_flags failed.\n");
+				BUG();
+			}
+		} else if (is_user_space(gva)){
+			if(set_clr_ept_page_flags(vcpu, gpa,
+						  EPT_W |EPT_R | EPT_X, 0)){
+				HDEBUG("Grant EPT RWX for user space\n.");
+				vpid_sync_context(vcpu->vpid);
+				vmx_put_cpu(vcpu);
+				return 1;
+			} else {
+				HDEBUG("set_clr_ept_page_flags failed.\n");
+				BUG();
+			}
+		} else {
+			BUG_ON(!guest_physical_page_address(gva, &level, &prot));
+			ept_flags_from_prot(prot, &s_flags, &c_flags);
+			set_clr_ok_tags(gva, &s_flags, &c_flags);
+			if (set_clr_ept_page_flags(vcpu, gpa,
+						   s_flags, c_flags)){
+				HLOG("Kernel space EPT Violation gpa %#lx "
+				       "va %#lx set %#lx clear %#lx\n",
+				       gpa, gva, s_flags, c_flags);
+				vpid_sync_context(vcpu->vpid);
+				vmx_put_cpu(vcpu);
+				return 1;
+			} else {
+				HDEBUG("set_clr_ept_page_flags failed.\n");
+				BUG();
+			}
+		}
+	}
+	if(!(pml2_e =  find_pd_entry(vcpu, gpa))){
+		HDEBUG("NULL pml2 entry for gpa (%#lx)\n", gpa);
+	} else {
+		HDEBUG("ept entry for gpa=%#lx is (%#lx)\n", gpa, *pml2_e);
+	}
+	return 0;
+}
+
+
 /*
  * vmx_launch - the main loop for a cloned VMX okernel process (thread)
  */
@@ -2779,7 +3499,6 @@ int vmx_launch(unsigned int mode, unsigned int flags, struct nr_cloned_state *cl
 	unsigned long err;
 	unsigned long k_stack;
 	unsigned long gp_addr;
-	unsigned long gv_addr;
 	unsigned long qual;
 	unsigned long *pml2_e;
 #if defined(HPE_DEBUG)
@@ -2967,7 +3686,7 @@ int vmx_launch(unsigned int mode, unsigned int flags, struct nr_cloned_state *cl
 		}
 
 		if(*(vcpu->nr_stack_canary) != NR_STACK_END_MAGIC){
-			HDEBUG("NR stack overflow detected.\n");
+			HLOG("NR stack overflow detected.\n");
 			printk(KERN_ERR "Okernel: NR stack overflow detected.\n");
 			break;
 		}
@@ -2975,11 +3694,11 @@ int vmx_launch(unsigned int mode, unsigned int flags, struct nr_cloned_state *cl
 		vmx_put_cpu(vcpu);
 
 		if(ret==VMX_EXIT_REASONS_FAILED_VMENTRY){
-			HDEBUG("vmentry failed (%#x)\n", ret);
+			HLOG("vmentry failed (%#x)\n", ret);
 			break;
 		} else if((ret == EXIT_REASON_EXTERNAL_INTERRUPT)){
 			/* We should be handling interrupts in NR-mode at the moment...*/
-			HDEBUG("vmexit on external interrupt.\n");
+			HLOG("vmexit on external interrupt.\n");
 			break;
 		} else if (ret == EXIT_REASON_CPUID){
 			HDEBUG("cpuid called.\n");
@@ -2995,60 +3714,33 @@ int vmx_launch(unsigned int mode, unsigned int flags, struct nr_cloned_state *cl
 			       (unsigned int)(qual & CR_REG_ACCESS_TYPE),
 			       (unsigned int)(qual & CR_REG_ACCESS_GP),
 			       (unsigned long)vcpu->regs[VCPU_REGS_RCX]);
-			HDEBUG("Unsupported CR access.\n");
+			HLOG("Unsupported CR access.\n");
 			break;
 		} else if (ret == EXIT_REASON_EPT_VIOLATION){
-			vmx_get_cpu(vcpu);
-			qual = vmcs_readl(EXIT_QUALIFICATION);
-			gp_addr = vmcs_readl(GUEST_PHYSICAL_ADDRESS);
-
-			HDEBUG("ept violation exit - qualification=%#lx gpa=%#lx\n",
-				qual, gp_addr);
-
-			/* Grant access to protected pages lazily */
-			if(__ok_protected_phys_addr(gp_addr)){
-				HDEBUG("ok: EPT vmexit on protected address:=(%#lx)\n", gp_addr);
-				if(ok_allow_protected_access(gp_addr)){
-					(void)add_ept_page_perms(vcpu, gp_addr);
-					HDEBUG("ok: allowing protected access for pid:=(%d)\n",
-					       current->pid);
-				} else {
-					HDEBUG("ok: protected access denied for pid:=(%d)\n",
-					       current->pid);
-					/*
-					   Map in 'dummy' page for now  - need to be careful not to
-					   create another vulnerability.
-					*/
-					(void)remap_ept_page(vcpu, gp_addr, ok_get_protected_dummy_paddr());
-				}
-				vpid_sync_context(vcpu->vpid);
-				vmx_put_cpu(vcpu);
+			if (handle_EPT_violation(vcpu)){
 				continue;
 			}
-
-			if(!(pml2_e =  find_pd_entry(vcpu, gp_addr))){
-				HDEBUG("NULL pml2 entry for gp_addr (%#lx)\n", gp_addr);
-			} else {
-				HDEBUG("ept entry for gpa=%#lx is (%#lx)\n", gp_addr, *pml2_e);
-			}
-                        /* Bit 7 in exit qualification set if 'guest' virtual address valid */
-			if(qual & 0x80){
-				gv_addr = (u64)vmcs_readl(GUEST_LINEAR_ADDRESS);
-				HDEBUG("gva=%#lx\n", gv_addr);
-			}
 			vmx_put_cpu(vcpu);
+			HLOG("Unhandled EPT Violation\n");
 			break;
 		} else if (ret == EXIT_REASON_EPT_MISCONFIG){
 			vmx_get_cpu(vcpu);
 			gp_addr = vmcs_readl(GUEST_PHYSICAL_ADDRESS);
 			vmx_put_cpu(vcpu);
-			HDEBUG("ept misconfig exit - gpa=%#lx\n", gp_addr);
+			HLOG("ept misconfig exit - gpa=%#lx\n", gp_addr);
 			if(!(pml2_e =  find_pd_entry(vcpu, gp_addr))){
 				printk(KERN_ERR "okernel: NULL pml2 entry for gp_addr (%#lx)\n",
 				       gp_addr);
 			} else {
-				HDEBUG("ept entry for gpa=%#lx is (%#lx)\n", gp_addr, *pml2_e);
+				unsigned long *epte;
+				if (!(epte = ept_page_entry(vcpu, gp_addr))){
+					HLOG("no pte; plm2 entry for gpa=%#lx is (%#lx)\n", gp_addr, *pml2_e);
+				} else{
+					HLOG("no pte; plm2 entry for gpa=%#lx is (%#lx)\n", gp_addr, *pml2_e);
+					HLOG("ept entry for gpa=%#lx is (%#lx)\n", gp_addr, *epte);
+				}
 			}
+			HLOG("EPT Misconfig\n");
 			break;
 		} else if (ret == EXIT_REASON_EXCEPTION_NMI) {
 			vmx_get_cpu(vcpu);
@@ -3067,12 +3759,15 @@ int vmx_launch(unsigned int mode, unsigned int flags, struct nr_cloned_state *cl
 				}
 			}
 			vmx_put_cpu(vcpu);
+			HLOG("NMI Exception\n");
 			break;
 		} else {
 			vmx_get_cpu(vcpu);
 			HDEBUG("unhandled exit: reason %#x, exit qualification %#lx\n",
 			       ret, vmcs_readl(EXIT_QUALIFICATION));
 			vmx_put_cpu(vcpu);
+			HLOG("unhandled exit: reason %#x, exit qualification %#lx\n",
+			       ret, vmcs_readl(EXIT_QUALIFICATION));
 			break;
 		}
 		HDEBUG("Done handling exit condition, looping...\n");
@@ -3084,8 +3779,9 @@ int vmx_launch(unsigned int mode, unsigned int flags, struct nr_cloned_state *cl
 	 * fault - we will have inconsistent kernel state we will need
 	 * to sort out.
 	 */
-	HDEBUG("leaving vmexit() loop (VPID %d) - ret (%x) - trigger BUG() for now...\n",
-	       vcpu->vpid, ret);
+	qual = vmcs_readl(EXIT_QUALIFICATION);
+	HLOG("leaving vmexit() loop (VPID %d) ret(%x) qual(%lx) "
+	       "- trigger BUG() for now...\n", vcpu->vpid, ret, qual);
 	vmx_destroy_vcpu(vcpu);
 	BUG();
 	return 0;

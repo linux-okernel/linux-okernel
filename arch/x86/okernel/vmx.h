@@ -66,6 +66,8 @@ struct nr_cloned_state {
 #define SECONDARY_EXEC_ENABLE_INVPCID	0x00001000
 #endif
 
+#define SECONDARY_EXEC_MODE_BASE_CTL	0x00400000
+
 #ifndef X86_CR4_FSGSBASE
 #define X86_CR4_FSGSBASE	X86_CR4_RDWRGSFS
 #endif
@@ -187,7 +189,6 @@ struct vmx_vcpu {
 	struct nr_cloned_state *cloned_thread;
 	unsigned int *nr_stack_canary;
 	void *syscall_tbl;
-
 };
 
 extern __init int vmx_init(void);

@@ -184,6 +184,15 @@ struct intr_info {
 #define PAGESIZE2M_MASK			(PAGESIZE2M - 1)
 #define PAGESIZE4M_MASK			(PAGESIZE4M - 1)
 
+/* 
+ * Bits 63:52 are ignored by the processor so use 52 denoted
+ * an integrity protected page
+ */ 
+#define OK_TEXT                           (1UL << 52)
+#define OK_MOD                            (1UL << 53)
+/* Taken the memory map description in Documentation/x86/x86_64/mm.txt */
+#define USER_HI_MEM                     0X00007FFFFFFFFFFFUL
+
 /* Mapping limits of each type of page table in Gbytes. */
 #define PML4E_MAP_LIMIT 512
 #define PML3E_MAP_LIMIT 1
@@ -197,7 +206,7 @@ struct intr_info {
 #define EPT_CACHE_BIT1  (3)
 #define EPT_CACHE_BIT2  (4)
 #define EPT_CACHE_BIT3  (5)
- 
+
 #define EPT_R       (1UL << EPT_R_BIT)
 #define EPT_W       (1UL << EPT_W_BIT)
 #define EPT_X       (1UL << EPT_X_BIT)
@@ -207,6 +216,8 @@ struct intr_info {
 #define EPT_CACHE_3 (1UL << EPT_CACHE_BIT3)
 
 #define EPT_IPAT_BIT (1UL << 6)
+
+#define EPT_PERM_MASK   (EPT_R | EPT_W | EPT_X)
 
 #define EPT_P_MTYPE    0x6
 /* Actual value that goes into EPTP is EPT_PWL-1 */
