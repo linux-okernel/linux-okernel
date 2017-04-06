@@ -1004,7 +1004,6 @@ void ept_flags_from_prot(pgprot_t prot, unsigned long *s_flags,
 	} else {
 		*s_flags |= EPT_R;
 		*c_flags |= EPT_W;
-			
 	}
 }
 
@@ -1915,7 +1914,6 @@ static __init int setup_vmcs_config(struct vmcs_config *vmcs_conf)
 	} else {
 		printk("Mode-based execute control for EPT unavailable\n");
 	}
-	
 	if (_cpu_based_exec_control & CPU_BASED_ACTIVATE_SECONDARY_CONTROLS) {
 		min2 = 0;
 #if 0
@@ -3555,7 +3553,7 @@ int handle_EPT_violation(struct vmx_vcpu *vcpu)
 
 	HDEBUG("ept violation exit - qualification=%#lx gpa=%#lx\n",
 	       qual, gpa);
-	
+
 	/* Grant access to protected pages lazily */
 	if(__ok_protected_phys_addr(gpa)){
 		return vmexit_protected_page(vcpu);
