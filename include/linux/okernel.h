@@ -89,7 +89,7 @@ int ok_free_protected_page(struct page *pg);
 
 
 /* Use trace_printk instead of printk */
-#define HPE_LOG
+//#define HPE_LOG
 #ifdef HPE_LOG
 #define HLOG(fmt, args...)  trace_printk( KERN_ERR "%s: cpu(%d) pid(%d) %s: "\
 					  fmt , vmx_nr_mode()?"NR":"R ", \
