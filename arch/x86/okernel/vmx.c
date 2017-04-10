@@ -159,7 +159,6 @@ inline int is_in_vmx_nr_mode(void)
 	return in_vmx_nr_mode();
 }
 
-
 /* Copy vcpu regs into a pt_regs structure */
 void copy_vcpu_to_ptregs(struct vmx_vcpu *vcpu, struct pt_regs *regs)
 {
@@ -621,9 +620,10 @@ void* replace_ept_page(struct vmx_vcpu *vcpu, u64 paddr, unsigned long perms)
 
 	memset(pt[0].virt, 0, PAGESIZE);
 
-	HDEBUG("Replacement page pt virt (%llX) pt phys (%llX)\n", (unsigned long long)pt[0].virt, pt[0].phys);
+	HDEBUG("Replacement page pt virt (%llX) pt phys (%llX)\n",
+	       (unsigned long long)pt[0].virt, pt[0].phys);
 
-	orig_paddr = (*pml1_p & ~(PAGESIZE-1));
+	orig_paddr = (*pml1_p & ~(OK_MOD + OK_TEXT + PAGESIZE-1));
 
 	HDEBUG("orig paddr (%#lx)\n", (unsigned long)orig_paddr);
 
@@ -675,7 +675,7 @@ int modify_ept_physaddr_perms(struct vmx_vcpu *vcpu, u64 paddr, unsigned long pe
 	HDEBUG("pte val for paddr (%#lx) is (%#lx)\n",
 		(unsigned long)paddr, (unsigned long)*pml1_p);
 
-	orig_paddr = (*pml1_p & ~(PAGESIZE-1));
+	orig_paddr = (*pml1_p & ~(OK_MOD + OK_TEXT + PAGESIZE-1));
 
 	HDEBUG("orig paddr (%#lx)\n", (unsigned long)orig_paddr);
 
@@ -812,7 +812,7 @@ int remap_ept_page(struct vmx_vcpu *vcpu, u64 paddr, u64 new_paddr)
 	HDEBUG("pte val for paddr (%#lx) is (%#lx)\n",
 		(unsigned long)paddr, (unsigned long)*pml1_p);
 
-	orig_paddr = (*pml1_p & ~(PAGESIZE-1));
+	orig_paddr = (*pml1_p & ~(OK_MOD + OK_TEXT + PAGESIZE-1));
 
 	HDEBUG("orig paddr (%#lx)\n", (unsigned long)orig_paddr);
 
@@ -3045,7 +3045,25 @@ static void vmx_handle_cpuid(struct vmx_vcpu *vcpu)
 	vcpu->regs[VCPU_REGS_RDX] = edx;
 }
 
+static void check_int(struct vmx_vcpu *vcpu, char *s)
+{
+	vmx_get_cpu(vcpu);
+	if((vmcs_readl(GUEST_RFLAGS) & RFLAGS_IF_BIT)){
+		HLOG("INFO: %s with interrupts enabled\n", s);
+	}else{
+		HLOG("WARNING: %s with interrupts disabled\n",s);
+	}
+	vmx_put_cpu(vcpu);
+}
 
+static void check_int_enabled(struct vmx_vcpu *vcpu, char *s)
+{
+	vmx_get_cpu(vcpu);
+	if(!(vmcs_readl(GUEST_RFLAGS) & RFLAGS_IF_BIT)){
+		HLOG("WARNING: %s with interrupts disabled\n",s);
+	}
+	vmx_put_cpu(vcpu);
+}
 
 void vmx_handle_vmcall(struct vmx_vcpu *vcpu, int nr_irqs_enabled)
 {
@@ -3165,12 +3183,14 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu, int nr_irqs_enabled)
 		BXMAGICBREAK;
 		ret = 0;
 	} else if (cmd == VMCALL_DO_GET_CPU_HELPER){
+		check_int(vcpu, "VMCALL_DO_GET_CPU_HELPER");
 		cpu_ptr = (void*)vcpu->regs[VCPU_REGS_RBX];
 		HDEBUG("calling __vmx_get_cpu_helper.\n");
 		__vmx_get_cpu_helper(cpu_ptr);
 		ret = 0;
 	} else if (cmd == VMCALL_SCHED){
 
+		check_int(vcpu, "VMCALL_SCHED");
 #if !defined(CONFIG_THREAD_INFO_IN_TASK)
 		nr_ti = vcpu->cloned_thread_info;
 		r_ti = current_thread_info();
@@ -3327,6 +3347,7 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu, int nr_irqs_enabled)
 		}
 		BXMAGICBREAK;
 	} else if(cmd == VMCALL_DOEXIT){
+		check_int_enabled(vcpu, "DOEXIT");
 		code = (long)vcpu->regs[VCPU_REGS_RBX];
 		HDEBUG("calling do_exit(%ld)...\n", code);
 		vmx_destroy_vcpu(vcpu);
@@ -3351,6 +3372,7 @@ int vmexit_protected_page(struct vmx_vcpu *vcpu)
 {
 	unsigned long gp_addr = vmcs_readl(GUEST_PHYSICAL_ADDRESS);
 
+	check_int_enabled(vcpu, "EPT vmexit on protected page");
 	HDEBUG("ok: EPT vmexit on protected address(%#lx)\n", gp_addr);
 	vmx_get_cpu(vcpu);
 	if(ok_allow_protected_access(gp_addr)){
@@ -3905,7 +3927,6 @@ int vmx_launch(unsigned int mode, unsigned int flags, struct nr_cloned_state *cl
 
 		if((vmcs_readl(GUEST_RFLAGS) & RFLAGS_IF_BIT)){
 			native_irq_enable();
-
 		}
 
 		HDEBUG("Returned from vmx_run_vcpu...handling exit condition...\n");
