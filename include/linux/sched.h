@@ -178,6 +178,9 @@ extern long schedule_timeout_killable(long timeout);
 extern long schedule_timeout_uninterruptible(long timeout);
 extern long schedule_timeout_idle(long timeout);
 asmlinkage void schedule(void);
+#if defined(CONFIG_OKERNEL)
+asmlinkage void schedule_r_mode(void);
+#endif
 extern void schedule_preempt_disabled(void);
 
 extern int __must_check io_schedule_prepare(void);
@@ -1041,6 +1044,14 @@ struct task_struct {
 #ifdef CONFIG_THREAD_INFO_IN_TASK
 	/* A live task holds one reference: */
 	atomic_t			stack_refcount;
+#endif
+#ifdef CONFIG_OKERNEL
+       /* Can be one of OKERNEL_0FF, OKERNEL_ON_EXEC, OKERNEL_ACTIVE */
+       unsigned long okernel_status;
+       /* Replace with pointer to vcpu specific data */
+       int okernel_vcpu;
+       unsigned long okernel_fork_fs_base;
+       unsigned long okernel_fork_gs_base;
 #endif
 	/* CPU-specific state of this task: */
 	struct thread_struct		thread;

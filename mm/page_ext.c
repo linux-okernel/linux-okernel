@@ -7,6 +7,7 @@
 #include <linux/kmemleak.h>
 #include <linux/page_owner.h>
 #include <linux/page_idle.h>
+#include <linux/okernel.h>
 
 /*
  * struct page extension
@@ -67,6 +68,9 @@ static struct page_ext_operations *page_ext_ops[] = {
 #endif
 #if defined(CONFIG_IDLE_PAGE_TRACKING) && !defined(CONFIG_64BIT)
 	&page_idle_ops,
+#endif
+#if defined(CONFIG_OKERNEL)
+       &page_okernel_ops,
 #endif
 };
 

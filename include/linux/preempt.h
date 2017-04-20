@@ -64,6 +64,11 @@
  * Reset by start_kernel()->sched_init()->init_idle()->init_idle_preempt_count().
  */
 #define INIT_PREEMPT_COUNT	PREEMPT_OFFSET
+#if defined(CONFIG_OKERNEL)
+#define INIT_NR_PREEMPT_COUNT_OFFSET   0
+#define INIT_NR_MODE   0
+#define INIT_R_MODE    0
+#endif
 
 /*
  * Initial preempt_count value; reflects the preempt_count schedule invariant
@@ -141,7 +146,12 @@
  * used in the general case to determine whether sleeping is possible.
  * Do not use in_atomic() in driver code.
  */
+#if defined(CONFIG_OKERNEL)
+/* When running in okernel mode, preempt_count() will be off by one sometimes */
+#define in_atomic()    ((preempt_count() - nr_preempt_count_offset()) != 0)
+#else
 #define in_atomic()	(preempt_count() != 0)
+#endif
 
 /*
  * Check whether we were atomic before we did preempt_disable():
