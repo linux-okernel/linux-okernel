@@ -2,7 +2,7 @@ Authors: Chris Dalton <cid@hpi.com>, Nigel Edwards <nigel.edwards@hpe.com>
 
 Split Kernel
 
-Similar to the nested-kernel work for BSD by Dautenhan[1], the aim of
+Similar to the nested-kernel work for BSD by Dautenhahn[1], the aim of
 the split kernel is to introduce a level of intra-kernel protection
 into the kernel so that, amongst other things, we can offer lifetime
 guarantees over kernel code and data integrity.  Unlike the BSD-based
