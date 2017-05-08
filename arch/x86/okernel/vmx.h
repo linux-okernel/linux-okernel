@@ -189,6 +189,11 @@ struct vmx_vcpu {
 	struct nr_cloned_state *cloned_thread;
 	unsigned int *nr_stack_canary;
 	void *syscall_tbl;
+	/* vmexit loop detection exit count for the last exit phys addr*/
+	int ec; 
+	unsigned long lepa;
+	char log[1000][300];
+	int lp;
 };
 
 extern __init int vmx_init(void);
