@@ -1882,22 +1882,23 @@ unsigned long  guest_physical_page_address(unsigned long addr,
 	 * Find the guest physical page address , or 0 if not mapped
 	 * We can't use virt_to_phys((void *)vaddr) because it won't
 	 * work for module mapping space (MODULES_VADDR)
+	 * use current->mm, so we can lookup user space vaddr
 	 */
 
-	pte_t *kpte;
-	unsigned long umask = 0x7FFFFFFFFFFFF;
+	pte_t *pte;
 	/*need to mask out upper 51 bits*/
-
-	kpte = lookup_address(addr, level);
-	if (!kpte){
+	unsigned long umask = 0x7FFFFFFFFFFFF;
+	pgd_t *pgd = pgd_offset(current->active_mm, addr);
+	pte = lookup_address_in_pgd(pgd,addr, level);
+	if (!pte || !pte_present(*pte)){
 		return 0;
 	}
-	*prot = pte_pgprot(*kpte);
+	*prot = pte_pgprot(*pte);
 	if (*level == 1){
-		return kpte->pte & ~(PAGE_SIZE-1) & umask;
+		return pte_val(*pte) & ~(PAGE_SIZE-1) & umask;
 	}
 	if (*level == 2){
-		return kpte->pte & ~(PAGESIZE2M-1) & umask;
+		return pte_val(*pte) & ~(PAGESIZE2M-1) & umask;
 	} else {
 		HDEBUG("Unsupported page level %d\n", *level);
 		BUG();
@@ -4407,6 +4408,7 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu, int nr_irqs_enabled)
 		check_int_enabled(vcpu, "DOEXIT");
 		code = (long)vcpu->regs[VCPU_REGS_RBX];
 		HDEBUG("calling do_exit(%ld)...\n", code);
+		dump_log(vcpu);
 		vmx_destroy_vcpu(vcpu);
 		do_exit(code);
 	} else {
@@ -4555,6 +4557,20 @@ void flags_from_qual(unsigned long qual, unsigned long *s, unsigned long *c)
 	*c = ((~*s) & EPT_PERM_MASK);
 }
 
+void vmexit_loop_detect(struct vmx_vcpu *vcpu, unsigned long gpa)
+{
+	if (vcpu->lepa == gpa){
+		vcpu->ec++;
+		if (vcpu->ec >  10){
+			BUG();
+		}
+	} else {
+		vcpu->ec = 0;
+		vcpu->lepa = gpa;
+	}
+	return;
+}
+
 int page_walk_ept_viol(struct vmx_vcpu *vcpu, unsigned long gpa,
 		       unsigned long qual)
 {
@@ -4618,6 +4634,8 @@ int handle_EPT_violation(struct vmx_vcpu *vcpu)
 		unsigned long *epte, mapped, s_flags, c_flags, eprot, n_eprot;
 		int level;
 		pgprot_t prot;
+		vmexit_loop_detect(vcpu, gpa);
+		//return grant_all(vcpu, gpa, qual);	
 		/* Bit 8 is cleared if it's a page walk or update of accessed*/
 		if (!(qual & 0x100)){
 			TDEBUG(log_ptr(vcpu),"EPT Page walk violation  "
@@ -4671,6 +4689,7 @@ int handle_EPT_violation(struct vmx_vcpu *vcpu)
 					return grant_all(vcpu, gpa, qual, level);	
 				}
 			}
+			BUG_ON(!guest_physical_page_address(gva, &level, &prot));
 			ept_flags_from_prot(prot, &s_flags, &c_flags);
 			eprot = *epte & (EPT_W | EPT_R | EPT_X);
 
@@ -4699,6 +4718,7 @@ int handle_EPT_violation(struct vmx_vcpu *vcpu)
 					BUG();
 				}
 			}
+			return grant_all(vcpu, gpa, qual);	
 			vpid_sync_context(vcpu->vpid);
 			vmx_put_cpu(vcpu);
 			return 1;
@@ -4743,6 +4763,7 @@ int handle_EPT_violation(struct vmx_vcpu *vcpu)
 				HLOG("Kernel space EPT Violation gpa %#lx "
 				       "va %#lx set %#lx clear %#lx\n",
 				       gpa, gva, s_flags, c_flags);
+				//return grant_all(vcpu, gpa, qual);	
 				vpid_sync_context(vcpu->vpid);
 				vmx_put_cpu(vcpu);
 				return 1;
