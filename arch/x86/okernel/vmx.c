@@ -134,11 +134,42 @@ static struct vmcs_config {
 struct vmx_capability vmx_capability;
 
 
+// NJE BEGIN NEEDS TO GO
+static char *log_ptr(struct vmx_vcpu *vcpu)
+{
+	char *p;
+	if (vcpu->lp < 1000){
+		p = &(vcpu->log[vcpu->lp][0]);
+		vcpu->lp++;
+		return p;
+	}
+	else{
+		p = &(vcpu->log[0][0]);
+		vcpu->lp = 1;
+		return p;
+	}
+}
+
+static void dump_log(struct vmx_vcpu *vcpu)
+{
+	int i;
+	for (i=0; i< vcpu->lp; i++){
+		trace_printk(&(vcpu->log[i][0]));
+	}
+}
+
+
+#define TDEBUG(p, fmt, args...)  if (p) sprintf(p, "%s: cpu(%d) pid(%d) %s: " \
+					  fmt , vmx_nr_mode()?"NR":"R ", \
+					  raw_smp_processor_id(), \
+					  current->pid,__func__, ## args)
+
+//NJE END NEEDS to GO
+
 static inline int dummy_in_vmx_nr_mode(void)
 {
 	return 0;
 }
-
 
 static inline int real_in_vmx_nr_mode(void)
 {
@@ -841,22 +872,23 @@ unsigned long  guest_physical_page_address(unsigned long addr,
 	 * Find the guest physical page address , or 0 if not mapped
 	 * We can't use virt_to_phys((void *)vaddr) because it won't
 	 * work for module mapping space (MODULES_VADDR)
+	 * use current->mm, so we can lookup user space vaddr
 	 */
 
-	pte_t *kpte;
-	unsigned long umask = 0x7FFFFFFFFFFFF;
+	pte_t *pte;
 	/*need to mask out upper 51 bits*/
-
-	kpte = lookup_address(addr, level);
-	if (!kpte){
+	unsigned long umask = 0x7FFFFFFFFFFFF;
+	pgd_t *pgd = pgd_offset(current->active_mm, addr);
+	pte = lookup_address_in_pgd(pgd,addr, level);
+	if (!pte || !pte_present(*pte)){
 		return 0;
 	}
-	*prot = pte_pgprot(*kpte);
+	*prot = pte_pgprot(*pte);
 	if (*level == 1){
-		return kpte->pte & ~(PAGE_SIZE-1) & umask;
+		return pte_val(*pte) & ~(PAGE_SIZE-1) & umask;
 	}
 	if (*level == 2){
-		return kpte->pte & ~(PAGESIZE2M-1) & umask;
+		return pte_val(*pte) & ~(PAGESIZE2M-1) & umask;
 	} else {
 		HDEBUG("Unsupported page level %d\n", *level);
 		BUG();
@@ -2821,6 +2853,9 @@ static struct vmx_vcpu * vmx_create_vcpu(struct nr_cloned_state* cloned_thread)
 		BUG();
 	}
 #endif
+	vcpu->ec = 0;
+	vcpu->lepa = 0;
+	vcpu->lp = 0;
 
 	return vcpu;
 fail_ept:
@@ -3360,6 +3395,7 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu, int nr_irqs_enabled)
 		check_int_enabled(vcpu, "DOEXIT");
 		code = (long)vcpu->regs[VCPU_REGS_RBX];
 		HDEBUG("calling do_exit(%ld)...\n", code);
+		dump_log(vcpu);
 		vmx_destroy_vcpu(vcpu);
 		do_exit(code);
 	} else {
@@ -3508,6 +3544,20 @@ void flags_from_qual(unsigned long qual, unsigned long *s, unsigned long *c)
 	*c = ((~*s) & EPT_PERM_MASK);
 }
 
+void vmexit_loop_detect(struct vmx_vcpu *vcpu, unsigned long gpa)
+{
+	if (vcpu->lepa == gpa){
+		vcpu->ec++;
+		if (vcpu->ec >  10){
+			BUG();
+		}
+	} else {
+		vcpu->ec = 0;
+		vcpu->lepa = gpa;
+	}
+	return;
+}
+
 int page_walk_ept_viol(struct vmx_vcpu *vcpu, unsigned long gpa,
 		       unsigned long qual)
 {
@@ -3572,17 +3622,36 @@ int noguest_pte(struct vmx_vcpu *vcpu, unsigned long gpa, unsigned long gva,
 	return 0;
 }
 
+int grant_all(struct vmx_vcpu *vcpu, unsigned long gpa,
+		       unsigned long qual)
+{
+	unsigned long s_flags, c_flags;
+	c_flags = OK_TEXT | OK_MOD;
+	s_flags = EPT_W | EPT_R | EPT_X;
+	if(set_clr_ept_page_flags(vcpu, gpa, s_flags, c_flags)){
+		vpid_sync_context(vcpu->vpid);
+		vmx_put_cpu(vcpu);
+		return 1;
+	} else {
+		BUG();
+	}
+	return 0;
+}
+
 int handle_EPT_violation(struct vmx_vcpu *vcpu)
 {
 	/*
 	 * return 1 - page granted; 0 - not granted
 	 */
 
-	unsigned long qual = vmcs_readl(EXIT_QUALIFICATION);
-	unsigned long gpa = vmcs_readl(GUEST_PHYSICAL_ADDRESS);
+	unsigned long qual;
+	unsigned long gpa;
 	unsigned long *pml2_e;
 	unsigned long gva;
 
+	vmx_get_cpu(vcpu);
+	qual = vmcs_readl(EXIT_QUALIFICATION);
+	gpa = vmcs_readl(GUEST_PHYSICAL_ADDRESS);
 	HDEBUG("ept violation exit - qualification=%#lx gpa=%#lx\n",
 	       qual, gpa);
 
@@ -3590,16 +3659,18 @@ int handle_EPT_violation(struct vmx_vcpu *vcpu)
 	if(__ok_protected_phys_addr(gpa)){
 		return vmexit_protected_page(vcpu);
 	}
-	vmx_get_cpu(vcpu);
 
 	/* Bit 7 in exit qualification set if 'guest' virtual address valid */
 	if(qual & 0x80){
 		unsigned long *epte, mapped, s_flags, c_flags, eprot, n_eprot;
 		int level;
 		pgprot_t prot;
+		vmexit_loop_detect(vcpu, gpa);
+		//return grant_all(vcpu, gpa, qual);	
 		/* Bit 8 is cleared if it's a page walk or update of accessed*/
 		if (!(qual & 0x100)){
-				return page_walk_ept_viol(vcpu, gpa, qual);
+			//return grant_all(vcpu, gpa, qual);
+			return page_walk_ept_viol(vcpu, gpa, qual);
 		}
 
 		gva = (u64)vmcs_readl(GUEST_LINEAR_ADDRESS);
@@ -3633,16 +3704,20 @@ int handle_EPT_violation(struct vmx_vcpu *vcpu)
 			if (!mapped) {
 				mapped = mod_addr(vcpu, gpa);
 			}
-			if (!guest_physical_page_address(gva, &level, &prot)){
-				return noguest_pte(vcpu, gpa, gva, qual, mapped);
+			if (is_user_space(gva)){
+				if (mapped){
+					HLOG("User space alias for kernel\n");
+					BUG();
+					return 0;
+				}
+				else{
+					return grant_all(vcpu, gpa, qual);	
+				}
 			}
+			BUG_ON(!guest_physical_page_address(gva, &level, &prot));
 			ept_flags_from_prot(prot, &s_flags, &c_flags);
 			eprot = *epte & (EPT_W | EPT_R | EPT_X);
-			if (is_user_space(gva) && (mapped)){
-				HLOG("User space alias for kernel\n");
-				BUG();
-				return 0;
-			}
+			
 			/* if already mapped, it's either a change or alias */
 			if (mapped) {
 				/* New prots = guest prot + old prot */
@@ -3668,6 +3743,7 @@ int handle_EPT_violation(struct vmx_vcpu *vcpu)
 					BUG();
 				}
 			}
+			return grant_all(vcpu, gpa, qual);	
 			vpid_sync_context(vcpu->vpid);
 			vmx_put_cpu(vcpu);
 			return 1;
@@ -3683,6 +3759,11 @@ int handle_EPT_violation(struct vmx_vcpu *vcpu)
 				HDEBUG("Set %#lx clear %#lx for module "
 				       "physical address %#lx virtual %#lx\n",
 				       s_flags, c_flags, gpa, gva);
+				TDEBUG(log_ptr(vcpu),"Set %#lx clear %#lx for module "
+				       "physical address %#lx virtual %#lx\n",
+				       s_flags, c_flags, gpa, gva);
+						
+				//return grant_all(vcpu, gpa, qual);	//Comment out to trigger bug
 				vpid_sync_context(vcpu->vpid);
 				vmx_put_cpu(vcpu);
 				return 1;
@@ -3691,16 +3772,7 @@ int handle_EPT_violation(struct vmx_vcpu *vcpu)
 				BUG();
 			}
 		} else if (is_user_space(gva)){
-			if(set_clr_ept_page_flags(vcpu, gpa,
-						  EPT_W |EPT_R | EPT_X, 0)){
-				HDEBUG("Grant EPT RWX for user space\n.");
-				vpid_sync_context(vcpu->vpid);
-				vmx_put_cpu(vcpu);
-				return 1;
-			} else {
-				HDEBUG("set_clr_ept_page_flags failed.\n");
-				BUG();
-			}
+			return grant_all(vcpu, gpa, qual);	
 		} else {
 			BUG_ON(!guest_physical_page_address(gva, &level, &prot));
 			ept_flags_from_prot(prot, &s_flags, &c_flags);
@@ -3710,6 +3782,7 @@ int handle_EPT_violation(struct vmx_vcpu *vcpu)
 				HLOG("Kernel space EPT Violation gpa %#lx "
 				       "va %#lx set %#lx clear %#lx\n",
 				       gpa, gva, s_flags, c_flags);
+				//return grant_all(vcpu, gpa, qual);	
 				vpid_sync_context(vcpu->vpid);
 				vmx_put_cpu(vcpu);
 				return 1;
@@ -3772,6 +3845,11 @@ int vmx_launch(unsigned int mode, unsigned int flags, struct nr_cloned_state *cl
 	unsigned long perms = 0;
 #if !defined(CONFIG_THREAD_INFO_IN_TASK)
 	struct thread_info *nr_ti;
+#endif
+#if defined(HPE_DEBUG_VE)
+	unsigned long last_time;
+	unsigned long current_time;
+	unsigned long vmexit_counter;
 #endif
 
 	if(!cloned_thread)
@@ -3868,7 +3946,33 @@ int vmx_launch(unsigned int mode, unsigned int flags, struct nr_cloned_state *cl
 #if defined(HPE_DEBUG)
 	orig_cpu = smp_processor_id();
 #endif
+
+//#define COUNTER_MAX 10 //doesn't work with Docker at all
+//#define COUNTER_MAX 25  // Unreliable with Docker
+//#define COUNTER_MAX 50	  //works with Docker
+#define COUNTER_MAX 100 //works with Docker
+#define COUNTER_THRESHOLD 1000000 //approx 0.001s
+
+#if defined(HPE_DEBUG_VE)
+	vmexit_counter = 0;
+	last_time = rdtsc();
+#endif
 	while(1){
+#if defined(HPE_DEBUG_VE)
+		
+		if(vmexit_counter > COUNTER_MAX){
+			/* Check rate we are generating vmexits - if more than threshold then exit. */
+			current_time = rdtsc();
+			/* Did we see more exits than we were expecting over a given time period? */
+			if((current_time - last_time) < COUNTER_THRESHOLD){
+				TDEBUG(log_ptr(vcpu), "vmexit threshold count exceed calling BUG()\n");
+				dump_log(vcpu);
+				BUG();
+			}
+			vmexit_counter = 0;
+			last_time = current_time;
+		}
+#endif	
 		HDEBUG("Entering vmxit handler loop...\n");
 
 		vmx_get_cpu(vcpu);
@@ -3921,10 +4025,15 @@ int vmx_launch(unsigned int mode, unsigned int flags, struct nr_cloned_state *cl
 
 		//fast_path:
 
+
+		
                 /**************************** GO FOR IT ***************************/
 		ret = vmx_run_vcpu(vcpu);
                 /*************************** GONE FOR IT! *************************/
 
+#if defined(HPE_DEBUG_VE)
+		vmexit_counter++;
+#endif
 
 		//if((ret == EXIT_REASON_VMCALL) && (vcpu->regs[VCPU_REGS_RAX] == VMCALL_DO_GET_CPU_HELPER)){
 		//	/* Should always be called with interrupts disabled. */
@@ -3940,6 +4049,7 @@ int vmx_launch(unsigned int mode, unsigned int flags, struct nr_cloned_state *cl
 		}
 
 		HDEBUG("Returned from vmx_run_vcpu...handling exit condition...\n");
+		TDEBUG(log_ptr(vcpu),"Returned from vmx_run_vcpu...handling exit condition: %d\n", ret);
 
 		if (ret == EXIT_REASON_VMCALL || ret == EXIT_REASON_CPUID){
 			vmx_step_instruction();
@@ -3982,6 +4092,7 @@ int vmx_launch(unsigned int mode, unsigned int flags, struct nr_cloned_state *cl
 			}
 			vmx_put_cpu(vcpu);
 			HLOG("Unhandled EPT Violation\n");
+			BUG();
 			break;
 		} else if (ret == EXIT_REASON_EPT_MISCONFIG){
 			vmx_get_cpu(vcpu);
