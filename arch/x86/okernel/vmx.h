@@ -156,6 +156,9 @@ struct ept_pt_list {
 	int n_pages;
 };
 
+#define VCPUBUFLEN 300
+#define NVCPUBUF 1000
+
 struct vmx_vcpu {
 	int cpu;
 	int vpid;
@@ -192,7 +195,7 @@ struct vmx_vcpu {
 	/* vmexit loop detection exit count for the last exit phys addr*/
 	int ec; 
 	unsigned long lepa;
-	char log[1000][300];
+	char log[NVCPUBUF][VCPUBUFLEN];
 	int lp;
 };
 
