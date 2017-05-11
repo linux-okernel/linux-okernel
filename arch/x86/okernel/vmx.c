@@ -366,7 +366,7 @@ int vt_alloc_page(void **virt, u64 *phys)
         struct page *pg;
         void* v;
 
-        pg = alloc_page(GFP_KERNEL);
+        pg = alloc_page(GFP_KERNEL /*GFP_ATOMIC*/);
 
         v = page_address(pg);
 
@@ -1931,7 +1931,8 @@ void set_clr_vmem_ept_flags_4k(struct vmx_vcpu *vcpu, unsigned long start,
 		}
 		HDEBUG("Set flags %#lx clear flags %#lx on va %#lx pa %#lx\n",
 		       s_flags, c_flags, vaddr, paddr);
-		if (!set_clr_ept_page_flags(vcpu, paddr, s_flags, c_flags)){
+		if (!set_clr_ept_page_flags(vcpu, paddr, s_flags, c_flags,
+			    PG_LEVEL_4K)){
 			HDEBUG("EPT set_clr_ept_page_flags failed.\n");
 			BUG();
 		}
@@ -1970,7 +1971,8 @@ void set_clr_vmem_ept_flags(struct vmx_vcpu *vcpu, unsigned long start,
 		/* Update 2M page mapping*/
 		HDEBUG("Set flag %#lx clear flag %#lx on va %#lx pa %#lx\n",
 		       s_flags, c_flags, vaddr, paddr);
-		if (!set_clr_ept_page_flags(vcpu, paddr, s_flags, c_flags)){
+		if (!set_clr_ept_page_flags(vcpu, paddr, s_flags, c_flags,
+			    PG_LEVEL_2M)){
 			HDEBUG("EPT set_clr_ept_page_flags failed.\n");
 			BUG();
 		}
@@ -2086,7 +2088,8 @@ void set_clr_module_flags_4k(struct vmx_vcpu *vcpu, unsigned long start,
 		}
 		HDEBUG("Set flags %#lx clear flags %#lx on va %#lx pa %#lx\n",
 		       s_flags, c_flags, vaddr, paddr);
-		if (!set_clr_ept_page_flags(vcpu, paddr, s_flags, c_flags)){
+		if (!set_clr_ept_page_flags(vcpu, paddr, s_flags, c_flags,
+					    PG_LEVEL_4K)){
 			HDEBUG("EPT set_clr_ept_page_flags failed.\n");
 			BUG();
 		}
@@ -2332,7 +2335,8 @@ void set_clr_module_ept_flags(struct vmx_vcpu *vcpu)
 		}
 		HDEBUG("Set flag %#lx clear flag %#lx on va %#lx pa %#lx\n",
 		       s_flags, c_flags, vaddr, paddr);
-		if (!set_clr_ept_page_flags(vcpu, paddr, s_flags, c_flags)){
+		if (!set_clr_ept_page_flags(vcpu, paddr, s_flags, c_flags,
+					    PG_LEVEL_2M)){
 			HDEBUG("EPT set_clr_ept_page_flags failed.\n");
 			BUG();
 		}
@@ -2372,6 +2376,21 @@ void protect_kernel_integrity(struct vmx_vcpu *vcpu)
 	HDEBUG("text_start [PFN_ALIGN(_text)] is %#lx\n", text_start);
 	HDEBUG("text_end [PFN_ALIGN(&__stop___ex_table)] is %#lx\n", text_end);
 	HDEBUG("end  [&__end_rodata_hpage_align] is %#lx\n", end);
+}
+
+void do_4k_split(struct vmx_vcpu *vcpu){
+	unsigned long mappingsize = 0;
+	unsigned long rounded_mappingsize = 0;
+	unsigned long p;
+
+	mappingsize = ept_limit;
+	rounded_mappingsize = ((mappingsize + (GIGABYTE-1)) & (~(GIGABYTE-1)));
+
+	for(p = 0; p < rounded_mappingsize; p += PAGESIZE2M){
+		if (!split_2M_mapping(vcpu, p)){
+			BUG();
+		}
+	}
 }
 
 /* We just clone the bottom page of the stack for now */
@@ -4119,10 +4138,10 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu, int nr_irqs_enabled)
 	struct thread_info *r_ti;
 #endif
 	unsigned int cloned_tsk_state;
-#if defined(HPE_DEBUG)
+//#if defined(HPE_DEBUG)
 	unsigned long rbp;
 	unsigned long rsp;
-#endif
+//#endif
 
 	int cpu;
 	struct tss_struct *tss;
@@ -4408,7 +4427,6 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu, int nr_irqs_enabled)
 		check_int_enabled(vcpu, "DOEXIT");
 		code = (long)vcpu->regs[VCPU_REGS_RBX];
 		HDEBUG("calling do_exit(%ld)...\n", code);
-		dump_log(vcpu);
 		vmx_destroy_vcpu(vcpu);
 		do_exit(code);
 	} else {
@@ -4560,8 +4578,9 @@ void flags_from_qual(unsigned long qual, unsigned long *s, unsigned long *c)
 void vmexit_loop_detect(struct vmx_vcpu *vcpu, unsigned long gpa)
 {
 	if (vcpu->lepa == gpa){
-		vcpu->ec++;
+		//vcpu->ec++;
 		if (vcpu->ec >  10){
+			dump_log(vcpu);
 			BUG();
 		}
 	} else {
@@ -4635,7 +4654,7 @@ int handle_EPT_violation(struct vmx_vcpu *vcpu)
 		int level;
 		pgprot_t prot;
 		vmexit_loop_detect(vcpu, gpa);
-		//return grant_all(vcpu, gpa, qual);	
+		//return grant_all(vcpu, gpa, qual, PG_LEVEL_NONE);	
 		/* Bit 8 is cleared if it's a page walk or update of accessed*/
 		if (!(qual & 0x100)){
 			TDEBUG(log_ptr(vcpu),"EPT Page walk violation  "
@@ -4689,7 +4708,6 @@ int handle_EPT_violation(struct vmx_vcpu *vcpu)
 					return grant_all(vcpu, gpa, qual, level);	
 				}
 			}
-			BUG_ON(!guest_physical_page_address(gva, &level, &prot));
 			ept_flags_from_prot(prot, &s_flags, &c_flags);
 			eprot = *epte & (EPT_W | EPT_R | EPT_X);
 
@@ -4718,7 +4736,7 @@ int handle_EPT_violation(struct vmx_vcpu *vcpu)
 					BUG();
 				}
 			}
-			return grant_all(vcpu, gpa, qual);	
+			//return grant_all(vcpu, gpa, qual, level);	
 			vpid_sync_context(vcpu->vpid);
 			vmx_put_cpu(vcpu);
 			return 1;
@@ -4763,7 +4781,7 @@ int handle_EPT_violation(struct vmx_vcpu *vcpu)
 				HLOG("Kernel space EPT Violation gpa %#lx "
 				       "va %#lx set %#lx clear %#lx\n",
 				       gpa, gva, s_flags, c_flags);
-				//return grant_all(vcpu, gpa, qual);	
+				//return grant_all(vcpu, gpa, qual, level);	
 				vpid_sync_context(vcpu->vpid);
 				vmx_put_cpu(vcpu);
 				return 1;
