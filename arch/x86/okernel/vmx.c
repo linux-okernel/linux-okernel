@@ -79,7 +79,7 @@
 
 #include "constants2.h"
 #include "vmx.h"
-
+#include "okmm.h"
 
 static atomic_t vmx_enable_failed;
 
@@ -507,7 +507,7 @@ unsigned long* find_pt_entry(struct vmx_vcpu *vcpu, u64 paddr)
 
 
 
-int split_2M_mapping(struct vmx_vcpu* vcpu, u64 paddr)
+int do_split_2M_mapping(struct vmx_vcpu* vcpu, u64 paddr, int cache)
 {
 	unsigned long *pml2_e;
 	pt_page *pt = NULL;
@@ -552,29 +552,39 @@ int split_2M_mapping(struct vmx_vcpu* vcpu, u64 paddr)
 	/* split the plm2_e into 4k ptes,i.e. have it point to a PML1 table */
 
         /* First allocate a physical page for the PML1 table (512*4K entries) */
-	e_pt = (struct ept_pt_list*) kmalloc(sizeof(struct ept_pt_list), GFP_KERNEL /*GFP_ATOMIC*/);
+	if (cache) {
+		okmm_get_ptce(&e_pt, &pt);
+		/*
+		  BUG NEED TO CHECK FOR NULLS
 
-	if(!e_pt){
-		printk(KERN_ERR "okernel: failed to allocate E_PT list entry in replace ept page.\n");
-		return 0;
+		 */
+
+		
+	} else {
+		e_pt = (struct ept_pt_list*) kmalloc(sizeof(struct ept_pt_list),
+						     GFP_KERNEL);
+		if (!e_pt) {
+			printk(KERN_ERR "okernel: failed to allocate E_PT list");
+			return 0;
+		}
+
+		if (!(pt = (pt_page*)kmalloc(sizeof(pt_page), GFP_KERNEL))) {
+			printk(KERN_ERR
+			       "okernel: failed to allocate PT table.\n");
+			return 0;
+		}
 	}
-
-	if(!(pt = (pt_page*)kmalloc(sizeof(pt_page), GFP_KERNEL /*GFP_ATOMIC*/))){
-		printk(KERN_ERR "okernel: failed to allocate PT table.\n");
-		return 0;
-	}
-
 	e_pt->page = pt;
 	e_pt->n_pages = 1;
 	INIT_LIST_HEAD(&e_pt->list);
 	list_add(&e_pt->list, &vcpu->ept_table_pages.list);
-
-
-	if(!(vt_alloc_page((void**)&pt[0].virt, &pt[0].phys))){
-		printk(KERN_ERR "okernel: failed to allocate PML1 table.\n");
-		return 0;
+	if (!cache) {
+		if (!(vt_alloc_page((void**)&pt[0].virt, &pt[0].phys))) {
+			printk(KERN_ERR
+			       "okernel: failed to allocate PML1 table.\n");
+			return 0;
+		}
 	}
-
 	memset(pt[0].virt, 0, PAGESIZE);
 	HDEBUG("PML1 pt virt (%llX) pt phys (%llX)\n", (unsigned long long)pt[0].virt, pt[0].phys);
 
@@ -597,6 +607,15 @@ int split_2M_mapping(struct vmx_vcpu* vcpu, u64 paddr)
 	return 1;
 }
 
+int split_2M_mapping(struct vmx_vcpu* vcpu, u64 paddr)
+{
+	return do_split_2M_mapping(vcpu, paddr, 0);
+}
+
+int split_2M_mapping_okmm(struct vmx_vcpu* vcpu, u64 paddr)
+{
+	return do_split_2M_mapping(vcpu, paddr, 1);
+}
 
 /* Returns virtual mapping of the new page */
 void* replace_ept_page(struct vmx_vcpu *vcpu, u64 paddr, unsigned long perms)
@@ -810,7 +829,7 @@ int set_clr_ept_page_flags(struct vmx_vcpu *vcpu, u64 paddr,
 	}
 	/* split if the kernel is using 4k pages and the EPT is 2M */
 	if (level == PG_LEVEL_4K && (*epte & EPT_2M_PAGE)){
-		if (!split_2M_mapping(vcpu, (paddr & ~(PAGESIZE2M - 1)))){
+		if (!split_2M_mapping_okmm(vcpu, (paddr & ~(PAGESIZE2M - 1)))){
 				return 0;
 			}
 	}
@@ -1670,7 +1689,7 @@ int vt_ept_2M_init(struct vmx_vcpu *vcpu)
 
        vcpu->ept_root = pml4_phys;
        protect_kernel_integrity(vcpu);
-       do_4k_split(vcpu);
+       //do_4k_split(vcpu);
        return 1;
 }
 /* End: imported code from original BV prototype */
@@ -3895,6 +3914,11 @@ int vmx_launch(unsigned int mode, unsigned int flags, struct nr_cloned_state *cl
 	unsigned long vmexit_counter;
 #endif
 
+	if ((ret = okmm_refresh_pt_cache())){
+		HDEBUG("okmm_refresh_pt_cache failed\n");
+		return ret;
+	}
+
 	if(!cloned_thread)
 		return -EINVAL;
 
@@ -4067,8 +4091,6 @@ int vmx_launch(unsigned int mode, unsigned int flags, struct nr_cloned_state *cl
 		native_irq_disable();
 
 		//fast_path:
-
-
 		
                 /**************************** GO FOR IT ***************************/
 		ret = vmx_run_vcpu(vcpu);
@@ -4621,6 +4643,10 @@ int __init vmx_init(void)
 	in_vmx_nr_mode = real_in_vmx_nr_mode;
 
 	(void)ok_init_protected_pages();
+
+	if ((r = okmm_init())) {
+		goto failed2;
+	}
 
         return 0;
 
