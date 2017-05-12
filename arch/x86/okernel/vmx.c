@@ -4863,6 +4863,11 @@ int vmx_launch(unsigned int mode, unsigned int flags, struct nr_cloned_state *cl
 		return ret;
 	}
 
+	if ((ret = okmm_refresh_pt_cache())){
+		HDEBUG("okmm_refresh_pt_cache failed\n");
+		return ret;
+	}
+
 	if(!cloned_thread)
 		return -EINVAL;
 
