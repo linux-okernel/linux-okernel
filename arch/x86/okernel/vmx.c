@@ -791,10 +791,15 @@ int clone_kstack2(struct vmx_vcpu *vcpu, unsigned long perms)
         HDEBUG("kstack addr:=%#lx nr_stack_canary:=%#lx *nr_stack_canary:=%#x\n",
 	       k_stack, (unsigned long)nr_stack_canary, *nr_stack_canary);
 
-	HDEBUG("kernel thread_info (tsk->stack) vaddr (%#lx) paddr (%#lx) top of stack (%#lx)\n",
-		k_stack, __pa(k_stack), current_top_of_stack());
-
+#if !defined(CONFIG_VMAP_STACK)
 	paddr = __pa(k_stack);
+#else
+	paddr = page_to_phys(vmalloc_to_page(((void *)k_stack)));
+#endif
+	
+	HDEBUG("tsk->stack vaddr (%#lx) paddr (%#lx) top of stack (%#lx)\n",
+	       k_stack, (unsigned long)paddr, current_top_of_stack());
+
 
 	HDEBUG("ept page clone on (%#lx)\n", (unsigned long)paddr);
 	/* also need replace_ept_contiguous_region */
