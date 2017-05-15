@@ -37,6 +37,7 @@
 #include <linux/uaccess.h>
 #include <linux/io.h>
 #include <linux/ftrace.h>
+#include <linux/syscalls.h>
 #include <linux/okernel.h>
 
 #include <asm/pgtable.h>
@@ -53,6 +54,11 @@
 #include <asm/xen/hypervisor.h>
 #include <asm/vdso.h>
 #include <asm/intel_rdt.h>
+#include <asm/unistd.h>
+#ifdef CONFIG_IA32_EMULATION
+/* Not included via unistd.h */
+#include <asm/unistd_32_ia32.h>
+#endif
 
 __visible DEFINE_PER_CPU(unsigned long, rsp_scratch);
 
@@ -205,7 +211,7 @@ int copy_thread_tls(unsigned long clone_flags, unsigned long sp,
 				(struct user_desc __user *)tls, 0);
 		else
 #endif
-			err = do_arch_prctl(p, ARCH_SET_FS, tls);
+			err = do_arch_prctl_64(p, ARCH_SET_FS, tls);
 		if (err)
 			goto out;
 #if defined(CONFIG_OKERNEL)
@@ -463,7 +469,7 @@ __switch_to(struct task_struct *prev_p, struct task_struct *next_p)
 		     task_thread_info(prev_p)->flags & _TIF_WORK_CTXSW_PREV))
 		__switch_to_xtra(prev_p, next_p, tss);
 
-#ifdef CONFIG_XEN
+#ifdef CONFIG_XEN_PV
 	/*
 	 * On Xen PV, IOPL bits in pt_regs->flags have no effect, and
 	 * current_pt_regs()->flags may not match the current task's
@@ -516,6 +522,8 @@ void set_personality_64bit(void)
 	clear_thread_flag(TIF_IA32);
 	clear_thread_flag(TIF_ADDR32);
 	clear_thread_flag(TIF_X32);
+	/* Pretend that this comes from a 64bit execve */
+	task_pt_regs(current)->orig_ax = __NR_execve;
 
 	/* Ensure the corresponding mm is not marked. */
 	if (current->mm)
@@ -528,6 +536,41 @@ void set_personality_64bit(void)
 	current->personality &= ~READ_IMPLIES_EXEC;
 }
 
+static void __set_personality_x32(void)
+{
+#ifdef CONFIG_X86_X32
+	clear_thread_flag(TIF_IA32);
+	set_thread_flag(TIF_X32);
+	if (current->mm)
+		current->mm->context.ia32_compat = TIF_X32;
+	current->personality &= ~READ_IMPLIES_EXEC;
+	/*
+	 * in_compat_syscall() uses the presence of the x32 syscall bit
+	 * flag to determine compat status.  The x86 mmap() code relies on
+	 * the syscall bitness so set x32 syscall bit right here to make
+	 * in_compat_syscall() work during exec().
+	 *
+	 * Pretend to come from a x32 execve.
+	 */
+	task_pt_regs(current)->orig_ax = __NR_x32_execve | __X32_SYSCALL_BIT;
+	current->thread.status &= ~TS_COMPAT;
+#endif
+}
+
+static void __set_personality_ia32(void)
+{
+#ifdef CONFIG_IA32_EMULATION
+	set_thread_flag(TIF_IA32);
+	clear_thread_flag(TIF_X32);
+	if (current->mm)
+		current->mm->context.ia32_compat = TIF_IA32;
+	current->personality |= force_personality32;
+	/* Prepare the first "return" to user space */
+	task_pt_regs(current)->orig_ax = __NR_ia32_execve;
+	current->thread.status |= TS_COMPAT;
+#endif
+}
+
 void set_personality_ia32(bool x32)
 {
 	/* inherit personality from parent */
@@ -535,25 +578,10 @@ void set_personality_ia32(bool x32)
 	/* Make sure to be in 32bit mode */
 	set_thread_flag(TIF_ADDR32);
 
-	/* Mark the associated mm as containing 32-bit tasks. */
-	if (x32) {
-		clear_thread_flag(TIF_IA32);
-		set_thread_flag(TIF_X32);
-		if (current->mm)
-			current->mm->context.ia32_compat = TIF_X32;
-		current->personality &= ~READ_IMPLIES_EXEC;
-		/* in_compat_syscall() uses the presence of the x32
-		   syscall bit flag to determine compat status */
-		current->thread.status &= ~TS_COMPAT;
-	} else {
-		set_thread_flag(TIF_IA32);
-		clear_thread_flag(TIF_X32);
-		if (current->mm)
-			current->mm->context.ia32_compat = TIF_IA32;
-		current->personality |= force_personality32;
-		/* Prepare the first "return" to user space */
-		current->thread.status |= TS_COMPAT;
-	}
+	if (x32)
+		__set_personality_x32();
+	else
+		__set_personality_ia32();
 }
 EXPORT_SYMBOL_GPL(set_personality_ia32);
 
@@ -570,29 +598,29 @@ static long prctl_map_vdso(const struct vdso_image *image, unsigned long addr)
 }
 #endif
 
-long do_arch_prctl(struct task_struct *task, int code, unsigned long addr)
+long do_arch_prctl_64(struct task_struct *task, int option, unsigned long arg2)
 {
 	int ret = 0;
 	int doit = task == current;
 	int cpu;
 
-	switch (code) {
+	switch (option) {
 	case ARCH_SET_GS:
 #if defined(CONFIG_OKERNEL)
 #ifdef HPE_DEBUG
                if(is_in_vmx_nr_mode()){
-                       HDEBUG("ARCH_SET_GS pid=%d addr=%#lx\n", current->pid, addr);
+                       HDEBUG("ARCH_SET_GS pid=%d arg2=%#lx\n", current->pid, arg2);
                }
 #endif
 #endif
-		if (addr >= TASK_SIZE_MAX)
+		if (arg2 >= TASK_SIZE_MAX)
 			return -EPERM;
 		cpu = get_cpu();
 		task->thread.gsindex = 0;
-		task->thread.gsbase = addr;
+		task->thread.gsbase = arg2;
 		if (doit) {
 			load_gs_index(0);
-			ret = wrmsrl_safe(MSR_KERNEL_GS_BASE, addr);
+			ret = wrmsrl_safe(MSR_KERNEL_GS_BASE, arg2);
 		}
 		put_cpu();
 		break;
@@ -600,26 +628,27 @@ long do_arch_prctl(struct task_struct *task, int code, unsigned long addr)
 #if defined(CONFIG_OKERNEL)
 #ifdef HPE_DEBUG
                if(is_in_vmx_nr_mode()){
-                       HDEBUG("ARCH_SET_FS pid=%d addr=%#lx\n", current->pid, addr);
+                       HDEBUG("ARCH_SET_FS pid=%d arg2=%#lx\n", current->pid, arg2);
                }
 #endif
 #endif
 		/* Not strictly needed for fs, but do it for symmetry
 		   with gs */
-		if (addr >= TASK_SIZE_MAX)
+		if (arg2 >= TASK_SIZE_MAX)
 			return -EPERM;
 		cpu = get_cpu();
 		task->thread.fsindex = 0;
-		task->thread.fsbase = addr;
+		task->thread.fsbase = arg2;
 		if (doit) {
 			/* set the selector to 0 to not confuse __switch_to */
 			loadsegment(fs, 0);
-			ret = wrmsrl_safe(MSR_FS_BASE, addr);
+			ret = wrmsrl_safe(MSR_FS_BASE, arg2);
 		}
 		put_cpu();
 		break;
 	case ARCH_GET_FS: {
 		unsigned long base;
+
 		if (doit)
 			rdmsrl(MSR_FS_BASE, base);
 		else
@@ -631,11 +660,12 @@ long do_arch_prctl(struct task_struct *task, int code, unsigned long addr)
                }
 #endif
 #endif
-		ret = put_user(base, (unsigned long __user *)addr);
+		ret = put_user(base, (unsigned long __user *)arg2);
 		break;
 	}
 	case ARCH_GET_GS: {
 		unsigned long base;
+
 		if (doit)
 			rdmsrl(MSR_KERNEL_GS_BASE, base);
 		else
@@ -647,21 +677,21 @@ long do_arch_prctl(struct task_struct *task, int code, unsigned long addr)
                }
 #endif
 #endif
-		ret = put_user(base, (unsigned long __user *)addr);
+		ret = put_user(base, (unsigned long __user *)arg2);
 		break;
 	}
 
 #ifdef CONFIG_CHECKPOINT_RESTORE
 # ifdef CONFIG_X86_X32_ABI
 	case ARCH_MAP_VDSO_X32:
-		return prctl_map_vdso(&vdso_image_x32, addr);
+		return prctl_map_vdso(&vdso_image_x32, arg2);
 # endif
 # if defined CONFIG_X86_32 || defined CONFIG_IA32_EMULATION
 	case ARCH_MAP_VDSO_32:
-		return prctl_map_vdso(&vdso_image_32, addr);
+		return prctl_map_vdso(&vdso_image_32, arg2);
 # endif
 	case ARCH_MAP_VDSO_64:
-		return prctl_map_vdso(&vdso_image_64, addr);
+		return prctl_map_vdso(&vdso_image_64, arg2);
 #endif
 
 	default:
@@ -672,10 +702,23 @@ long do_arch_prctl(struct task_struct *task, int code, unsigned long addr)
 	return ret;
 }
 
-long sys_arch_prctl(int code, unsigned long addr)
+SYSCALL_DEFINE2(arch_prctl, int, option, unsigned long, arg2)
 {
-	return do_arch_prctl(current, code, addr);
+	long ret;
+
+	ret = do_arch_prctl_64(current, option, arg2);
+	if (ret == -EINVAL)
+		ret = do_arch_prctl_common(current, option, arg2);
+
+	return ret;
 }
+
+#ifdef CONFIG_IA32_EMULATION
+COMPAT_SYSCALL_DEFINE2(arch_prctl, int, option, unsigned long, arg2)
+{
+	return do_arch_prctl_common(current, option, arg2);
+}
+#endif
 
 unsigned long KSTK_ESP(struct task_struct *task)
 {
