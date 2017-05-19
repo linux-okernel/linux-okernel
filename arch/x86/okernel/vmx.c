@@ -2507,6 +2507,9 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu, int nr_irqs_enabled)
         /* do_fork_fixup args */
 	struct task_struct *p;
 
+	unsigned long r_irqs_disabled;
+	unsigned long nr_rflags;
+	
 	cmd = vcpu->regs[VCPU_REGS_RAX];
 
 #if defined(HPE_DEBUG)
@@ -2688,6 +2691,13 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu, int nr_irqs_enabled)
 		HDEBUG("calling schedule_r MSR_FS_BASE=%#lx nr_fs=%#lx MSR_GS_BASE=%#lx nr_gs=%#lx\n",
 		       fs, nr_fs, gs, nr_gs);
 
+		HDEBUG("calling schedule_r in_atomic(): %d, irqs_disabled(): %d, pid: %d, name: %s\n",
+		       in_atomic(), irqs_disabled(), current->pid, current->comm);
+		HDEBUG("calling schedule_r preempt_count (%d) rcu_preempt_depth (%d)\n",
+		       preempt_count(), rcu_preempt_depth());
+
+		r_irqs_disabled = irqs_disabled();
+
 		BXMAGICBREAK;
 #endif
 		unset_vmx_r_mode();
@@ -2730,6 +2740,18 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu, int nr_irqs_enabled)
 		       in_atomic(), irqs_disabled(), current->pid, current->comm);
 		HDEBUG("ret from preempt_count (%d) rcu_preempt_depth (%d)\n",
 		       preempt_count(), rcu_preempt_depth());
+
+		/* IRQs should be enabled on return from schedule()...check this */
+		BUG_ON(irqs_disabled());
+		
+		if(r_irqs_disabled){
+			/* irqs were disabled when we entered from NR mode but now they are enabled */
+			/* so update NR mode state (can happen through calls to sched_yield() */
+			vmx_get_cpu(vcpu);
+			nr_rflags = vmcs_readl(GUEST_RFLAGS);
+			vmcs_writel(GUEST_RFLAGS, nr_rflags | RFLAGS_IF_BIT);
+			vmx_put_cpu(vcpu);
+		}
 		BXMAGICBREAK;
 	} else if(cmd == VMCALL_DOEXIT){
 		code = (long)vcpu->regs[VCPU_REGS_RBX];
