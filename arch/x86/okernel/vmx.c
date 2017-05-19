@@ -553,13 +553,12 @@ int do_split_2M_mapping(struct vmx_vcpu* vcpu, u64 paddr, int cache)
 
         /* First allocate a physical page for the PML1 table (512*4K entries) */
 	if (cache) {
+		HDEBUG("Using okmm\n");
 		okmm_get_ptce(&e_pt, &pt);
-		/*
-		  BUG NEED TO CHECK FOR NULLS
-
-		 */
-
-		
+		if (!e_pt || !pt){
+			printk(KERN_ERR "okernel: E_PT entries exhausted\n");
+			return 0;
+		}
 	} else {
 		e_pt = (struct ept_pt_list*) kmalloc(sizeof(struct ept_pt_list),
 						     GFP_KERNEL);
@@ -3918,7 +3917,7 @@ int vmx_launch(unsigned int mode, unsigned int flags, struct nr_cloned_state *cl
 #if !defined(CONFIG_THREAD_INFO_IN_TASK)
 	struct thread_info *nr_ti;
 #endif
-#if defined(HPE_DEBUG_VE)
+#if defined(HPE_LOOP_DETECT)
 	unsigned long last_time;
 	unsigned long current_time;
 	unsigned long vmexit_counter;
@@ -4030,12 +4029,12 @@ int vmx_launch(unsigned int mode, unsigned int flags, struct nr_cloned_state *cl
 #define COUNTER_MAX 100 //works with Docker
 #define COUNTER_THRESHOLD 1000000 //approx 0.001s
 
-#if defined(HPE_DEBUG_VE)
+#if defined(HPE_LOOP_DETECT)
 	vmexit_counter = 0;
 	last_time = rdtsc();
 #endif
 	while(1){
-#if defined(HPE_DEBUG_VE)
+#if defined(HPE_LOOP_DETECT)
 		
 		if(vmexit_counter > COUNTER_MAX){
 			/* Check rate we are generating vmexits - if more than threshold then exit. */
@@ -4106,7 +4105,7 @@ int vmx_launch(unsigned int mode, unsigned int flags, struct nr_cloned_state *cl
 		ret = vmx_run_vcpu(vcpu);
                 /*************************** GONE FOR IT! *************************/
 
-#if defined(HPE_DEBUG_VE)
+#if defined(HPE_LOOP_DETECT)
 		vmexit_counter++;
 #endif
 
