@@ -61,7 +61,6 @@
 #include <linux/smp.h>
 #include <linux/percpu.h>
 #include <linux/syscalls.h>
-#include <linux/version.h>
 #include <linux/console.h>
 #include <linux/compat.h>
 #include <linux/gfp.h>
@@ -75,6 +74,7 @@
 //#include <asm/paravirt.h>
 #include <asm/preempt.h>
 #include <asm/tlbflush.h>
+#include <asm/e820/api.h>
 
 #include "constants2.h"
 #include "vmx.h"
@@ -86,7 +86,7 @@ static DECLARE_BITMAP(vmx_vpid_bitmap, VMX_NR_VPIDS);
 static DEFINE_SPINLOCK(vmx_vpid_lock);
 
 
-/* Rudimentry 'protected' memory allocator */
+/* Rudimentary 'protected' memory allocator */
 #define OK_NR_PROTECTED_PAGES 8
 static DECLARE_BITMAP(ok_protected_pg_bitmap, OK_NR_PROTECTED_PAGES);
 static DEFINE_SPINLOCK(ok_protected_pg_lock);
@@ -300,8 +300,8 @@ static unsigned long e820_end_paddr(unsigned long limit_pfn)
 	unsigned long last_pfn = 0;
 	unsigned long max_arch_pfn = (MAXMEM >> PAGE_SHIFT);
 
-	for (i = 0; i < e820->nr_map; i++) {
-		struct e820entry *ei = &e820->map[i];
+	for (i = 0; i < e820_table->nr_entries; i++) {
+		struct e820_entry *ei = &e820_table->entries[i];
 		unsigned long start_pfn;
 		unsigned long end_pfn;
 
@@ -3482,7 +3482,7 @@ int __init vmx_init(void)
 
 	if(max_phys_mem > (1UL << 32)){
 		ept_limit = max_phys_mem;
-		ept_no_cache_start = (e820_end_of_low_ram_pfn() * PAGE_SIZE);
+		ept_no_cache_start = (e820__end_of_low_ram_pfn() * PAGE_SIZE);
 	} else {
 		ept_limit = (1UL << 32);
 		ept_no_cache_start = max_phys_mem;
