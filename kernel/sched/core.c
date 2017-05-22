@@ -3653,6 +3653,31 @@ asmlinkage __visible void __sched schedule_r_mode(void)
 }
 EXPORT_SYMBOL(schedule_r_mode);
 
+/*
+ * synchronize_rcu_tasks() makes sure that no task is stuck in preempted
+ * state (have scheduled out non-voluntarily) by making sure that all
+ * tasks have either left the run queue or have gone into user space.
+ * As idle tasks do not do either, they must not ever be preempted
+ * (schedule out non-voluntarily).
+ *
+ * schedule_idle() is similar to schedule_preempt_disable() except that it
+ * never enables preemption because it does not call sched_submit_work().
+ */
+void __sched schedule_idle(void)
+{
+	/*
+	 * As this skips calling sched_submit_work(), which the idle task does
+	 * regardless because that function is a nop when the task is in a
+	 * TASK_RUNNING state, make sure this isn't used someplace that the
+	 * current task can be in any other state. Note, idle is always in the
+	 * TASK_RUNNING state.
+	 */
+	WARN_ON_ONCE(current->state);
+	do {
+		__schedule(false);
+	} while (need_resched());
+}
+
 #ifdef CONFIG_CONTEXT_TRACKING
 asmlinkage __visible void __sched schedule_user(void)
 {
@@ -6455,6 +6480,7 @@ void ___might_sleep(const char *file, int line, int preempt_offset)
 			in_atomic(), irqs_disabled(),
 			current->pid, current->comm);
 #endif
+
 	if (task_stack_end_corrupted(current))
 		printk(KERN_EMERG "Thread overran stack, or stack corrupted\n");
 
