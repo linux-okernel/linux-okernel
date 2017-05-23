@@ -1,8 +1,8 @@
 #ifndef OKMM_H
 #define OKMM_H
 
-#define OKMM_MIN 128000 /* Minimum number below which we allocate new entries */
-#define OKMM_MAX 256000 /* Maximum number of entries */
+#define OKMM_MIN 1024 /* Minimum number below which we allocate new entries */
+#define OKMM_MAX (OKMM_MIN + 256) /* Maximum number of entries */
 
 struct ok_pt_cache_entry {
 	struct ept_pt_list *epte;
