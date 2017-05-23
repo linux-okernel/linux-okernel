@@ -22,27 +22,10 @@
  */
 static struct ok_pt_cache_entry pt_cache[OKMM_MAX];
 static unsigned long nentries;
+static int in_refresh;
 static unsigned long low_water;
 
 static DEFINE_SPINLOCK(okmm_lock);
-
-static int alloc_ok_ptce(int index)
-{
-	struct ept_pt_list *ept;
-	pt_page *pt;
-	
-	ept =(struct ept_pt_list*) kmalloc(sizeof(*ept), GFP_KERNEL);
-	pt   = (pt_page*)kmalloc(sizeof(*pt), GFP_KERNEL);
-	if (!ept | !pt ){
-		return 0;
-	}
-	if(!(vt_alloc_page((void**)&pt[0].virt, &pt[0].phys))){
-		return 0;
-	}
-	pt_cache[index].epte = ept;
-	pt_cache[index].pt = pt;
-	return 1;
-}
 
 static inline void kern_mess(unsigned long lw)
 {
@@ -65,31 +48,64 @@ static void okmm_metrics(void)
 	}
 }
 
+static int do_refresh(unsigned long n)
+{
+	struct ok_pt_cache_entry *nc;
+	struct ept_pt_list *ept;
+	pt_page *pt;
+	unsigned long i, j;
+	unsigned long flags;
+
+	nc = (struct ok_pt_cache_entry*) kmalloc((sizeof(*nc) * n), GFP_KERNEL);
+	if (!nc) {
+		return -ENOMEM;
+	}
+
+	for (i = 0; i < n; i++){
+		ept = (struct ept_pt_list*) kmalloc(sizeof(*ept), GFP_KERNEL);
+		pt   = (pt_page*)kmalloc(sizeof(*pt), GFP_KERNEL);
+		if (!ept | !pt ){
+			return -ENOMEM;
+		}
+		if(!(vt_alloc_page((void**)&pt[0].virt, &pt[0].phys))){
+			return -ENOMEM;
+		}
+		nc[i].epte = ept;
+		nc[i].pt = pt;
+	}
+	spin_lock_irqsave(&okmm_lock, flags);
+	for (i = 0, j = nentries; i < n; i++, j++){
+		pt_cache[j].epte = nc[i].epte;
+		pt_cache[j].pt = nc[i].pt;
+	}
+	nentries += n;
+	in_refresh = 0;
+	spin_unlock_irqrestore(&okmm_lock, flags);
+	kfree(nc);
+	return 0;
+}
+
 int okmm_refresh_pt_cache(void)
 {
-	int ret = 0;
-	unsigned long i;
-	spin_lock(&okmm_lock);
+	unsigned long flags;
+	unsigned long n;
+	spin_lock_irqsave(&okmm_lock, flags);
 	okmm_metrics();
-	if (nentries > OKMM_MIN){
-		goto end_unlock;
+	if (nentries <= OKMM_MIN && !(in_refresh)){
+		n = OKMM_MAX - nentries;
+		in_refresh = 1;
+		spin_unlock_irqrestore(&okmm_lock, flags);
+		return do_refresh(n);
 	}
-	for(i = nentries; i < OKMM_MAX; i++){
-		if (!alloc_ok_ptce(i)){
-			ret = -ENOMEM;
-			goto end_unlock;
-		}
-		nentries++;
-	}
-end_unlock:
-	spin_unlock(&okmm_lock);
-	return ret;
-
+	spin_unlock_irqrestore(&okmm_lock, flags);
+	return 0;
 }
 
 void okmm_get_ptce(struct ept_pt_list **epte, pt_page **pt)
 {
-	spin_lock(&okmm_lock);
+	unsigned long flags;
+
+	spin_lock_irqsave(&okmm_lock, flags);
 	if (nentries > 0){
 		nentries--;
 		*epte = pt_cache[nentries].epte;
@@ -98,16 +114,40 @@ void okmm_get_ptce(struct ept_pt_list **epte, pt_page **pt)
 		*epte = 0;
 		*pt = 0;
 	}
-	spin_unlock(&okmm_lock);
+	spin_unlock_irqrestore(&okmm_lock, flags);
+}
+
+static int alloc_ok_ptce(int index)
+{
+	struct ept_pt_list *ept;
+	pt_page *pt;
+
+	ept =(struct ept_pt_list*) kmalloc(sizeof(*ept), GFP_KERNEL);
+	pt   = (pt_page*)kmalloc(sizeof(*pt), GFP_KERNEL);
+	if (!ept | !pt ){
+		return 0;
+	}
+	if(!(vt_alloc_page((void**)&pt[0].virt, &pt[0].phys))){
+		return 0;
+	}
+	pt_cache[index].epte = ept;
+	pt_cache[index].pt = pt;
+	return 1;
 }
 
 int __init okmm_init(void)
 {
 	/* Returns Null if successful*/
-	int ret;
-	printk(KERN_ERR "Initializing okmm_cache.\n");
+	unsigned long i;
 	nentries = 0;
-	ret = okmm_refresh_pt_cache();
+	in_refresh = 0;
+	printk(KERN_ERR "Initializing okmm_cache.\n");
+	for(i = nentries; i < OKMM_MAX; i++){
+		if (!alloc_ok_ptce(i)){
+			return -ENOMEM;
+		}
+		nentries++;
+	}
 	low_water = OKMM_MIN;
-	return ret;
+	return 0;
 }
