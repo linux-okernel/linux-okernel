@@ -831,6 +831,10 @@ int set_clr_ept_page_flags(struct vmx_vcpu *vcpu, u64 paddr,
 		if (!split_2M_mapping_okmm(vcpu, (paddr & ~(PAGESIZE2M - 1)))){
 				return 0;
 			}
+		else {
+			/* get new epte after split*/
+			epte = ept_page_entry(vcpu, paddr);
+		}
 	}
 	*epte |= s_flags;
 	*epte &= ~(c_flags);
@@ -1689,7 +1693,7 @@ int vt_ept_2M_init(struct vmx_vcpu *vcpu)
 
        vcpu->ept_root = pml4_phys;
        protect_kernel_integrity(vcpu);
-       //do_4k_split(vcpu);
+//       do_4k_split(vcpu);
        return 1;
 }
 /* End: imported code from original BV prototype */
@@ -3366,7 +3370,7 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu, int nr_irqs_enabled)
 		vmx_put_cpu(vcpu);
 		wrmsrl(MSR_FS_BASE, nr_fs);
 		wrmsrl(MSR_GS_BASE, nr_gs);
-#if defined(HPE_DEBUG)
+//#if defined(HPE_DEBUG)
 		/* Don't need this rdmsrl, just for debug output */
 		rdmsrl(MSR_FS_BASE, fs);
 		rdmsrl(MSR_GS_BASE, gs);
@@ -3922,7 +3926,9 @@ int vmx_launch(unsigned int mode, unsigned int flags, struct nr_cloned_state *cl
 	unsigned long current_time;
 	unsigned long vmexit_counter;
 #endif
-
+	if (in_atomic()) {
+		HDEBUG("!!!!!!in_atomic() true - preemption disabled!!!!!\n");
+	}
 	if ((ret = okmm_refresh_pt_cache())){
 		HDEBUG("okmm_refresh_pt_cache failed\n");
 		return ret;
