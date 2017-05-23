@@ -832,6 +832,10 @@ int set_clr_ept_page_flags(struct vmx_vcpu *vcpu, u64 paddr,
 		if (!split_2M_mapping_okmm(vcpu, (paddr & ~(PAGESIZE2M - 1)))){
 				return 0;
 			}
+		else {
+			/* get new epte after split*/
+			epte = ept_page_entry(vcpu, paddr);
+		}
 	}
 	*epte |= s_flags;
 	*epte &= ~(c_flags);
@@ -1482,7 +1486,7 @@ int vt_ept_2M_init(struct vmx_vcpu *vcpu)
 
        vcpu->ept_root = pml4_phys;
        protect_kernel_integrity(vcpu);
-       //do_4k_split(vcpu);
+//       do_4k_split(vcpu);
        return 1;
 }
 /* End: imported code from original BV prototype */
@@ -2973,6 +2977,9 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu, int nr_irqs_enabled)
         /* do_fork_fixup args */
 	struct task_struct *p;
 
+	unsigned long r_irqs_disabled;
+	unsigned long nr_rflags;
+
 	cmd = vcpu->regs[VCPU_REGS_RAX];
 
 	// NIGEL: put back in conditionals for rbp and rsp above
@@ -3153,7 +3160,7 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu, int nr_irqs_enabled)
 		vmx_put_cpu(vcpu);
 		wrmsrl(MSR_FS_BASE, nr_fs);
 		wrmsrl(MSR_GS_BASE, nr_gs);
-#if defined(HPE_DEBUG)
+//#if defined(HPE_DEBUG)
 		/* Don't need this rdmsrl, just for debug output */
 		rdmsrl(MSR_FS_BASE, fs);
 		rdmsrl(MSR_GS_BASE, gs);
@@ -3168,8 +3175,15 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu, int nr_irqs_enabled)
 		HDEBUG("calling schedule_r MSR_FS_BASE=%#lx nr_fs=%#lx MSR_GS_BASE=%#lx nr_gs=%#lx\n",
 		       fs, nr_fs, gs, nr_gs);
 
+		HDEBUG("calling schedule_r in_atomic(): %d, irqs_disabled(): %d, pid: %d, name: %s\n",
+		       in_atomic(), irqs_disabled(), current->pid, current->comm);
+		HDEBUG("calling schedule_r preempt_count (%d) rcu_preempt_depth (%d)\n",
+		       preempt_count(), rcu_preempt_depth());
+
+		r_irqs_disabled = irqs_disabled();
+
 		BXMAGICBREAK;
-#endif
+//#endif
 		unset_vmx_r_mode();
 
                 /* This is the only place we should be swapping CPUs */
@@ -3210,6 +3224,18 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu, int nr_irqs_enabled)
 		       in_atomic(), irqs_disabled(), current->pid, current->comm);
 		HDEBUG("ret from preempt_count (%d) rcu_preempt_depth (%d)\n",
 		       preempt_count(), rcu_preempt_depth());
+
+		/* IRQs should be enabled on return from schedule()...check this */
+		BUG_ON(irqs_disabled());
+
+		if(r_irqs_disabled){
+			/* irqs were disabled when we entered from NR mode but now they are enabled */
+			/* so update NR mode state (can happen through calls to sched_yield() */
+			vmx_get_cpu(vcpu);
+			nr_rflags = vmcs_readl(GUEST_RFLAGS);
+			vmcs_writel(GUEST_RFLAGS, nr_rflags | RFLAGS_IF_BIT);
+			vmx_put_cpu(vcpu);
+		}
 		BXMAGICBREAK;
 	} else if(cmd == VMCALL_DOEXIT){
 		check_int_enabled(vcpu, "DOEXIT");
@@ -3683,7 +3709,9 @@ int vmx_launch(unsigned int mode, unsigned int flags, struct nr_cloned_state *cl
 	unsigned long current_time;
 	unsigned long vmexit_counter;
 #endif
-
+	if (in_atomic()) {
+		HDEBUG("!!!!!!in_atomic() true - preemption disabled!!!!!\n");
+	}
 	if ((ret = okmm_refresh_pt_cache())){
 		HDEBUG("okmm_refresh_pt_cache failed\n");
 		return ret;
