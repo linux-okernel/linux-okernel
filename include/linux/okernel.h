@@ -90,7 +90,7 @@ int ok_free_protected_page(struct page *pg);
 
 /* Use trace_printk instead of printk */
 #define HPE_LOOP_DETECT
-#define HPE_LOG
+#//define HPE_LOG
 #ifdef HPE_LOG
 #define HLOG(fmt, args...)  trace_printk( KERN_ERR "%s: cpu(%d) pid(%d) %s: "\
 					  fmt , vmx_nr_mode()?"NR":"R ", \
@@ -99,7 +99,7 @@ int ok_free_protected_page(struct page *pg);
 #else
 #define HLOG(fmt, args...)
 #endif
-#define HPE_DEBUG
+//#define HPE_DEBUG
 #ifdef HPE_DEBUG
 #define HDEBUG(fmt, args...)  trace_printk( KERN_ERR "%s: cpu(%d) pid(%d) %s: " fmt , vmx_nr_mode()?"NR":"R ", raw_smp_processor_id(), current->pid,__func__, ## args)
 //#define HDEBUG(fmt, args...)  printk( KERN_ERR "%s: cpu(%d) pid(%d) %s: " fmt , vmx_nr_mode()?"NR":"R ", raw_smp_processor_id(), current->pid,__func__, ## args)
