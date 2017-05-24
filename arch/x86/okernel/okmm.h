@@ -1,11 +1,14 @@
 #ifndef OKMM_H
 #define OKMM_H
 
-#define OKMM_MIN 1024 /* Minimum number below which we allocate new entries */
-#define OKMM_MAX (OKMM_MIN + 256) /* Maximum number of entries */
+#define OKMM_INIT_NR 512 /* Initial number of entries */
 
 struct ok_pt_cache_entry {
+	struct list_head list;
+
+	/* For use by okernel to track the allocated page*/
 	struct ept_pt_list *epte;
+
 	pt_page *pt;
 };
 
