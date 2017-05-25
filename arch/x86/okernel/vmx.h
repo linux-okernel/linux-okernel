@@ -66,6 +66,8 @@ struct nr_cloned_state {
 #define SECONDARY_EXEC_ENABLE_INVPCID	0x00001000
 #endif
 
+#define SECONDARY_EXEC_MODE_BASE_CTL	0x00400000
+
 #ifndef X86_CR4_FSGSBASE
 #define X86_CR4_FSGSBASE	X86_CR4_RDWRGSFS
 #endif
@@ -154,6 +156,9 @@ struct ept_pt_list {
 	int n_pages;
 };
 
+#define VCPUBUFLEN 300
+#define NVCPUBUF 1000
+
 struct vmx_vcpu {
 	int cpu;
 	int vpid;
@@ -188,6 +193,10 @@ struct vmx_vcpu {
 	unsigned int *nr_stack_canary;
 	void *syscall_tbl;
 
+	/* Circular log pending NR-mode lock-safe logging*/
+	char log[NVCPUBUF][VCPUBUFLEN];
+	/* Pointer to next entry in circular log*/
+	int lp;
 };
 
 extern __init int vmx_init(void);
@@ -203,6 +212,7 @@ vmx_do_ept_fault(struct vmx_vcpu *vcpu, unsigned long gpa,
 
 extern void vmx_ept_sync_vcpu(struct vmx_vcpu *vcpu);
 extern void vmx_ept_sync_individual_addr(struct vmx_vcpu *vcpu, gpa_t gpa);
+extern int vt_alloc_page(void **virt, u64 *phys);
 
 
 static __always_inline unsigned long vmcs_readl(unsigned long field)
