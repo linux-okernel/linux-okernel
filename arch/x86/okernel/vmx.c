@@ -11,7 +11,7 @@
  * Author: C I Dalton <cid@hpe.com> 2015
  *
  * This is the original dune header:
- n
+
  * This file is derived from Linux KVM VT-x support.
  * Copyright (C) 2006 Qumranet, Inc.
  * Copyright 2010 Red Hat, Inc. and/or its affiliates.
@@ -176,6 +176,7 @@ static inline int dummy_in_vmx_nr_mode(void)
 	return 0;
 }
 
+
 static inline int real_in_vmx_nr_mode(void)
 {
 	unsigned long cr4;
@@ -194,6 +195,7 @@ inline int is_in_vmx_nr_mode(void)
 {
 	return in_vmx_nr_mode();
 }
+
 
 /* Copy vcpu regs into a pt_regs structure */
 void copy_vcpu_to_ptregs(struct vmx_vcpu *vcpu, struct pt_regs *regs)
@@ -4494,7 +4496,7 @@ int vmx_launch(unsigned int mode, unsigned int flags, struct nr_cloned_state *cl
 		native_irq_disable();
 
 		//fast_path:
-		
+
                 /**************************** GO FOR IT ***************************/
 		ret = vmx_run_vcpu(vcpu);
                 /*************************** GONE FOR IT! *************************/
