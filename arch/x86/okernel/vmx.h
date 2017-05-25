@@ -192,10 +192,10 @@ struct vmx_vcpu {
 	struct nr_cloned_state *cloned_thread;
 	unsigned int *nr_stack_canary;
 	void *syscall_tbl;
-	/* vmexit loop detection exit count for the last exit phys addr*/
-	int ec; 
-	unsigned long lepa;
+
+	/* Circular log pending NR-mode lock-safe logging*/
 	char log[NVCPUBUF][VCPUBUFLEN];
+	/* Pointer to next entry in circular log*/
 	int lp;
 };
 
