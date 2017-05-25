@@ -29,7 +29,10 @@
  *    <interrupt>                 okmm_lock
  *       lockA
  *
- * Also will need percpu list pairs
+ * Also will need percpu list pairs and to embrach the SMP locking strategy
+ * used by the slab: see comments on "SMP synchronization" in ./mm/slab.c
+ * Disable local interrupts and therefore no locking needed for per-cpu
+ * lists.
  */
 static struct ok_pt_cache_entry available;
 static struct ok_pt_cache_entry used;
