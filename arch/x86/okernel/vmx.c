@@ -338,6 +338,7 @@ static unsigned long e820_end_paddr(unsigned long limit_pfn)
 	int i;
 	unsigned long last_pfn = 0;
 	unsigned long max_arch_pfn = (MAXMEM >> PAGE_SHIFT);
+
 	for (i = 0; i < e820_table->nr_entries; i++) {
 		struct e820_entry *ei = &e820_table->entries[i];
 		unsigned long start_pfn;
