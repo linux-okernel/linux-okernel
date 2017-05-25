@@ -61,6 +61,7 @@
 #include <linux/smp.h>
 #include <linux/percpu.h>
 #include <linux/syscalls.h>
+#include <linux/version.h>
 #include <linux/console.h>
 #include <linux/compat.h>
 #include <linux/gfp.h>
@@ -175,7 +176,6 @@ static inline int dummy_in_vmx_nr_mode(void)
 	return 0;
 }
 
-
 static inline int real_in_vmx_nr_mode(void)
 {
 	unsigned long cr4;
@@ -194,7 +194,6 @@ inline int is_in_vmx_nr_mode(void)
 {
 	return in_vmx_nr_mode();
 }
-
 
 /* Copy vcpu regs into a pt_regs structure */
 void copy_vcpu_to_ptregs(struct vmx_vcpu *vcpu, struct pt_regs *regs)
@@ -3193,7 +3192,7 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu, int nr_irqs_enabled)
 
 	unsigned long r_irqs_disabled;
 	unsigned long nr_rflags;
-	
+
 	cmd = vcpu->regs[VCPU_REGS_RAX];
 
 	TDEBUG(log_ptr(vcpu), "cmd (%lu)\n", cmd);
@@ -3436,7 +3435,7 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu, int nr_irqs_enabled)
 
 		/* IRQs should be enabled on return from schedule()...check this */
 		BUG_ON(irqs_disabled());
-		
+
 		if(r_irqs_disabled){
 			/* irqs were disabled when we entered from NR mode but now they are enabled */
 			/* so update NR mode state (can happen through calls to sched_yield() */
@@ -4031,7 +4030,7 @@ int vmx_launch(unsigned int mode, unsigned int flags, struct nr_cloned_state *cl
 		native_irq_disable();
 
 		//fast_path:
-
+		
                 /**************************** GO FOR IT ***************************/
 		ret = vmx_run_vcpu(vcpu);
                 /*************************** GONE FOR IT! *************************/
