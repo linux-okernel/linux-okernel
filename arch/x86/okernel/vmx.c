@@ -11,7 +11,7 @@
  * Author: C I Dalton <cid@hpe.com> 2015
  *
  * This is the original dune header:
-
+ n
  * This file is derived from Linux KVM VT-x support.
  * Copyright (C) 2006 Qumranet, Inc.
  * Copyright 2010 Red Hat, Inc. and/or its affiliates.
@@ -366,7 +366,7 @@ int vt_alloc_page(void **virt, u64 *phys)
         struct page *pg;
         void* v;
 
-        pg = alloc_page(GFP_KERNEL /*GFP_ATOMIC*/);
+        pg = alloc_page(GFP_KERNEL);
 
         v = page_address(pg);
 
@@ -3618,10 +3618,10 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu, int nr_irqs_enabled)
 	struct thread_info *r_ti;
 #endif
 	unsigned int cloned_tsk_state;
-//#if defined(HPE_DEBUG)
+#if defined(HPE_DEBUG)
 	unsigned long rbp;
 	unsigned long rsp;
-//#endif
+#endif
 
 	int cpu;
 	struct tss_struct *tss;
@@ -3820,7 +3820,7 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu, int nr_irqs_enabled)
 		vmx_put_cpu(vcpu);
 		wrmsrl(MSR_FS_BASE, nr_fs);
 		wrmsrl(MSR_GS_BASE, nr_gs);
-//#if defined(HPE_DEBUG)
+#if defined(HPE_DEBUG)
 		/* Don't need this rdmsrl, just for debug output */
 		rdmsrl(MSR_FS_BASE, fs);
 		rdmsrl(MSR_GS_BASE, gs);
@@ -4056,21 +4056,6 @@ void flags_from_qual(unsigned long qual, unsigned long *s, unsigned long *c)
 	*c = ((~*s) & EPT_PERM_MASK);
 }
 
-void vmexit_loop_detect(struct vmx_vcpu *vcpu, unsigned long gpa)
-{
-	if (vcpu->lepa == gpa){
-		//vcpu->ec++;
-		if (vcpu->ec >  10){
-			dump_log(vcpu);
-			BUG();
-		}
-	} else {
-		vcpu->ec = 0;
-		vcpu->lepa = gpa;
-	}
-	return;
-}
-
 int page_walk_ept_viol(struct vmx_vcpu *vcpu, unsigned long gpa,
 		       unsigned long qual)
 {
@@ -4134,8 +4119,6 @@ int handle_EPT_violation(struct vmx_vcpu *vcpu)
 		unsigned long *epte, mapped, s_flags, c_flags, eprot, n_eprot;
 		int level;
 		pgprot_t prot;
-		vmexit_loop_detect(vcpu, gpa);
-		//return grant_all(vcpu, gpa, qual, PG_LEVEL_NONE);	
 		/* Bit 8 is cleared if it's a page walk or update of accessed*/
 		if (!(qual & 0x100)){
 			TDEBUG(log_ptr(vcpu),"EPT Page walk violation  "
@@ -4216,7 +4199,6 @@ int handle_EPT_violation(struct vmx_vcpu *vcpu)
 					BUG();
 				}
 			}
-			//return grant_all(vcpu, gpa, qual, level);	
 			vpid_sync_context(vcpu->vpid);
 			vmx_put_cpu(vcpu);
 			return 1;
@@ -4260,7 +4242,6 @@ int handle_EPT_violation(struct vmx_vcpu *vcpu)
 				HLOG("Kernel space EPT Violation gpa %#lx "
 				       "va %#lx set %#lx clear %#lx\n",
 				       gpa, gva, s_flags, c_flags);
-				//return grant_all(vcpu, gpa, qual, level);	
 				vpid_sync_context(vcpu->vpid);
 				vmx_put_cpu(vcpu);
 				return 1;
