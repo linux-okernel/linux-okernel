@@ -11,7 +11,7 @@
  * Author: C I Dalton <cid@hpe.com> 2015
  *
  * This is the original dune header:
- n
+
  * This file is derived from Linux KVM VT-x support.
  * Copyright (C) 2006 Qumranet, Inc.
  * Copyright 2010 Red Hat, Inc. and/or its affiliates.
@@ -176,6 +176,7 @@ static inline int dummy_in_vmx_nr_mode(void)
 	return 0;
 }
 
+
 static inline int real_in_vmx_nr_mode(void)
 {
 	unsigned long cr4;
@@ -194,6 +195,7 @@ inline int is_in_vmx_nr_mode(void)
 {
 	return in_vmx_nr_mode();
 }
+
 
 /* Copy vcpu regs into a pt_regs structure */
 void copy_vcpu_to_ptregs(struct vmx_vcpu *vcpu, struct pt_regs *regs)
@@ -2360,7 +2362,7 @@ void protect_kernel_integrity(struct vmx_vcpu *vcpu)
 	unsigned long text_end = PFN_ALIGN(&__stop___ex_table);
 	unsigned long end = (unsigned long) &__end_rodata_hpage_align;
 
-	/* 
+	/*
 	 * Protect read-only data can't set OK_TEXT as some pages get released
 	 * and reused - need to hook memory management code if we want to set
 	 * OK_TEXT
@@ -4691,7 +4693,7 @@ int handle_EPT_violation(struct vmx_vcpu *vcpu)
 					return 0;
 				}
 				else{
-					return grant_all(vcpu, gpa, qual, level);	
+					return grant_all(vcpu, gpa, qual, level);
 				}
 			}
 			ept_flags_from_prot(prot, &s_flags, &c_flags);
@@ -5024,7 +5026,7 @@ int vmx_launch(unsigned int mode, unsigned int flags, struct nr_cloned_state *cl
 		native_irq_disable();
 
 		//fast_path:
-		
+
                 /**************************** GO FOR IT ***************************/
 		ret = vmx_run_vcpu(vcpu);
                 /*************************** GONE FOR IT! *************************/
@@ -5302,7 +5304,7 @@ struct page_ext_operations page_okernel_ops = {
 	.init = init_okernel,
 };
 
-/* Rudimentry 'protected' memory allocator  - use PG_protected flag for consistency checks */
+/* Rudimentary 'protected' memory allocator  - use PG_protected flag for consistency checks */
 void ok_init_protected_pages(void)
 {
 	int i;
