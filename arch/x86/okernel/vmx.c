@@ -11,7 +11,7 @@
  * Author: C I Dalton <cid@hpe.com> 2015
  *
  * This is the original dune header:
- n
+
  * This file is derived from Linux KVM VT-x support.
  * Copyright (C) 2006 Qumranet, Inc.
  * Copyright 2010 Red Hat, Inc. and/or its affiliates.
@@ -137,7 +137,7 @@ struct vmx_capability vmx_capability;
 // NJE BEGIN NEEDS TO GO
 /*
  * We can use trace_printk or printk safely when we have a process running
- * in NR mode. So this is a quick and dirty circular buffer until we 
+ * in NR mode. So this is a quick and dirty circular buffer until we
  * build something better (it is in hand).
  */
 static char *log_ptr(struct vmx_vcpu *vcpu)
@@ -175,6 +175,7 @@ static inline int dummy_in_vmx_nr_mode(void)
 	return 0;
 }
 
+
 static inline int real_in_vmx_nr_mode(void)
 {
 	unsigned long cr4;
@@ -193,6 +194,7 @@ inline int is_in_vmx_nr_mode(void)
 {
 	return in_vmx_nr_mode();
 }
+
 
 /* Copy vcpu regs into a pt_regs structure */
 void copy_vcpu_to_ptregs(struct vmx_vcpu *vcpu, struct pt_regs *regs)
@@ -546,7 +548,7 @@ int do_split_2M_mapping(struct vmx_vcpu* vcpu, u64 paddr, int cache)
 
 	p_base_addr = (*pml2_e & ~(PAGESIZE2M-1));
 	pml1_attrs = (*pml2_e & PDE_ATTR_MASK & ~EPT_2M_PAGE);
-	/* 
+	/*
 	 * Intel SDM says EPT_2M_PAGE is ignored in PL1 4k entries
 	 * But we are using it for sanity checking
 	 */
@@ -1387,7 +1389,7 @@ void protect_kernel_integrity(struct vmx_vcpu *vcpu)
 	unsigned long text_end = PFN_ALIGN(&__stop___ex_table);
 	unsigned long end = (unsigned long) &__end_rodata_hpage_align;
 
-	/* 
+	/*
 	 * Protect read-only data can't set OK_TEXT as some pages get released
 	 * and reused - need to hook memory management code if we want to set
 	 * OK_TEXT
@@ -1455,31 +1457,31 @@ int clone_kstack2(struct vmx_vcpu *vcpu, unsigned long perms)
 	       k_stack, (unsigned long)paddr, current_top_of_stack());
 
 
-	HDEBUG("ept page clone on (%#lx)\n", (unsigned long)paddr);
-	/* also need replace_ept_contiguous_region */
-	if(!(vaddr = replace_ept_page(vcpu, paddr, perms))){
-		printk(KERN_ERR "failed to clone page at (%#lx)\n",
-		       (unsigned long)paddr);
-		return 0;
-	}
+       HDEBUG("ept page clone on (%#lx)\n", (unsigned long)paddr);
+       /* also need replace_ept_contiguous_region */
+       if(!(vaddr = replace_ept_page(vcpu, paddr, perms))){
+	       printk(KERN_ERR "failed to clone page at (%#lx)\n",
+		      (unsigned long)paddr);
+	       return 0;
+       }
 
-	/* We assume for now that the thread_info structure is at the bottom of the first page */
-	/* Bad assumption it seems! */
+       /* We assume for now that the thread_info structure is at the bottom of the first page */
+       /* Bad assumption it seems! */
 	//vcpu->cloned_thread_info = (struct thread_info*)vaddr;
-	vcpu->cloned_thread_info = current_thread_info();
-	vcpu->nr_stack_canary = (unsigned int*)(vaddr + PAGE_SIZE -4);
+       vcpu->cloned_thread_info = current_thread_info();
+       vcpu->nr_stack_canary = (unsigned int*)(vaddr + PAGE_SIZE -4);
 
 
-	HDEBUG("vaddr:=%#lx vaddr->nr_stack_canary:=%#lx *vaddr->nr_stack_canary:=%#x\n",
-	       (unsigned long)vaddr, (unsigned long)vcpu->nr_stack_canary, *vcpu->nr_stack_canary);
+       HDEBUG("vaddr:=%#lx vaddr->nr_stack_canary:=%#lx *vaddr->nr_stack_canary:=%#x\n",
+	      (unsigned long)vaddr, (unsigned long)vcpu->nr_stack_canary, *vcpu->nr_stack_canary);
 
-        /* Check the canary value */
-	if(*(vcpu->nr_stack_canary) != NR_STACK_END_MAGIC){
-		printk("okernel: failed to setup NR stack correctly.\n");
-		return 0;
-	}
+       /* Check the canary value */
+       if(*(vcpu->nr_stack_canary) != NR_STACK_END_MAGIC){
+	       printk("okernel: failed to setup NR stack correctly.\n");
+	       return 0;
+       }
 
-	return 1;
+       return 1;
 }
 
 int vt_ept_2M_init(struct vmx_vcpu *vcpu)
@@ -3491,7 +3493,7 @@ int vmexit_protected_page(struct vmx_vcpu *vcpu)
 		HDEBUG("ok: protected access denied for pid:=(%d)\n",
 		       current->pid);
 		/*
-		 * Map in 'dummy' page for now  - need to be careful 
+		 * Map in 'dummy' page for now  - need to be careful
 		 * not to create another vulnerability.
 		 */
 		(void)remap_ept_page(vcpu, gp_addr,
@@ -3589,7 +3591,7 @@ static inline void set_clr_ok_tags(unsigned long gva, unsigned long *s_flags,
 
 void flags_from_qual(unsigned long qual, unsigned long *s, unsigned long *c)
 {
-	/* 
+	/*
 	 * Note if EPT_W or EPT_X is set, then EPT_R must be set
 	 * Otherwise we will get an EPT_Misconfiguration induced VMExit
 	 */
@@ -3700,7 +3702,7 @@ int handle_EPT_violation(struct vmx_vcpu *vcpu)
 		 * If we have mode based execute control for EPT, we should
 		 * not need to ever to add EPT_X to user space, as it only
 		 * controls supervisor mode.
-		 * 
+		 *
 		 */
 		if (is_set_ept_page_flag(vcpu, gpa, OK_TEXT | OK_MOD)){
 			TDEBUG(log_ptr(vcpu),"EPT violation  on tagged memory"
@@ -3719,12 +3721,11 @@ int handle_EPT_violation(struct vmx_vcpu *vcpu)
 					return 0;
 				}
 				else{
-					return grant_all(vcpu, gpa, qual, level);	
+					return grant_all(vcpu, gpa, qual, level);
 				}
 			}
 			ept_flags_from_prot(prot, &s_flags, &c_flags);
 			eprot = *epte & (EPT_W | EPT_R | EPT_X);
-			
 			/* if already mapped, it's either a change or alias */
 			if (mapped) {
 				/* New prots = guest prot + old prot */
@@ -3768,7 +3769,6 @@ int handle_EPT_violation(struct vmx_vcpu *vcpu)
 				TDEBUG(log_ptr(vcpu),"Set %#lx clear %#lx for module "
 				       "physical address %#lx virtual %#lx level %d\n",
 				       s_flags, c_flags, gpa, gva, level);
-						
 				vpid_sync_context(vcpu->vpid);
 				vmx_put_cpu(vcpu);
 				return 1;
@@ -3781,7 +3781,7 @@ int handle_EPT_violation(struct vmx_vcpu *vcpu)
 			TDEBUG(log_ptr(vcpu),"EPT violation on user space mem  "
 			       "physical address %#lx va %#lx\n",
 			       gpa, gva);
-			return grant_all(vcpu, gpa, qual, level);	
+			return grant_all(vcpu, gpa, qual, level);
 		} else {
 			TDEBUG(log_ptr(vcpu),"EPT violation on other kernel mem  "
 			       "physical address %#lx va %#lx\n",
@@ -3977,7 +3977,6 @@ int vmx_launch(unsigned int mode, unsigned int flags, struct nr_cloned_state *cl
 #endif
 	while(1){
 #if defined(HPE_LOOP_DETECT)
-		
 		if(vmexit_counter > COUNTER_MAX){
 			/* Check rate we are generating vmexits - if more than threshold then exit. */
 			current_time = rdtsc();
@@ -3990,7 +3989,7 @@ int vmx_launch(unsigned int mode, unsigned int flags, struct nr_cloned_state *cl
 			vmexit_counter = 0;
 			last_time = current_time;
 		}
-#endif	
+#endif
 		HDEBUG("Entering vmxit handler loop...\n");
 
 		vmx_get_cpu(vcpu);
@@ -4042,7 +4041,7 @@ int vmx_launch(unsigned int mode, unsigned int flags, struct nr_cloned_state *cl
 		native_irq_disable();
 
 		//fast_path:
-		
+
                 /**************************** GO FOR IT ***************************/
 		ret = vmx_run_vcpu(vcpu);
                 /*************************** GONE FOR IT! *************************/
@@ -4320,7 +4319,7 @@ struct page_ext_operations page_okernel_ops = {
 	.init = init_okernel,
 };
 
-/* Rudimentry 'protected' memory allocator  - use PG_protected flag for consistency checks */
+/* Rudimentary 'protected' memory allocator  - use PG_protected flag for consistency checks */
 void ok_init_protected_pages(void)
 {
 	int i;
