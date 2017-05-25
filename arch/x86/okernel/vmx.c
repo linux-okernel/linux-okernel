@@ -11,7 +11,7 @@
  * Author: C I Dalton <cid@hpe.com> 2015
  *
  * This is the original dune header:
-
+ n
  * This file is derived from Linux KVM VT-x support.
  * Copyright (C) 2006 Qumranet, Inc.
  * Copyright 2010 Red Hat, Inc. and/or its affiliates.
@@ -135,6 +135,11 @@ struct vmx_capability vmx_capability;
 
 
 // NJE BEGIN NEEDS TO GO
+/*
+ * We can use trace_printk or printk safely when we have a process running
+ * in NR mode. So this is a quick and dirty circular buffer until we 
+ * build something better (it is in hand).
+ */
 static char *log_ptr(struct vmx_vcpu *vcpu)
 {
 	char *p;
@@ -360,7 +365,7 @@ int vt_alloc_page(void **virt, u64 *phys)
         struct page *pg;
         void* v;
 
-        pg = alloc_page(GFP_KERNEL /*GFP_ATOMIC*/);
+        pg = alloc_page(GFP_KERNEL);
 
         v = page_address(pg);
 
@@ -1400,6 +1405,9 @@ void protect_kernel_integrity(struct vmx_vcpu *vcpu)
 	HDEBUG("end  [&__end_rodata_hpage_align] is %#lx\n", end);
 }
 
+/*
+ * Unused, but leav in for now incase the okmm stuff breaks
+ */
 void do_4k_split(struct vmx_vcpu *vcpu){
 	unsigned long mappingsize = 0;
 	unsigned long rounded_mappingsize = 0;
@@ -2904,8 +2912,6 @@ static struct vmx_vcpu * vmx_create_vcpu(struct nr_cloned_state* cloned_thread)
 		BUG();
 	}
 #endif
-	vcpu->ec = 0;
-	vcpu->lepa = 0;
 	vcpu->lp = 0;
 
 	return vcpu;
@@ -3162,10 +3168,10 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu, int nr_irqs_enabled)
 	struct thread_info *r_ti;
 #endif
 	unsigned int cloned_tsk_state;
-//#if defined(HPE_DEBUG)
+#if defined(HPE_DEBUG)
 	unsigned long rbp;
 	unsigned long rsp;
-//#endif
+#endif
 
 	int cpu;
 	struct tss_struct *tss;
@@ -3190,17 +3196,11 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu, int nr_irqs_enabled)
 	
 	cmd = vcpu->regs[VCPU_REGS_RAX];
 
-	// NIGEL: put back in conditionals for rbp and rsp above
 	TDEBUG(log_ptr(vcpu), "cmd (%lu)\n", cmd);
 	TDEBUG(log_ptr(vcpu), "in_atomic(): %d, irqs_disabled(): %d, pid: %d, name: %s\n",
 		 in_atomic(), irqs_disabled(), current->pid, current->comm);
 	TDEBUG(log_ptr(vcpu), "preempt_count (%d) rcu_preempt_depth (%d)\n",
 		preempt_count(), rcu_preempt_depth());
-
-	asm volatile ("mov %%rbp,%0" : "=rm" (rbp));
-	TDEBUG(log_ptr(vcpu), "rbp currently  (%#lx)\n", rbp);
-	asm volatile ("mov %%rsp,%0" : "=rm" (rsp));
-	TDEBUG(log_ptr(vcpu), "rsp currently  (%#lx)\n", rsp);
 
 #if defined(HPE_DEBUG)
 	HDEBUG2("cmd (%lu)\n", cmd);
@@ -3370,7 +3370,7 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu, int nr_irqs_enabled)
 		vmx_put_cpu(vcpu);
 		wrmsrl(MSR_FS_BASE, nr_fs);
 		wrmsrl(MSR_GS_BASE, nr_gs);
-//#if defined(HPE_DEBUG)
+#if defined(HPE_DEBUG)
 		/* Don't need this rdmsrl, just for debug output */
 		rdmsrl(MSR_FS_BASE, fs);
 		rdmsrl(MSR_GS_BASE, gs);
@@ -3606,21 +3606,6 @@ void flags_from_qual(unsigned long qual, unsigned long *s, unsigned long *c)
 	*c = ((~*s) & EPT_PERM_MASK);
 }
 
-void vmexit_loop_detect(struct vmx_vcpu *vcpu, unsigned long gpa)
-{
-	if (vcpu->lepa == gpa){
-		//vcpu->ec++;
-		if (vcpu->ec >  10){
-			dump_log(vcpu);
-			BUG();
-		}
-	} else {
-		vcpu->ec = 0;
-		vcpu->lepa = gpa;
-	}
-	return;
-}
-
 int page_walk_ept_viol(struct vmx_vcpu *vcpu, unsigned long gpa,
 		       unsigned long qual)
 {
@@ -3631,49 +3616,6 @@ int page_walk_ept_viol(struct vmx_vcpu *vcpu, unsigned long gpa,
 	}
 	flags_from_qual(qual, &s_flags, &c_flags);
 	c_flags |= OK_TEXT | OK_MOD;
-	if(set_clr_ept_page_flags(vcpu, gpa, s_flags, c_flags, PG_LEVEL_NONE)){
-		vpid_sync_context(vcpu->vpid);
-		vmx_put_cpu(vcpu);
-		return 1;
-	} else {
-		HDEBUG("set_clr_ept_page_flags failed.\n");
-		BUG();
-	}
-	return 0;
-}
-
-int noguest_pte(struct vmx_vcpu *vcpu, unsigned long gpa, unsigned long gva,
-		unsigned long qual, unsigned long mapped)
-{
-	/*
-	 * Occasionally we get guest virtual address with no guest page
-	 * table entry.
-	 */
-	unsigned long s_flags, c_flags;
-	flags_from_qual(qual, &s_flags, &c_flags);
-	if (!mapped) {
-		c_flags |= (OK_TEXT | OK_MOD);
-		HLOG("No guest page table entry for %#lx no kernel mapping "
-		     "detected for physical address %#lx", gva, gpa);
-		if (is_set_ept_page_flag(vcpu, gpa, OK_TEXT)){
-			HLOG("previously tagged protected text\n");
-		} else if (is_set_ept_page_flag(vcpu, gpa, OK_MOD)){
-			HLOG("previously tagged protected module space\n");
-		} else{
-			HLOG("not previously tagged\n");
-		}
-	} else {
-		HLOG("No guest page table entry for %#lx kernel alias detected "
-		     "for physical address %#lx at %#lx", gva, gpa, mapped);
-		if (is_set_ept_page_flag(vcpu, gpa, OK_TEXT)){
-			HLOG("tagged protected text\n");
-		} else if (is_set_ept_page_flag(vcpu, gpa, OK_MOD)){
-			HLOG("tagged protected module space\n");
-		} else{
-			HLOG("not tagged\n");
-		}
-	}
-	HLOG("Setting %#lx, clearing %#lx\n", s_flags, c_flags);
 	if(set_clr_ept_page_flags(vcpu, gpa, s_flags, c_flags, PG_LEVEL_NONE)){
 		vpid_sync_context(vcpu->vpid);
 		vmx_put_cpu(vcpu);
@@ -3727,11 +3669,8 @@ int handle_EPT_violation(struct vmx_vcpu *vcpu)
 		unsigned long *epte, mapped, s_flags, c_flags, eprot, n_eprot;
 		int level;
 		pgprot_t prot;
-		vmexit_loop_detect(vcpu, gpa);
-		//return grant_all(vcpu, gpa, qual, PG_LEVEL_NONE);	
 		/* Bit 8 is cleared if it's a page walk or update of accessed*/
 		if (!(qual & 0x100)){
-			//return grant_all(vcpu, gpa, qual, PG_LEVEL_NONE);
 			TDEBUG(log_ptr(vcpu),"EPT Page walk violation  "
 				       "physical address %#lx\n",
 				       gpa);
@@ -3811,7 +3750,6 @@ int handle_EPT_violation(struct vmx_vcpu *vcpu)
 					BUG();
 				}
 			}
-			//return grant_all(vcpu, gpa, qual, level);	
 			vpid_sync_context(vcpu->vpid);
 			vmx_put_cpu(vcpu);
 			return 1;
@@ -3831,7 +3769,6 @@ int handle_EPT_violation(struct vmx_vcpu *vcpu)
 				       "physical address %#lx virtual %#lx level %d\n",
 				       s_flags, c_flags, gpa, gva, level);
 						
-				//return grant_all(vcpu, gpa, qual, level);	//Comment out to trigger bug
 				vpid_sync_context(vcpu->vpid);
 				vmx_put_cpu(vcpu);
 				return 1;
@@ -3857,7 +3794,6 @@ int handle_EPT_violation(struct vmx_vcpu *vcpu)
 				HLOG("Kernel space EPT Violation gpa %#lx "
 				       "va %#lx set %#lx clear %#lx\n",
 				       gpa, gva, s_flags, c_flags);
-				//return grant_all(vcpu, gpa, qual, level);	
 				vpid_sync_context(vcpu->vpid);
 				vmx_put_cpu(vcpu);
 				return 1;
