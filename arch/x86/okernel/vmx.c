@@ -2695,11 +2695,12 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu, int nr_irqs_enabled)
 		       in_atomic(), irqs_disabled(), current->pid, current->comm);
 		HDEBUG("calling schedule_r preempt_count (%d) rcu_preempt_depth (%d)\n",
 		       preempt_count(), rcu_preempt_depth());
+#endif
 
 		r_irqs_disabled = irqs_disabled();
 
 		BXMAGICBREAK;
-#endif
+
 		unset_vmx_r_mode();
 
                 /* This is the only place we should be swapping CPUs */
