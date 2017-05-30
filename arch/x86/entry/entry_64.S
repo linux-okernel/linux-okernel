@@ -36,6 +36,7 @@
 #include <asm/smap.h>
 #include <asm/pgtable_types.h>
 #include <asm/export.h>
+#include <asm/frame.h>
 #include <linux/err.h>
 
 .code64
