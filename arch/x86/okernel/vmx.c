@@ -3733,7 +3733,6 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu, int nr_irqs_enabled)
 		BXMAGICBREAK;
 		ret = 0;
 	} else if (cmd == VMCALL_DO_GET_CPU_HELPER){
-		check_int(vcpu, "VMCALL_DO_GET_CPU_HELPER");
 		cpu_ptr = (void*)vcpu->regs[VCPU_REGS_RBX];
 		HDEBUG("calling __vmx_get_cpu_helper.\n");
 		__vmx_get_cpu_helper(cpu_ptr);
@@ -3905,7 +3904,6 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu, int nr_irqs_enabled)
 		}
 		BXMAGICBREAK;
 	} else if(cmd == VMCALL_DOEXIT){
-		check_int_enabled(vcpu, "DOEXIT");
 		code = (long)vcpu->regs[VCPU_REGS_RBX];
 		HDEBUG("calling do_exit(%ld)...\n", code);
 		vmx_destroy_vcpu(vcpu);
@@ -3930,7 +3928,6 @@ int vmexit_protected_page(struct vmx_vcpu *vcpu)
 {
 	unsigned long gp_addr = vmcs_readl(GUEST_PHYSICAL_ADDRESS);
 
-	check_int_enabled(vcpu, "EPT vmexit on protected page");
 	HDEBUG("ok: EPT vmexit on protected address(%#lx)\n", gp_addr);
 	vmx_get_cpu(vcpu);
 	if(ok_allow_protected_access(gp_addr)){
