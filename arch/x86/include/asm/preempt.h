@@ -16,14 +16,39 @@ DECLARE_PER_CPU(int, __nr_preempt_count_offset);
  */
 #define PREEMPT_ENABLED	(0 + PREEMPT_NEED_RESCHED)
 
+#if defined(CONFIG_OKERNEL)
+static __always_inline int nr_preempt_count_offset(void)
+{
+       return raw_cpu_read_4(__nr_preempt_count_offset);
+}
+#if defined(CONFIG_PREEMPT_COUNT)
+static __always_inline void nr_preempt_count_set_offset(int pc)
+{
+       raw_cpu_write_4(__nr_preempt_count_offset, pc);
+}
+#else
+static __always_inline void nr_preempt_count_set_offset(int pc)
+{
+}
+#endif
+#endif
+
 /*
  * We mask the PREEMPT_NEED_RESCHED bit so as not to confuse all current users
  * that think a non-zero value indicates we cannot preempt.
  */
+#if defined(CONFIG_OKERNEL)
+static __always_inline int preempt_count(void)
+{
+	int count = raw_cpu_read_4(__preempt_count) & ~PREEMPT_NEED_RESCHED;
+	return (count -  nr_preempt_count_offset());
+}
+#else
 static __always_inline int preempt_count(void)
 {
 	return raw_cpu_read_4(__preempt_count) & ~PREEMPT_NEED_RESCHED;
 }
+#endif
 
 static __always_inline void preempt_count_set(int pc)
 {
@@ -36,17 +61,7 @@ static __always_inline void preempt_count_set(int pc)
 	} while (raw_cpu_cmpxchg_4(__preempt_count, old, new) != old);
 }
 
-#if defined(CONFIG_OKERNEL)
-static __always_inline int nr_preempt_count_offset(void)
-{
-       return raw_cpu_read_4(__nr_preempt_count_offset);
-}
 
-static __always_inline void nr_preempt_count_set_offset(int pc)
-{
-       raw_cpu_write_4(__nr_preempt_count_offset, pc);
-}
-#endif
 
 /*
  * must be macros to avoid header recursion hell
@@ -100,17 +115,40 @@ static __always_inline void __preempt_count_sub(int val)
  * a decrement which hits zero means we have no preempt_count and should
  * reschedule.
  */
-static __always_inline bool __preempt_count_dec_and_test(void)
+#if defined(CONFIG_OKERNEL)
+static __always_inline bool __ok_preempt_count_dec_and_test(void)
 {
+	/* XXXX cid: Fix this up to take nr mode offset into account */
+	/* Returns 1 if count is 0 (e.g. PREEMPT_NEED_RESCHED flag not set)  */
 	GEN_UNARY_RMWcc("decl", __preempt_count, __percpu_arg(0), e);
 }
 
+static __always_inline bool __preempt_count_dec_and_test(void)
+{
+	/* __ok_preempt_count_dec_and_test Returns 1 if count is 0 */
+	/* (e.g. PREEMPT_NEED_RESCHED flag not set) so we need to check for nr offset too */
+	if((__ok_preempt_count_dec_and_test() && !nr_preempt_count_offset())){
+		return 1;
+	}
+	return 0;
+}
+#else
+static __always_inline bool __preempt_count_dec_and_test(void)
+{
+	/* XXXX cid: need to fix this up to take nr mode offset into account */
+	GEN_UNARY_RMWcc("decl", __preempt_count, __percpu_arg(0), e);
+}
+#endif
 /*
  * Returns true when we need to resched and can (barring IRQ state).
  */
 static __always_inline bool should_resched(int preempt_offset)
 {
+#if defined(CONFIG_OKERNEL)
 	return unlikely(raw_cpu_read_4(__preempt_count) == preempt_offset);
+#else
+	return unlikely((raw_cpu_read_4(__preempt_count) - nr_preempt_count_offset()) == preempt_offset);
+#endif
 }
 
 #ifdef CONFIG_PREEMPT

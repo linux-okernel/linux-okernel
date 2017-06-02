@@ -51,6 +51,9 @@
 #define VMCALL_DO_EXEC_FIXUP_HOST 10
 #define VMCALL_DO_TLS_FIXUP 11
 
+#define OK_SCHED         1
+#define OK_SCHED_PREEMPT 2
+
 
 int vmcall(unsigned int cmd);
 int vmcall2(unsigned int cmd, unsigned long arg1);
