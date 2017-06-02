@@ -3159,6 +3159,7 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu, int nr_irqs_enabled)
 {
 	int ret = 0;
 	unsigned long cmd;
+	unsigned long arg1;
 #if !defined(CONFIG_THREAD_INFO_IN_TASK)
 	struct thread_info *nr_ti;
 	struct thread_info *r_ti;
@@ -3285,6 +3286,8 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu, int nr_irqs_enabled)
 		ret = 0;
 	} else if (cmd == VMCALL_SCHED){
 
+		arg1 = (unsigned long)vcpu->regs[VCPU_REGS_RBX];
+
 #if !defined(CONFIG_THREAD_INFO_IN_TASK)
 		nr_ti = vcpu->cloned_thread_info;
 		r_ti = current_thread_info();
@@ -3293,6 +3296,7 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu, int nr_irqs_enabled)
 
 		HDEBUG("in VMCALL schedule - current state (%lu) cloned state (%u)\n",
 			current->state, cloned_tsk_state);
+		HDEBUG("VMCALL sched arg:=(%#lx)\n", arg1);
 
 		switch(cloned_tsk_state){
 		case TASK_RUNNING:
@@ -3397,8 +3401,14 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu, int nr_irqs_enabled)
 		ept_sync_global();
 		barrier();
 
-		schedule_r_mode();
-
+		if(arg1 == OK_SCHED){
+			schedule_r_mode();
+		} else if (arg1 == OK_SCHED_PREEMPT){
+			preempt_schedule_r_mode();
+		} else {
+			HDEBUG("Invalid vmcall schedule argument.\n");
+			BUG();
+		}
 		vpid_sync_vcpu_global();
 		ept_sync_global();
 

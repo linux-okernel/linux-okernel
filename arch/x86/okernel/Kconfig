@@ -5,6 +5,7 @@ config OKERNEL
         depends on !VIRTUALIZATION
         select PREEMPT_NOTIFIERS
         select MMU_NOTIFIER
+        select PREEMPT_NONE
         default n
         ---help---
           Suport for splitting the kernel into inner and outer regions.

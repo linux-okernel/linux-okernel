@@ -180,6 +180,7 @@ extern long schedule_timeout_idle(long timeout);
 asmlinkage void schedule(void);
 #if defined(CONFIG_OKERNEL)
 asmlinkage void schedule_r_mode(void);
+asmlinkage void preempt_schedule_r_mode(void);
 #endif
 extern void schedule_preempt_disabled(void);
 
