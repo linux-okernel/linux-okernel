@@ -4,6 +4,7 @@
 
 #include <linux/init.h>
 #include <linux/okernel.h>
+#include <linux/percpu.h>
 #include <linux/slab.h>
 
 #include "constants2.h"
@@ -11,18 +12,30 @@
 #include "okmm.h"
 
 /*
- * Note on locking: we can't make assumptions about what is going on in
- * non-root (NR) mode. So we can only call anything which sets a lock in
- * another part of the kernel if we know we have not yet run in NR mode.
- * In particulary kmalloc() may try to obtain a lock. Hence only call
- * okmm_refresh_pt_cache, which may call kmalloc, before we enter NR mode,
- * during creation of the vcpu structure, before starting in NR mode.
+ * A cache of page table entries.
+ *
+ * Sometimes when we get EPT violations from a process in NR
+ * (Non-Root) mode we need to create new page table entries during
+ * handling of the VMEXIT while running in R (Root) mode. However,
+ * calling kmalloc() in R mode during handling of a VMEXIT is
+ * dangerous: we may be holding a lock via kmalloc() in NR mode,
+ * trying to claim the same lock again in R mode will cause deadlock.
+ * This is reasonably likely during EPT violations, caused by NR
+ * allocation of memory. So we need cache of entries.
+ *
+ * We have a small percpu cache and a global cache. Only accesses to the
+ * global cache require locks.
+ *
+ * Only call okmm_refresh_pt_cache, which may call kmalloc, before
+ * entering NR mode for the first time. So do it during creation of
+ * the vcpu structure, before starting in NR mode. It should never be
+ * called during a VMEXIT.
  *
  * A futher complication is that we can never be sure whether or not
- * okmm_refresh_pt_cache will be called with interrupts disabled or not.
- * So to be safe we need to be safe we need to use spin_lock_irqsave
- * and spin_lock_irqrestore. Otherwise the following deadlock scenario
- * is possible
+ * okmm_refresh_pt_cache will be called with interrupts disabled or
+ * not.  So to be safe we need to use spin_lock_irqsave and
+ * spin_lock_irqrestore. Otherwise the following deadlock scenario is
+ * possible
  *
  *  CPU(0)                        CPU(1)
  *  okmm_lock                     lockA
@@ -34,33 +47,31 @@
  * Disable local interrupts and therefore no locking needed for per-cpu
  * lists.
  */
-static struct ok_pt_cache_entry available;
-static struct ok_pt_cache_entry used;
-static int nentries;
-static int navailable;
-static int in_refresh;
-static int low_water;
-
+static DEFINE_PER_CPU(struct ok_mm_cache, ok_cache);
+static struct ok_mm_cache gc; /* global backing cache*/
 static DEFINE_SPINLOCK(okmm_lock);
+static int in_refresh = 0;
+static atomic64_t percpu_cache_exhaustion = ATOMIC64_INIT(0);
 
-static inline void kern_mess(int lw)
+static inline void kern_mess(int n, int lw, char *l, int id)
 {
-	printk(KERN_ERR "cpu(%d) pid(%d): okmm cache low water mark: %d",
-	       raw_smp_processor_id(), current->pid, lw);
+	long e = atomic64_read(&percpu_cache_exhaustion);
+	printk(KERN_ERR "cpu(%d) pid(%d): okmm %s:%d entries:%d low water:%d"
+	       " percpu exhaustion count %ld",
+	       raw_smp_processor_id(), current->pid, l, id, n, lw, e);
 }
 
-static void okmm_metrics(void)
+static void okmm_metrics(struct ok_mm_cache *c, char *level)
 {
 	/* Output a message every max_count calls regardless of low_water val*/
 	static const int max_count = 10000;
-	static int count = 0;
-	count++;
-	if (count > max_count || navailable < low_water) {
-		if (count > max_count)
-			count = 0;
-		if (navailable < low_water)
-			low_water = navailable;
-		kern_mess(low_water);
+	c->ticks++;
+	if (c->ticks > max_count || c->navailable < c->low_water) {
+		if (c->ticks > max_count)
+			c->ticks = 0;
+		if (c->navailable < c->low_water)
+			c->low_water = c->navailable;
+		kern_mess(c->nentries, c->low_water, level, c->id);
 	}
 }
 
@@ -85,58 +96,25 @@ static struct ok_pt_cache_entry *make_entry(void)
 	return e;
 
 }
-static int okmm_grow_if_low(int na)
-{
-	struct ok_pt_cache_entry **ea;
-	unsigned long flags;
-	int i;
-	int n = 0;
-	if (na < (nentries >> 1)) {
-		n = nentries;
-		ea = (struct ok_pt_cache_entry**) kmalloc((sizeof(*ea) * n),
-							  GFP_KERNEL);
-		if (!ea){
-			printk(KERN_ERR "okmm cache out of memory?\n");
-			return 0;
-		}
-		for(i = 0; i < n; i++){
-			if (!(ea[i] = make_entry())){
-				printk(KERN_ERR "okmm cache out of memory?\n");
-				return 0;
-			}
-		}
-		spin_lock_irqsave(&okmm_lock, flags);
-		for(i = 0; i < n; i++){
-			list_add(&ea[i]->list, &available.list);
-		}
-		nentries += n;
-		navailable += n;
-		low_water = navailable;
-		spin_unlock_irqrestore(&okmm_lock, flags);
-		kfree(ea);
-	}
-	if (n > 0) {
-		printk(KERN_ERR "okmm added %d new entries\n", n);
-	}
-	return n;
-}
 
-static int do_refresh(int na)
+void add_entries(struct ok_pt_cache_entry *extra, int m)
 {
-	/* na is a local copy of navailable to avoid holding okmm_lock */
-	struct ept_pt_list **epta, *ept;
-	pt_page **pta, *pt;
-	int i, n;
-	unsigned long flags;
+	int i;
 	struct ok_pt_cache_entry *e;
 
-	n = nentries - na;
-	okmm_grow_if_low(na);
-	epta = (struct ept_pt_list **) kmalloc((sizeof(*epta) * n), GFP_KERNEL);
-	pta = (pt_page **) kmalloc((sizeof(*pta) * n), GFP_KERNEL);
-	if (!epta || !pta) {
-		return -ENOMEM;
+	for(i = 0; i < m; i++) {
+		if (!(e = make_entry())){
+			printk(KERN_ERR "okmm add_entries out of memory?\n");
+			break;
+		}
+		list_add(&e->list, &extra->list);
 	}
+}
+
+int alloc_entries(struct ept_pt_list **epta, pt_page **pta, int n) {
+	struct ept_pt_list *ept;
+	pt_page *pt;
+	int i;
 
 	for (i = 0; i < n; i++){
 		ept = (struct ept_pt_list*) kmalloc(sizeof(*ept), GFP_KERNEL);
@@ -150,77 +128,177 @@ static int do_refresh(int na)
 		epta[i] = ept;
 		pta[i] = pt;
 	}
+	return 0;
+}
+
+static int gc_refresh(void)
+{
+	struct ept_pt_list **epta;
+	pt_page **pta;
+	int i, n, m;
+	unsigned long flags;
+	struct ok_pt_cache_entry grow;
+	struct ok_pt_cache_entry *e, *t;
+
+	INIT_LIST_HEAD(&grow.list);
+	spin_lock_irqsave(&okmm_lock, flags);
+	if (in_refresh) {
+		spin_unlock_irqrestore(&okmm_lock, flags);
+		return 0;
+	}
+	in_refresh = 1;
+	okmm_metrics(&gc, "global");
+	n = gc.nentries - gc.navailable;
+	if (gc.navailable < GC_MIN) {
+		m = GC_STEP;
+	} else {
+		m = 0;
+	}
+	spin_unlock_irqrestore(&okmm_lock, flags);
+	add_entries(&grow, m);
+
+	epta = (struct ept_pt_list **) kmalloc((sizeof(*epta) * n), GFP_KERNEL);
+	pta = (pt_page **) kmalloc((sizeof(*pta) * n), GFP_KERNEL);
+	if (!epta || !pta) {
+		return -ENOMEM;
+	}
+	if (alloc_entries(epta, pta, n) < 0) {
+		return -ENOMEM;
+	}
 
 	spin_lock_irqsave(&okmm_lock, flags);
 	for (i = 0; i < n; i++){
-		e = list_first_entry(&used.list, struct ok_pt_cache_entry, list);
+		e = list_first_entry(&gc.used.list, struct ok_pt_cache_entry, list);
 		e->epte = epta[i];
 		e->pt = pta[i];
-		list_move(&e->list, &available.list);
+		list_move(&e->list, &gc.available.list);
 	}
-	navailable += n;
+	m = 0;
+	list_for_each_entry_safe(e, t, &grow.list, list){
+		list_move(&e->list, &gc.available.list);
+		m++;
+	}
+	gc.navailable += n + m;
+	gc.nentries += m;
+	gc.low_water += m;
 	in_refresh = 0;
 	spin_unlock_irqrestore(&okmm_lock, flags);
+
 	kfree(epta);
 	kfree(pta);
 	return 0;
 }
 
-int okmm_refresh_pt_cache(void)
+int static do_refresh(struct ok_mm_cache *c)
 {
 	unsigned long flags;
-	int na;
+	struct ok_pt_cache_entry *e, *f;
 	spin_lock_irqsave(&okmm_lock, flags);
-	okmm_metrics();
-	if (!in_refresh){
-		na = navailable;
-		in_refresh = 1;
-		spin_unlock_irqrestore(&okmm_lock, flags);
-		return do_refresh(na);
+	for(; (c->navailable < c->nentries) && (gc.navailable > 0);
+	    c->navailable++, gc.navailable--){
+		e = list_first_entry(&c->used.list,
+				     struct ok_pt_cache_entry, list);
+		f = list_first_entry(&gc.available.list,
+				     struct ok_pt_cache_entry, list);
+		e->epte = f->epte;
+		e->pt = f->pt;
+		list_move(&e->list, &c->available.list);
+		list_move(&f->list, &gc.used.list);
 	}
 	spin_unlock_irqrestore(&okmm_lock, flags);
+	if (c->navailable <= 0) {
+		return -ENOMEM;
+	}
 	return 0;
+}
+
+int static do_inc_refresh(struct ok_mm_cache *c)
+{
+	atomic64_inc(&percpu_cache_exhaustion);
+	return do_refresh(c);
+}
+
+int okmm_refresh_pt_cache(void)
+{
+	int ret;
+	struct ok_mm_cache *c;
+
+	c = get_cpu_ptr(&ok_cache);
+	okmm_metrics(c, "percpu");
+	ret = do_refresh(c);
+	put_cpu_ptr(c);
+	if (ret < 0) {
+		printk(KERN_ERR "okmm_refresh_pt_cache memory exhaustion?\n");
+	}
+
+	return gc_refresh();
 }
 
 void okmm_get_ptce(struct ept_pt_list **epte, pt_page **pt)
 {
-	unsigned long flags;
+	struct ok_mm_cache *c;
 	struct ok_pt_cache_entry *e;
 
-	spin_lock_irqsave(&okmm_lock, flags);
-	if (!(list_empty(&available.list))){
-		navailable--;
-		e = list_first_entry(&available.list, struct ok_pt_cache_entry,
-				     list);
+	c = get_cpu_ptr(&ok_cache);
+	/* If it's empty try to refresh it from the global cache*/
+	if (!(list_empty(&c->available.list)) || (do_inc_refresh(c) >= 0)){
+		c->navailable--;
+		e = list_first_entry(&c->available.list,
+				     struct ok_pt_cache_entry, list);
 		*epte = e->epte;
 		*pt = e->pt;
-		list_move(&e->list, &used.list);
+		list_move(&e->list, &c->used.list);
 	} else {
 		*epte = 0;
 		*pt = 0;
 	}
-	spin_unlock_irqrestore(&okmm_lock, flags);
+	put_cpu_ptr(c);
+}
+
+int init_cache (struct ok_mm_cache *c, int n, int id)
+{
+	int i;
+	struct ok_pt_cache_entry *e;
+
+	INIT_LIST_HEAD(&c->available.list);
+	INIT_LIST_HEAD(&c->used.list);
+	for(i = 0; i < n; i++){
+		if (!(e = make_entry())){
+			return -ENOMEM;
+		}
+		list_add(&e->list, &c->available.list);
+	}
+	c->nentries = n;
+	c->navailable = n;
+	c->low_water = n;
+	c->ticks = 0;
+	c->id = id;
+	return 0;
 }
 
 int __init okmm_init(void)
 {
 	/* Returns Null if successful*/
 	int i;
-	struct ok_pt_cache_entry *e;
+	int cpu;
+	int n;
+	int ret;
+	struct ok_mm_cache *c;
 
-	navailable = 0;
-	in_refresh = 0;
 	printk(KERN_ERR "Initializing okmm_cache.\n");
-	INIT_LIST_HEAD(&available.list);
-	INIT_LIST_HEAD(&used.list);
-	for(i = 0; i < OKMM_INIT_NR; i++){
-		if (!(e = make_entry())){
-			return -ENOMEM;
-		}
-	list_add(&e->list, &available.list);
+	n = OKMM_INIT_NR / nr_cpu_ids;
+	if (n < OKMM_MIN_PERCPU) {
+		n = OKMM_MIN_PERCPU;
 	}
-	nentries = OKMM_INIT_NR;
-	navailable = OKMM_INIT_NR;
-	low_water = OKMM_INIT_NR;
-	return 0;
+	i = 0;
+	for_each_possible_cpu(cpu){
+		c = per_cpu_ptr(&ok_cache, cpu);
+		if ((ret = init_cache(c, n, cpu)) < 0){
+			return ret;
+		}
+		i++;
+	}
+	printk(KERN_ERR "okmm_init nr_cpu_ids: %d; number cpus found: %d\n\n",
+	       nr_cpu_ids, i);
+	return init_cache(&gc, OKMM_INIT_NR, 0);
 }
