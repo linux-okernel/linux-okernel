@@ -2409,9 +2409,11 @@ void get_cpu_state(struct vmx_vcpu *vcpu, struct vmcs_cpu_state* cpu_state)
 static void vmx_setup_initial_guest_state(struct vmx_vcpu *vcpu)
 {
 
-	/* Need to mask out X64_CR4_VMXE in guest read shadow */
-	unsigned long cr4_mask = X86_CR4_VMXE;
-	unsigned long cr4_shadow;
+	/* Need to mask out X64_CR4_VMXE in guest read shadow: we use
+	 * this to detect if we are in nr-mode or not. Also mask out
+	 * SMEP bit so we can detect when it is turned off. */
+	unsigned long cr4_mask = X86_CR4_VMXE | X86_CR4_SMEP;
+	unsigned long cr4_shadow = X86_CR4_SMEP;
 	unsigned long cr4;
 	struct nr_cloned_state *cloned_thread;
 
@@ -2451,17 +2453,12 @@ static void vmx_setup_initial_guest_state(struct vmx_vcpu *vcpu)
 #endif
 	/* Most likely will need to adjust */
 	cr4 = current_cpu_state.cr4;
-	cr4_shadow = (cr4 & ~X86_CR4_VMXE);
 	vmcs_writel(GUEST_CR0, current_cpu_state.cr0);
 	vmcs_writel(CR0_READ_SHADOW, current_cpu_state.cr0);
 	vmcs_writel(GUEST_CR3, current_cpu_state.cr3);
-
-	/* Make sure VMXE is not visible under a vcpu: we use this currently */
-	/* as a way of detecting whether in root or NR mode. */
 	vmcs_writel(GUEST_CR4, cr4);
 	vmcs_writel(CR4_GUEST_HOST_MASK, cr4_mask);
-	//vmcs_writel(CR4_READ_SHADOW, cr4_shadow);
-	vmcs_writel(CR4_READ_SHADOW, 0);
+	vmcs_writel(CR4_READ_SHADOW, cr4_shadow);
 
 	/* Most of this we can set from the host state apart. Need to make
 	   sure we clone the kernel stack pages in the EPT mapping.
@@ -3081,14 +3078,12 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu, int nr_irqs_enabled)
 		BXMAGICBREAK;
 		ret = 0;
 	} else if (cmd == VMCALL_DO_GET_CPU_HELPER){
-		check_int(vcpu, "VMCALL_DO_GET_CPU_HELPER");
 		cpu_ptr = (void*)vcpu->regs[VCPU_REGS_RBX];
 		HDEBUG("calling __vmx_get_cpu_helper.\n");
 		__vmx_get_cpu_helper(cpu_ptr);
 		ret = 0;
 	} else if (cmd == VMCALL_SCHED){
 
-		check_int(vcpu, "VMCALL_SCHED");
 #if !defined(CONFIG_THREAD_INFO_IN_TASK)
 		nr_ti = vcpu->cloned_thread_info;
 		r_ti = current_thread_info();
@@ -3244,7 +3239,6 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu, int nr_irqs_enabled)
 		}
 		BXMAGICBREAK;
 	} else if(cmd == VMCALL_DOEXIT){
-		check_int_enabled(vcpu, "DOEXIT");
 		code = (long)vcpu->regs[VCPU_REGS_RBX];
 		HDEBUG("calling do_exit(%ld)...\n", code);
 		vmx_destroy_vcpu(vcpu);
@@ -3269,7 +3263,6 @@ int vmexit_protected_page(struct vmx_vcpu *vcpu)
 {
 	unsigned long gp_addr = vmcs_readl(GUEST_PHYSICAL_ADDRESS);
 
-	check_int_enabled(vcpu, "EPT vmexit on protected page");
 	HDEBUG("ok: EPT vmexit on protected address(%#lx)\n", gp_addr);
 	vmx_get_cpu(vcpu);
 	if(ok_allow_protected_access(gp_addr)){
