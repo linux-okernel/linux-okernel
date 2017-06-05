@@ -1059,6 +1059,21 @@ static inline bool cpu_has_secondary_exec_ctrls(void)
 		CPU_BASED_ACTIVATE_SECONDARY_CONTROLS;
 }
 
+static inline bool cpu_has_vmx_xsaves(void)
+{
+	return vmcs_config.cpu_based_2nd_exec_ctrl &
+		SECONDARY_EXEC_XSAVES;
+}
+
+/* Tmp define until linux catches up */
+#define SECONDARY_EXEC_EPT_MODE                 0x00400000
+
+static inline bool cpu_has_vmx_mode_ept(void)
+{
+	return vmcs_config.cpu_based_2nd_exec_ctrl &
+		SECONDARY_EXEC_EPT_MODE;
+}
+
 static inline bool cpu_has_vmx_vpid(void)
 {
 	return vmcs_config.cpu_based_2nd_exec_ctrl &
@@ -1344,36 +1359,20 @@ static __init int setup_vmcs_config(struct vmcs_config *vmcs_conf)
 
 	if (_cpu_based_exec_control & CPU_BASED_ACTIVATE_SECONDARY_CONTROLS) {
 		min2 = 0;
-#if 0
-		opt2 =  SECONDARY_EXEC_WBINVD_EXITING |
-			SECONDARY_EXEC_ENABLE_VPID |
-			SECONDARY_EXEC_ENABLE_EPT |
-			SECONDARY_EXEC_RDTSCP |
-			SECONDARY_EXEC_ENABLE_INVPCID;
-#endif
-#if 0
-		opt2 =  SECONDARY_EXEC_WBINVD_EXITING |
-			SECONDARY_EXEC_ENABLE_VPID |
-			SECONDARY_EXEC_ENABLE_EPT |
-			SECONDARY_EXEC_RDTSCP;
-#endif
-#if 0
-		opt2 =  SECONDARY_EXEC_WBINVD_EXITING |
-			SECONDARY_EXEC_ENABLE_VPID |
-			SECONDARY_EXEC_ENABLE_EPT |
-			SECONDARY_EXEC_RDTSCP;
-#endif
 		/* INVPCID will operate normally without exit as long as INVLPG exiting is 0 */
+		/* cid: we should mark some of these as non-optional. */
 		opt2 =  SECONDARY_EXEC_WBINVD_EXITING |
 			SECONDARY_EXEC_ENABLE_VPID |
 			SECONDARY_EXEC_ENABLE_EPT |
 			SECONDARY_EXEC_RDTSCP |
-			SECONDARY_EXEC_ENABLE_INVPCID;
-
+			SECONDARY_EXEC_ENABLE_INVPCID |
+			SECONDARY_EXEC_XSAVES;
+		
 		if (adjust_vmx_controls(min2, opt2,
 					MSR_IA32_VMX_PROCBASED_CTLS2,
-					&_cpu_based_2nd_exec_control) < 0)
+					&_cpu_based_2nd_exec_control) < 0){
 			return -EIO;
+		}
 	}
 
 	if (_cpu_based_2nd_exec_control & SECONDARY_EXEC_ENABLE_EPT) {
@@ -2110,8 +2109,6 @@ static void vmx_setup_vmcs(struct vmx_vcpu *vcpu)
 
 	vmcs_write64(EPT_POINTER, vcpu->eptp);
 
-	//vmcs_write32(PAGE_FAULT_ERROR_CODE_MASK, 0);
-	//vmcs_write32(PAGE_FAULT_ERROR_CODE_MATCH, 0);
 	vmcs_write32(CR3_TARGET_COUNT, 0);           /* 22.2.1 */
 
 	vmcs_write64(MSR_BITMAP, __pa(msr_bitmap));
@@ -2143,6 +2140,12 @@ static void vmx_setup_vmcs(struct vmx_vcpu *vcpu)
 	vmcs_writel(VMCS_PAGEFAULT_ERRCODE_MASK, 0);
         vmcs_writel(VMCS_PAGEFAULT_ERRCODE_MATCH, 0);
 #endif
+
+	/* cid: We most likely will need to protect parts of the xsaves region.
+	   and add an exit handler condition. At the moment we don't care. */
+	if(cpu_has_vmx_xsaves()){
+		vmcs_write64(XSS_EXIT_BITMAP, 0);
+	}
 	vmx_setup_constant_host_state();
 }
 
