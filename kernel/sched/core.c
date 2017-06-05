@@ -3590,7 +3590,7 @@ asmlinkage __visible void __sched schedule(void)
 #endif /* CONFIG_TRACE_IRQFLAGS */
 #endif /* HPE_DEBUG */
                sched_submit_work(tsk);
-               (void)vmcall(VMCALL_SCHED);
+               (void)vmcall2(VMCALL_SCHED, OK_SCHED);
        } else {
                sched_submit_work(tsk);
                do {
@@ -3678,6 +3678,17 @@ void __sched schedule_idle(void)
 	} while (need_resched());
 }
 
+asmlinkage __visible void __sched preempt_schedule_r_mode(void)
+{
+#ifdef CONFIG_OKERNEL
+	okernel_schedule(true);
+#else
+	__schedule(true);
+#endif
+	
+}
+EXPORT_SYMBOL(preempt_schedule_r_mode);
+
 #ifdef CONFIG_CONTEXT_TRACKING
 asmlinkage __visible void __sched schedule_user(void)
 {
@@ -3728,7 +3739,11 @@ static void __sched notrace preempt_schedule_common(void)
 		preempt_disable_notrace();
 		preempt_latency_start(1);
 #if defined(CONFIG_OKERNEL)
-               okernel_schedule(true);
+		if(is_in_vmx_nr_mode()){
+			vmcall2(VMCALL_SCHED, OK_SCHED_PREEMPT);
+		} else {
+			okernel_schedule(true);
+		}
 #else
 		__schedule(true);
 #endif
@@ -3806,7 +3821,11 @@ asmlinkage __visible void __sched notrace preempt_schedule_notrace(void)
 		 */
 		prev_ctx = exception_enter();
 #if defined(CONFIG_OKERNEL)
-               okernel_schedule(true);
+		if(is_in_vmx_nr_mode()){
+			vmcall2(VMCALL_SCHED, OK_SCHED_PREEMPT);
+		} else {
+			okernel_schedule(true);
+		}
 #else
 		__schedule(true);
 #endif
@@ -3839,7 +3858,11 @@ asmlinkage __visible void __sched preempt_schedule_irq(void)
 		preempt_disable();
 		local_irq_enable();
 #if defined(CONFIG_OKERNEL)
-               okernel_schedule(true);
+		if(is_in_vmx_nr_mode()){
+			vmcall2(VMCALL_SCHED, OK_SCHED_PREEMPT);
+		} else {
+			okernel_schedule(true);
+		}
 #else
 		__schedule(true);
 #endif
@@ -6412,29 +6435,11 @@ void ___might_sleep(const char *file, int line, int preempt_offset)
 	/* WARN_ON_ONCE() by default, no rate limit required: */
 	rcu_sleep_check();
 
-#if defined(CONFIG_OKERNEL)
-       if(is_in_vmx_nr_mode()){
-               /* We keep the task with preempt enabled in NR mode
-                * (preempt count held at 1 in the vmexit handler
-                * loop. 
-                */
-               if ((preempt_count_equals(preempt_offset+nr_preempt_count_offset()) && !irqs_disabled() &&
-                    !is_idle_task(current)) ||
-                   system_state != SYSTEM_RUNNING || oops_in_progress)
-                       return;
-       } else {
-               if ((preempt_count_equals(preempt_offset) && !irqs_disabled() &&
-                    !is_idle_task(current)) ||
-                   system_state != SYSTEM_RUNNING || oops_in_progress)
-                       return;
-       }
-#else
 
 	if ((preempt_count_equals(preempt_offset) && !irqs_disabled() &&
 	     !is_idle_task(current)) ||
 	    system_state != SYSTEM_RUNNING || oops_in_progress)
 		return;
-#endif /* CONFIG_OKERNEL */
 
 	if (time_before(jiffies, prev_jiffy + HZ) && prev_jiffy)
 		return;
