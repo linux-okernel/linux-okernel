@@ -207,6 +207,7 @@ static int gc_refill(void)
 	spin_lock_irqsave(&okmm_lock, flags);
 	if (refill_in_progress) {
 		spin_unlock_irqrestore(&okmm_lock, flags);
+		HLOG("Lock release refresh in progress\n");
 		return 0;
 	}
 	refill_in_progress = 1;
