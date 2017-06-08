@@ -2017,11 +2017,6 @@ static __init int setup_vmcs_config(struct vmcs_config *vmcs_conf)
 		_cpu_based_exec_control &= ~CPU_BASED_CR8_LOAD_EXITING &
 					   ~CPU_BASED_CR8_STORE_EXITING;
 
-	if (cpu_has_vmx_ept_mode_ctl()){
-		printk("Mode-based execute control for EPT available\n");
-	} else {
-		printk("Mode-based execute control for EPT unavailable\n");
-	}
 	if (_cpu_based_exec_control & CPU_BASED_ACTIVATE_SECONDARY_CONTROLS) {
 		min2 = 0;
 		/* INVPCID will operate normally without exit as long as INVLPG exiting is 0 */
@@ -3861,8 +3856,8 @@ int vmx_launch(unsigned int mode, unsigned int flags, struct nr_cloned_state *cl
 	if (in_atomic()) {
 		HDEBUG("!!!!!!in_atomic() true - preemption disabled!!!!!\n");
 	}
-	if ((ret = okmm_refresh_pt_cache())){
-		HDEBUG("okmm_refresh_pt_cache failed\n");
+	if ((ret = okmm_refill_pt_cache())){
+		HDEBUG("okmm_refill_pt_cache failed\n");
 		return ret;
 	}
 
@@ -4537,6 +4532,13 @@ int __init vmx_init(void)
 		printk(KERN_ERR "vmx: ability to load EFER register is required\n");
 		return -EIO;
 	}
+
+	if (cpu_has_vmx_ept_mode_ctl()){
+		printk("Mode-based execute control for EPT available\n");
+	} else {
+		printk("Mode-based execute control for EPT unavailable\n");
+	}
+
 
 	/* Don't exit on any MSR accesses */
 	msr_bitmap = (unsigned long *)__get_free_page(GFP_KERNEL);
