@@ -222,7 +222,6 @@ static int gc_refill(void)
 		return -ENOMEM;
 	}
 
-
 	spin_lock_irqsave(&okmm_lock, flags);
 	do_refill(refills, n);
 	m = do_new(&new_entries);
