@@ -10,6 +10,11 @@
 /* Step by which to grow the cache if we go below GC_MIN*/
 #define GC_STEP OKMM_N_PERCPU
 
+/* CPU ids are positive, so use -1 to denote the global cache*/
+#define OKMM_GC_CPU_ID -1
+
+#define OKMM_DEBUG
+
 
 struct okmm_ce {
 	struct list_head list;
@@ -31,7 +36,7 @@ struct ok_mm_cache {
 };
 
 extern int __init okmm_init(void);
-extern void okmm_get_ptce(struct ept_pt_list **epte, pt_page **pt);
-extern int okmm_refill_pt_cache(void);
+extern void okmm_get_ce(struct ept_pt_list **epte, pt_page **pt);
+extern int okmm_refill(void);
 
 #endif /* OKMM_H */

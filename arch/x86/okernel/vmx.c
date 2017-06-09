@@ -560,7 +560,7 @@ int do_split_2M_mapping(struct vmx_vcpu* vcpu, u64 paddr, int cache)
         /* First allocate a physical page for the PML1 table (512*4K entries) */
 	if (cache) {
 		HDEBUG("Using okmm\n");
-		okmm_get_ptce(&e_pt, &pt);
+		okmm_get_ce(&e_pt, &pt);
 		if (!e_pt || !pt){
 			printk(KERN_ERR "okernel: E_PT entries exhausted\n");
 			return 0;
@@ -3856,8 +3856,8 @@ int vmx_launch(unsigned int mode, unsigned int flags, struct nr_cloned_state *cl
 	if (in_atomic()) {
 		HDEBUG("!!!!!!in_atomic() true - preemption disabled!!!!!\n");
 	}
-	if ((ret = okmm_refill_pt_cache())){
-		HDEBUG("okmm_refill_pt_cache failed\n");
+	if ((ret = okmm_refill())){
+		HDEBUG("okmm_refill failed\n");
 		return ret;
 	}
 
