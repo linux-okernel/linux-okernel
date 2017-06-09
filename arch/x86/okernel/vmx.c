@@ -2010,9 +2010,7 @@ unsigned long find_vaddr(struct vmx_vcpu *vcpu, unsigned long paddr,
 			/* vaddr NOT MAPPED */
 			continue;
 		}
-		if (pa == match){
-			return vaddr;
-		}
+
 	}
 	/* No match found so not mapped in the text region*/
 	return 0;
@@ -5132,7 +5130,7 @@ int handle_EPT_violation(struct vmx_vcpu *vcpu)
 					return 0;
 				}
 				else{
-					return grant_all(vcpu, gpa, qual, level);
+					return grant_all(vcpu, gpa, qual, level);	
 				}
 			}
 			ept_flags_from_prot(prot, &s_flags, &c_flags);
@@ -5743,7 +5741,7 @@ struct page_ext_operations page_okernel_ops = {
 	.init = init_okernel,
 };
 
-/* Rudimentary 'protected' memory allocator  - use PG_protected flag for consistency checks */
+/* Rudimentry 'protected' memory allocator  - use PG_protected flag for consistency checks */
 void ok_init_protected_pages(void)
 {
 	int i;
