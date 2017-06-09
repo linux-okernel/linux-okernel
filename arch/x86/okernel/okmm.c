@@ -79,7 +79,7 @@ static void okmm_metrics(struct ok_mm_cache *c, char *level)
 			c->ticks = 0;
 		if (c->navailable < c->low_water)
 			c->low_water = c->navailable;
-		kern_mess(c->nentries, c->low_water, level, c->id);
+		kern_mess(c->nentries, c->low_water, level, c->cpu);
 	}
 }
 
@@ -162,7 +162,7 @@ static int gc_refill(void)
 	atomic64_inc(&gc_cache_fill);
 	okmm_metrics(&gc, "global");
 	n = gc.nentries - gc.navailable;
-	m = (gc.navailable < GC_MIN) ? GC_STEP : 0;
+	m = (gc.navailable < GC_N_MIN) ? GC_STEP : 0;
 	spin_unlock_irqrestore(&okmm_lock, flags);
 
 	make_entries(&grow, m);
@@ -250,13 +250,23 @@ void okmm_get_ptce(struct ept_pt_list **epte, pt_page **pt)
 	put_cpu_ptr(c);
 }
 
-int init_cache (struct ok_mm_cache *c, int n, int id)
+int __init init_cache (struct ok_mm_cache *c, int cpu)
+{
+	INIT_LIST_HEAD(&c->available.list);
+	INIT_LIST_HEAD(&c->used.list);
+	c->nentries = 0;
+	c->navailable = 0;
+	c->low_water = 0;
+	c->ticks = 0;
+	c->cpu = cpu;
+	return 0;
+}
+
+int __init fill_cache (struct ok_mm_cache *c, int n)
 {
 	int i;
 	struct okmm_ce *e;
 
-	INIT_LIST_HEAD(&c->available.list);
-	INIT_LIST_HEAD(&c->used.list);
 	for(i = 0; i < n; i++){
 		if (!(e = make_entry())){
 			return -ENOMEM;
@@ -266,8 +276,6 @@ int init_cache (struct ok_mm_cache *c, int n, int id)
 	c->nentries = n;
 	c->navailable = n;
 	c->low_water = n;
-	c->ticks = 0;
-	c->id = id;
 	return 0;
 }
 
@@ -282,18 +290,28 @@ int __init okmm_init(void)
 
 	printk(KERN_ERR "Initializing okmm_cache.\n");
 
-	i = 0;
 	for_each_possible_cpu(cpu){
 		c = per_cpu_ptr(&ok_cache, cpu);
-		if ((ret = init_cache(c, OKMM_PERCPU, cpu)) < 0){
+		if ((ret = init_cache(c, cpu)) < 0){
+			return ret;
+		}
+	}
+	if ((ret = init_cache(&gc, -1)) < 0){
+		return ret;
+	}
+	
+	i = 0;
+	for_each_online_cpu(cpu){
+		c = per_cpu_ptr(&ok_cache, cpu);
+		if ((ret = fill_cache(c, OKMM_N_PERCPU)) < 0){
 			return ret;
 		}
 		i++;
 	}
 
-	n = OKMM_PERCPU * (i + 1);
-	printk(KERN_ERR "okmm_init percpu cache size: %d, global:%d\n",
-	       OKMM_PERCPU, n);
+	n = OKMM_N_PERCPU * (i + 1);
+	printk(KERN_ERR "okmm_init %d CPUs, percpu cache size %d, global %d\n",
+	       i, OKMM_N_PERCPU, n);
 
-	return init_cache(&gc, n, 0);
+	return fill_cache(&gc, n);
 }
