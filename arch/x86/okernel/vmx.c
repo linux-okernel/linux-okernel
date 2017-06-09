@@ -547,6 +547,7 @@ int do_split_2M_mapping(struct vmx_vcpu* vcpu, u64 paddr, int cache)
 
 	p_base_addr = (*pml2_e & ~(PAGESIZE2M-1));
 	pml1_attrs = (*pml2_e & PDE_ATTR_MASK & ~EPT_2M_PAGE);
+
 	/*
 	 * Intel SDM says EPT_2M_PAGE is ignored in PL1 4k entries
 	 * But we are using it for sanity checking
@@ -3561,6 +3562,7 @@ int handle_EPT_violation(struct vmx_vcpu *vcpu)
 				       "physical address %#lx virtual %#lx level %d\n",
 				       s_flags, c_flags, gpa, gva, level);
 
+
 				vpid_sync_context(vcpu->vpid);
 				vmx_put_cpu(vcpu);
 				return 1;
@@ -3574,6 +3576,7 @@ int handle_EPT_violation(struct vmx_vcpu *vcpu)
 			       "physical address %#lx va %#lx\n",
 			       gpa, gva);
 			return grant_all(vcpu, gpa, qual, level);
+
 		} else {
 			TDEBUG(log_ptr(vcpu),"EPT violation on other kernel mem  "
 			       "physical address %#lx va %#lx\n",
