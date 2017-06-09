@@ -1034,13 +1034,14 @@ unsigned long find_vaddr(struct vmx_vcpu *vcpu, unsigned long paddr,
 			HDEBUG("Unsupported page size, level %u\n", level);
 			return 0;
 		}
+		if (pa == match){
+			return vaddr;
+		}
 		if (!pa) {
 			/* vaddr NOT MAPPED */
 			continue;
 		}
-		if (pa == match){
-			return vaddr;
-		}
+
 	}
 	/* No match found so not mapped in the text region*/
 	return 0;
@@ -3834,7 +3835,6 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu, int nr_irqs_enabled)
 		HDEBUG("calling schedule_r preempt_count (%d) rcu_preempt_depth (%d)\n",
 		       preempt_count(), rcu_preempt_depth());
 #endif
-
 		r_irqs_disabled = irqs_disabled();
 
 		BXMAGICBREAK;
@@ -4161,11 +4161,12 @@ int handle_EPT_violation(struct vmx_vcpu *vcpu)
 					return 0;
 				}
 				else{
-					return grant_all(vcpu, gpa, qual, level);
+					return grant_all(vcpu, gpa, qual, level);	
 				}
 			}
 			ept_flags_from_prot(prot, &s_flags, &c_flags);
 			eprot = *epte & (EPT_W | EPT_R | EPT_X);
+
 			/* if already mapped, it's either a change or alias */
 			if (mapped) {
 				/* New prots = guest prot + old prot */
@@ -4209,6 +4210,7 @@ int handle_EPT_violation(struct vmx_vcpu *vcpu)
 				TDEBUG(log_ptr(vcpu),"Set %#lx clear %#lx for module "
 				       "physical address %#lx virtual %#lx level %d\n",
 				       s_flags, c_flags, gpa, gva, level);
+
 				vpid_sync_context(vcpu->vpid);
 				vmx_put_cpu(vcpu);
 				return 1;
@@ -4422,6 +4424,7 @@ int vmx_launch(unsigned int mode, unsigned int flags, struct nr_cloned_state *cl
 #endif
 	while(1){
 #if defined(HPE_LOOP_DETECT)
+
 		if(vmexit_counter > COUNTER_MAX){
 			/* Check rate we are generating vmexits - if more than threshold then exit. */
 			current_time = rdtsc();
@@ -4764,7 +4767,7 @@ struct page_ext_operations page_okernel_ops = {
 	.init = init_okernel,
 };
 
-/* Rudimentary 'protected' memory allocator  - use PG_protected flag for consistency checks */
+/* Rudimentry 'protected' memory allocator  - use PG_protected flag for consistency checks */
 void ok_init_protected_pages(void)
 {
 	int i;
