@@ -1034,13 +1034,14 @@ unsigned long find_vaddr(struct vmx_vcpu *vcpu, unsigned long paddr,
 			HDEBUG("Unsupported page size, level %u\n", level);
 			return 0;
 		}
+		if (pa == match){
+			return vaddr;
+		}
 		if (!pa) {
 			/* vaddr NOT MAPPED */
 			continue;
 		}
-		if (pa == match){
-			return vaddr;
-		}
+
 	}
 	/* No match found so not mapped in the text region*/
 	return 0;
@@ -1122,208 +1123,6 @@ void set_clr_module_flags_4k(struct vmx_vcpu *vcpu, unsigned long start,
 			BUG();
 		}
 	}
-}
-
-void set_clr_vmem_ept_flags(struct vmx_vcpu *vcpu, unsigned long start,
-		       unsigned long end, unsigned long s_flags,
-		       unsigned long c_flags)
-{
-	unsigned long vaddr, paddr, end_4k;
-	unsigned int level;
-
-	HDEBUG("Entered\n");
-	vaddr = start & ~(PAGESIZE2M - 1);
-	if (start != vaddr) {
-		HDEBUG("Start address (%#lx) is not 2M aligned\n", start);
-	}
-	for (; vaddr < end; vaddr += PAGESIZE2M){
-		paddr = guest_physical_page_address(vaddr, &level, &prot);
-		if (!paddr) {
-			/* vaddr NOT MAPPED */
-			continue;
-		}
-		if (level == 1){
-			end_4k = (vaddr + PAGESIZE2M) & ~(PAGESIZE2M-1);
-			set_clr_vmem_ept_flags_4k(vcpu, vaddr, end_4k,
-						   s_flags, c_flags);
-			continue;
-		} else if (level > 2) {
-			printk(KERN_ERR "okernel %s: unsupported page level\n",
-			       __func__);
-			return;
-		}
-		/* Update 2M page mapping*/
-		TDEBUG("Set flag %#lx clear flag %#lx on va %#lx pa %#lx\n",
-		       s_flags, c_flags, vaddr, paddr);
-		HDEBUG("Set flag %#lx clear flag %#lx on va %#lx pa %#lx\n",
-		       s_flags, c_flags, vaddr, paddr);
-		if (!set_clr_ept_page_flags(vcpu, paddr, s_flags, c_flags)){
-			HDEBUG("EPT set_clr_ept_page_flags failed.\n");
-			BUG();
-		}
-	}
-}
-
-void set_modules_ept_x(struct vmx_vcpu *vcpu)
-{
-	unsigned long start = PFN_ALIGN(MODULES_VADDR);
-	unsigned long end = PFN_ALIGN(MODULES_END);
-
-	HDEBUG("Entered\n");
-	set_clr_vmem_ept_flags(vcpu, start, end, (EPT_X | OK_IP), 0);
-}
-
-void set_kernel_text_ept_x(struct vmx_vcpu *vcpu)
-{
-	unsigned long start = PFN_ALIGN(_text);
-	unsigned long end = (unsigned long) &__end_rodata_hpage_align;
-
-	HDEBUG("Entered\n");
-	set_clr_vmem_ept_flags(vcpu, start, end, (EPT_X | OK_IP), 0);
-}
-
-void set_kernel_text_ept_nw(struct vmx_vcpu *vcpu)
-{
-	unsigned long start = PFN_ALIGN(_text);
-	unsigned long end = (unsigned long) &__end_rodata_hpage_align;
-
-	HDEBUG("Entered\n");
-	set_clr_vmem_ept_flags(vcpu, start, end, OK_IP, EPT_W);
-}
-
-void set_clr_vmem_ept_flags(struct vmx_vcpu *vcpu, unsigned long start,
-		       unsigned long end, unsigned long s_flags,
-		       unsigned long c_flags)
-{
-	unsigned long vaddr, paddr, end_4k;
-	unsigned int level;
-	pgprot_t prot;
-
-	HDEBUG("Entered\n");
-	vaddr = start & ~(PAGESIZE2M - 1);
-	if (start != vaddr) {
-		HDEBUG("Start address (%#lx) is not 2M aligned\n", start);
-	}
-	for (; vaddr < end; vaddr += PAGESIZE2M){
-		paddr = guest_physical_page_address(vaddr, &level, &prot);
-		if (!paddr) {
-			/* vaddr NOT MAPPED */
-			continue;
-		}
-		if (level == 1){
-			end_4k = (vaddr + PAGESIZE2M) & ~(PAGESIZE2M-1);
-			set_clr_vmem_ept_flags_4k(vcpu, vaddr, end_4k,
-						   s_flags, c_flags);
-			continue;
-		} else if (level > 2) {
-			printk(KERN_ERR "okernel %s: unsupported page level\n",
-			       __func__);
-			return;
-		}
-		/* Update 2M page mapping*/
-		TDEBUG("Set flag %#lx clear flag %#lx on va %#lx pa %#lx\n",
-		       s_flags, c_flags, vaddr, paddr);
-		HDEBUG("Set flag %#lx clear flag %#lx on va %#lx pa %#lx\n",
-		       s_flags, c_flags, vaddr, paddr);
-		if (!set_clr_ept_page_flags(vcpu, paddr, s_flags, c_flags)){
-			HDEBUG("EPT set_clr_ept_page_flags failed.\n");
-			BUG();
-		}
-	}
-}
-
-void set_modules_ept_x(struct vmx_vcpu *vcpu)
-{
-	unsigned long start = PFN_ALIGN(MODULES_VADDR);
-	unsigned long end = PFN_ALIGN(MODULES_END);
-
-	HDEBUG("Entered\n");
-	set_clr_vmem_ept_flags(vcpu, start, end, (EPT_X | OK_IP), 0);
-}
-
-void set_kernel_text_ept_x(struct vmx_vcpu *vcpu)
-{
-	unsigned long start = PFN_ALIGN(_text);
-	unsigned long end = (unsigned long) &__end_rodata_hpage_align;
-
-	HDEBUG("Entered\n");
-	set_clr_vmem_ept_flags(vcpu, start, end, (EPT_X | OK_IP), 0);
-}
-
-void set_kernel_text_ept_nw(struct vmx_vcpu *vcpu)
-{
-	unsigned long start = PFN_ALIGN(_text);
-	unsigned long end = (unsigned long) &__end_rodata_hpage_align;
-
-	HDEBUG("Entered\n");
-	set_clr_vmem_ept_flags(vcpu, start, end, OK_IP, EPT_W);
-}
-
-void set_clr_vmem_ept_flags(struct vmx_vcpu *vcpu, unsigned long start,
-		       unsigned long end, unsigned long s_flags,
-		       unsigned long c_flags)
-{
-	unsigned long vaddr, paddr, end_4k;
-	unsigned int level;
-
-	HDEBUG("Entered\n");
-	vaddr = start & ~(PAGESIZE2M - 1);
-	if (start != vaddr) {
-		HDEBUG("Start address (%#lx) is not 2M aligned\n", start);
-	}
-	for (; vaddr < end; vaddr += PAGESIZE2M){
-		paddr = guest_physical_page_address(vaddr, &level, &prot);
-		if (!paddr) {
-			/* vaddr NOT MAPPED */
-			continue;
-		}
-		if (level == 1){
-			end_4k = (vaddr + PAGESIZE2M) & ~(PAGESIZE2M-1);
-			set_clr_vmem_ept_flags_4k(vcpu, vaddr, end_4k,
-						   s_flags, c_flags);
-			continue;
-		} else if (level > 2) {
-			printk(KERN_ERR "okernel %s: unsupported page level\n",
-			       __func__);
-			return;
-		}
-		/* Update 2M page mapping*/
-		TDEBUG("Set flag %#lx clear flag %#lx on va %#lx pa %#lx\n",
-		       s_flags, c_flags, vaddr, paddr);
-		HDEBUG("Set flag %#lx clear flag %#lx on va %#lx pa %#lx\n",
-		       s_flags, c_flags, vaddr, paddr);
-		if (!set_clr_ept_page_flags(vcpu, paddr, s_flags, c_flags)){
-			HDEBUG("EPT set_clr_ept_page_flags failed.\n");
-			BUG();
-		}
-	}
-}
-
-void set_modules_ept_x(struct vmx_vcpu *vcpu)
-{
-	unsigned long start = PFN_ALIGN(MODULES_VADDR);
-	unsigned long end = PFN_ALIGN(MODULES_END);
-
-	HDEBUG("Entered\n");
-	set_clr_vmem_ept_flags(vcpu, start, end, (EPT_X | OK_IP), 0);
-}
-
-void set_kernel_text_ept_x(struct vmx_vcpu *vcpu)
-{
-	unsigned long start = PFN_ALIGN(_text);
-	unsigned long end = (unsigned long) &__end_rodata_hpage_align;
-
-	HDEBUG("Entered\n");
-	set_clr_vmem_ept_flags(vcpu, start, end, (EPT_X | OK_IP), 0);
-}
-
-void set_kernel_text_ept_nw(struct vmx_vcpu *vcpu)
-{
-	unsigned long start = PFN_ALIGN(_text);
-	unsigned long end = (unsigned long) &__end_rodata_hpage_align;
-
-	HDEBUG("Entered\n");
-	set_clr_vmem_ept_flags(vcpu, start, end, OK_IP, EPT_W);
 }
 
 void set_clr_module_ept_flags(struct vmx_vcpu *vcpu)
@@ -3386,7 +3185,6 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu, int nr_irqs_enabled)
 		HDEBUG("calling schedule_r preempt_count (%d) rcu_preempt_depth (%d)\n",
 		       preempt_count(), rcu_preempt_depth());
 #endif
-
 		r_irqs_disabled = irqs_disabled();
 
 		BXMAGICBREAK;
@@ -3713,11 +3511,12 @@ int handle_EPT_violation(struct vmx_vcpu *vcpu)
 					return 0;
 				}
 				else{
-					return grant_all(vcpu, gpa, qual, level);
+					return grant_all(vcpu, gpa, qual, level);	
 				}
 			}
 			ept_flags_from_prot(prot, &s_flags, &c_flags);
 			eprot = *epte & (EPT_W | EPT_R | EPT_X);
+
 			/* if already mapped, it's either a change or alias */
 			if (mapped) {
 				/* New prots = guest prot + old prot */
@@ -3761,6 +3560,7 @@ int handle_EPT_violation(struct vmx_vcpu *vcpu)
 				TDEBUG(log_ptr(vcpu),"Set %#lx clear %#lx for module "
 				       "physical address %#lx virtual %#lx level %d\n",
 				       s_flags, c_flags, gpa, gva, level);
+
 				vpid_sync_context(vcpu->vpid);
 				vmx_put_cpu(vcpu);
 				return 1;
@@ -3969,6 +3769,7 @@ int vmx_launch(unsigned int mode, unsigned int flags, struct nr_cloned_state *cl
 #endif
 	while(1){
 #if defined(HPE_LOOP_DETECT)
+
 		if(vmexit_counter > COUNTER_MAX){
 			/* Check rate we are generating vmexits - if more than threshold then exit. */
 			current_time = rdtsc();
@@ -4311,7 +4112,7 @@ struct page_ext_operations page_okernel_ops = {
 	.init = init_okernel,
 };
 
-/* Rudimentary 'protected' memory allocator  - use PG_protected flag for consistency checks */
+/* Rudimentry 'protected' memory allocator  - use PG_protected flag for consistency checks */
 void ok_init_protected_pages(void)
 {
 	int i;
