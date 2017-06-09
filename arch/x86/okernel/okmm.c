@@ -75,8 +75,8 @@ static inline void kern_mess(int n, int lw, int id)
 	long g = atomic64_read(&gc_cache_fills);
 	long c = atomic64_read(&gc_refill_calls);
 	
-	printk(KERN_INFO "cpu(%d) pid(%d): okmm %d entries:%d low water:%d, "
-	       "%ld gc cache refills %ld percpu cache refills %ld refill calls",
+	printk(KERN_INFO "cpu(%d) pid(%d): okmm %d entries:%d low water:%d, %ld"
+	       " gc cache refills %ld percpu cache refills %ld gc refill calls",
 	       raw_smp_processor_id(), current->pid, id, n, lw, g, p, c);
 }
 
@@ -126,7 +126,7 @@ static struct okmm_ce *make_entry(void)
 
 }
 
-void make_entries(struct okmm_ce *extra, int m)
+static void make_entries(struct okmm_ce *extra, int m)
 {
 	int i;
 	struct okmm_ce *e;
@@ -140,24 +140,30 @@ void make_entries(struct okmm_ce *extra, int m)
 	}
 }
 
-int alloc_entries(struct okmm_ce *refills, int n) {
+static struct okmm_ce * make_refills(int n) {
+	struct okmm_ce *refills;
 	struct ept_pt_list *ept;
 	pt_page *pt;
 	int i;
+	
+	refills = (struct okmm_ce *)kmalloc((sizeof(*refills) * n), GFP_KERNEL);
+	if (!refills){
+		return 0;
+	}
 
 	for (i = 0; i < n; i++){
 		ept = (struct ept_pt_list*) kmalloc(sizeof(*ept), GFP_KERNEL);
 		pt   = (pt_page*)kmalloc(sizeof(*pt), GFP_KERNEL);
 		if (!ept | !pt ){
-			return -ENOMEM;
+			return 0;
 		}
 		if(!(vt_alloc_page((void**)&pt[0].virt, &pt[0].phys))){
-			return -ENOMEM;
+			return 0;
 		}
 		refills[i].epte = ept;
 		refills[i].pt = pt;
 	}
-	return 0;
+	return refills;
 }
 
 static void do_refill(struct okmm_ce *refills, int n)
@@ -187,6 +193,12 @@ static int do_new(struct okmm_ce *new_entries)
 	return i;
 }
 
+/*
+ * This gets called each time a process is started before it ever goes
+ * into NR mode. It only fills the cache if it is needed. A refill is
+ * needed of a percpu cache has previouly been refilled from the
+ * global cache gc.
+ */
 static int gc_refill(void)
 {
 	int n, m;
@@ -195,7 +207,6 @@ static int gc_refill(void)
 	struct okmm_ce *refills;
 
 	inc_metric(gc_refill_calls);
-	INIT_LIST_HEAD(&new_entries.list);
 	if (!atomic64_dec_and_test(&refill_needed)) {
 		return 0;
 	}
@@ -212,12 +223,11 @@ static int gc_refill(void)
 	m = (gc.navailable < GC_N_MIN) ? GC_STEP : 0;
 	spin_unlock_irqrestore(&okmm_lock, flags);
 
+	INIT_LIST_HEAD(&new_entries.list);
 	make_entries(&new_entries, m);
-	refills = (struct okmm_ce *)kmalloc((sizeof(*refills) * n), GFP_KERNEL);
-	if (!refills || (alloc_entries(refills, n) < 0)){
+	if (!(refills = make_refills(n))) {
 		return -ENOMEM;
 	}
-
 
 	spin_lock_irqsave(&okmm_lock, flags);
 	do_refill(refills, n);
