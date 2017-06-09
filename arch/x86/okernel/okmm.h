@@ -2,13 +2,13 @@
 #define OKMM_H
 
 /* Mininum initial number in per CPU cache */
-#define OKMM_PERCPU (1 << 8)
+#define OKMM_N_PERCPU (1 << 8)
 
 /* Mininumum number in the global cache, it grows if we go lower*/
-#define GC_MIN (OKMM_PERCPU << 1)
+#define GC_N_MIN (OKMM_N_PERCPU << 1)
 
 /* Step by which to grow the cache if we go below GC_MIN*/
-#define GC_STEP OKMM_PERCPU
+#define GC_STEP OKMM_N_PERCPU
 
 
 struct okmm_ce {
@@ -23,7 +23,7 @@ struct okmm_ce {
 struct ok_mm_cache {
 	struct okmm_ce available;
 	struct okmm_ce used;
-	int id;
+	int cpu;
 	int nentries;
 	int navailable;
 	int low_water;
