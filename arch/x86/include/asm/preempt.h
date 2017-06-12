@@ -145,9 +145,9 @@ static __always_inline bool __preempt_count_dec_and_test(void)
 static __always_inline bool should_resched(int preempt_offset)
 {
 #if defined(CONFIG_OKERNEL)
-	return unlikely(raw_cpu_read_4(__preempt_count) == preempt_offset);
-#else
 	return unlikely((raw_cpu_read_4(__preempt_count) - nr_preempt_count_offset()) == preempt_offset);
+#else
+	return unlikely(raw_cpu_read_4(__preempt_count) == preempt_offset);
 #endif
 }
 
