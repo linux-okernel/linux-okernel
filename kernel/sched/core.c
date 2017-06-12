@@ -3685,7 +3685,7 @@ asmlinkage __visible void __sched preempt_schedule_r_mode(void)
 #else
 	__schedule(true);
 #endif
-	
+
 }
 EXPORT_SYMBOL(preempt_schedule_r_mode);
 
