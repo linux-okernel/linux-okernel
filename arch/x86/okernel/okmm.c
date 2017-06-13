@@ -154,7 +154,7 @@ static struct okmm_ce * make_refills(int n) {
 	for (i = 0; i < n; i++){
 		ept = (struct ept_pt_list*) kmalloc(sizeof(*ept), GFP_KERNEL);
 		pt   = (pt_page*)kmalloc(sizeof(*pt), GFP_KERNEL);
-		if (!ept | !pt ){
+		if (!ept || !pt ){
 			return 0;
 		}
 		if(!(vt_alloc_page((void**)&pt[0].virt, &pt[0].phys))){
@@ -263,7 +263,6 @@ int static percpu_refill(struct ok_mm_cache *c)
 		list_move(&e->list, &c->available.list);
 		list_move(&f->list, &gc.used.list);
 	}
-	HLOG("Setting refill needed\n");
 	atomic64_set(&refill_needed, (long) 1);
 	spin_unlock_irqrestore(&okmm_lock, flags);
 	if (c->navailable <= 0) {
