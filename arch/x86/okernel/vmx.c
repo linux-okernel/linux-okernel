@@ -64,6 +64,7 @@
 #include <linux/version.h>
 #include <linux/console.h>
 #include <linux/compat.h>
+#include <linux/cred.h>
 #include <linux/gfp.h>
 
 #include <asm/mtrr.h>
@@ -4553,6 +4554,28 @@ static void vmx_handle_cpuid(struct vmx_vcpu *vcpu)
 	vcpu->regs[VCPU_REGS_RDX] = edx;
 }
 
+static int vmx_handle_CR_access(struct vmx_vcpu *vcpu)
+{
+	unsigned long qual;
+
+	vmx_get_cpu(vcpu);
+	qual = vmcs_readl(EXIT_QUALIFICATION);
+	vmx_put_cpu(vcpu);
+	printk(KERN_ERR "BLOCKING CR REG access CR:=%u TO/FROM:=%d "
+	       "GP:=%d ECX=%#lx for pid %d \"%s\"\n",
+	       (unsigned int)(qual & CR_REG_ACCESS_MASK),
+	       (unsigned int)(qual & CR_REG_ACCESS_TYPE),
+	       (unsigned int)(qual & CR_REG_ACCESS_GP),
+	       (unsigned long)vcpu->regs[VCPU_REGS_RCX],
+	       current->pid, current->comm);
+	vmx_step_instruction();
+	return 1;
+/*
+	vmx_destroy_vcpu(vcpu);
+	do_exit(-1);
+*/
+}
+
 static void check_int(struct vmx_vcpu *vcpu, char *s)
 {
 	vmx_get_cpu(vcpu);
@@ -5053,7 +5076,7 @@ int grant_all(struct vmx_vcpu *vcpu, unsigned long gpa,
 	}
 	return 0;
 }
-int handle_EPT_violation(struct vmx_vcpu *vcpu)
+static int vmx_handle_EPT_violation(struct vmx_vcpu *vcpu)
 {
 	/*
 	 * return 1 - page granted; 0 - not granted
@@ -5513,24 +5536,17 @@ int vmx_launch(unsigned int mode, unsigned int flags, struct nr_cloned_state *cl
 		} else if (ret == EXIT_REASON_VMCALL){
 			vmx_handle_vmcall(vcpu, saved_irqs_on);
 		} else if (ret == EXIT_REASON_CR_ACCESS){
-			vmx_get_cpu(vcpu);
-			qual = vmcs_readl(EXIT_QUALIFICATION);
-			vmx_put_cpu(vcpu);
-			HDEBUG("CR REG access CR:=%u TO/FROM:=%d GP:=%d ECX=%#lx\n",
-			       (unsigned int)(qual & CR_REG_ACCESS_MASK),
-			       (unsigned int)(qual & CR_REG_ACCESS_TYPE),
-			       (unsigned int)(qual & CR_REG_ACCESS_GP),
-			       (unsigned long)vcpu->regs[VCPU_REGS_RCX]);
-			HLOG("Unsupported CR access.\n");
-			break;
-		} else if (ret == EXIT_REASON_EPT_VIOLATION){
-			if (handle_EPT_violation(vcpu)){
-				continue;
+			if (!vmx_handle_CR_access(vcpu)){
+				vmx_put_cpu(vcpu);
+				HLOG("Unhandled CR access \n");
+				BUG();
 			}
-			vmx_put_cpu(vcpu);
-			HLOG("Unhandled EPT Violation\n");
-			BUG();
-			break;
+		} else if (ret == EXIT_REASON_EPT_VIOLATION){
+			if (!vmx_handle_EPT_violation(vcpu)){
+				vmx_put_cpu(vcpu);
+				HLOG("Unhandled EPT Violation\n");
+				BUG();
+			}
 		} else if (ret == EXIT_REASON_EPT_MISCONFIG){
 			vmx_get_cpu(vcpu);
 			gp_addr = vmcs_readl(GUEST_PHYSICAL_ADDRESS);
