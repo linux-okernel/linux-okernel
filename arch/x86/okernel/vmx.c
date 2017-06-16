@@ -4916,7 +4916,6 @@ int vmexit_protected_page(struct vmx_vcpu *vcpu)
 	unsigned long gp_addr = vmcs_readl(GUEST_PHYSICAL_ADDRESS);
 
 	HDEBUG("ok: EPT vmexit on protected address(%#lx)\n", gp_addr);
-	vmx_get_cpu(vcpu);
 	if(ok_allow_protected_access(gp_addr)){
 		(void)add_ept_page_perms(vcpu, gp_addr);
 		HDEBUG("ok: allowing protected access for pid:=(%d)\n",
