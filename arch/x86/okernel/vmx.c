@@ -5322,7 +5322,7 @@ int vmx_launch(unsigned int mode, unsigned int flags, struct nr_cloned_state *cl
 
 	//perms =  EPT_R | EPT_W | EPT_X | EPT_CACHE_2 | EPT_CACHE_3;
 	/* Could make this non-X too */
-	perms =  EPT_R | EPT_W | EPT_X | EPT_CACHE_2 | EPT_CACHE_3;
+	perms =  EPT_R | EPT_W | EPT_CACHE_2 | EPT_CACHE_3;
 
 	if(!clone_kstack2(vcpu, perms)){
 		printk(KERN_ERR "okernel: clone kstack failed.\n");
