@@ -600,13 +600,6 @@ int do_split_2M_mapping(struct vmx_vcpu* vcpu, u64 paddr, int cache)
 	for(i = 0; i < n_entries; i++){
 		addr = p_base_addr + i*PAGESIZE;
 		q[i] = addr | pml1_attrs;
-		/*
-		if(no_cache_region(addr, PAGESIZE)){
-			q[i] = addr | EPT_R | EPT_W ;
-		} else {
-			q[i] = addr | EPT_R | EPT_W | EPT_CACHE_2 | EPT_CACHE_3;
-		}
-		*/
 	}
 
 	*pml2_e = pt[0].phys + EPT_R + EPT_W + EPT_X;
@@ -3041,9 +3034,9 @@ int vt_ept_2M_init(struct vmx_vcpu *vcpu)
 	for(i = 0; i < n_entries; i++){
 		addr = i << 12;
 		if(no_cache_region(addr, PAGESIZE)){
-			q[i] = (u64)((i << 12) | EPT_R | EPT_W | EPT_X);
+			q[i] = (u64)((i << 12) | EPT_R | EPT_W);
 		} else {
-			q[i] = (u64)((i << 12) | EPT_R | EPT_W | EPT_X | EPT_CACHE_2 | EPT_CACHE_3);
+			q[i] = (u64)((i << 12) | EPT_R | EPT_W | EPT_CACHE_2 | EPT_CACHE_3);
 		}
 	}
 
