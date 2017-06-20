@@ -42,10 +42,17 @@
  *    <interrupt>                 okmm_lock
  *       lockA
  *
- * Also will need percpu list pairs and to embrach the SMP locking strategy
- * used by the slab: see comments on "SMP synchronization" in ./mm/slab.c
- * Disable local interrupts and therefore no locking needed for per-cpu
- * lists.
+ * Locks are only needed when the global backing cache gc is being
+ * accessed. Also note since kmalloc() can call functions which sleep,
+ * we release the lock before calling kmalloc.
+ *
+ * When we refill a percpu cache from the global cache, we mark the
+ * global cache as needing refill by setting refill_needed. Before
+ * starting the refill will check that no other process is already
+ * doing it refill_in_progress. This avoids potential race conditions
+ * in which two process try to refill the global cache at the same
+ * time. We can't use locks, because of the risk of deadlock discussed
+ * above. 
  */
 
 static DEFINE_PER_CPU(struct ok_mm_cache, ok_cache);
