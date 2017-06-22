@@ -2,13 +2,15 @@
 #define OKMM_H
 
 /* Mininum initial number in per CPU cache */
-#define OKMM_N_PERCPU (1 << 8)
+//#define OKMM_N_PERCPU (1 << 8)
+#define OKMM_N_PERCPU (1 << 5)
 
 /* Mininumum number in the global cache, it grows if we go lower*/
 #define GC_N_MIN (OKMM_N_PERCPU << 1)
 
 /* Step by which to grow the cache if we go below GC_MIN*/
 #define GC_STEP OKMM_N_PERCPU
+
 
 /* CPU ids are positive, so use -1 to denote the global cache*/
 #define OKMM_GC_CPU_ID -1
@@ -37,6 +39,5 @@ struct ok_mm_cache {
 
 extern int __init okmm_init(void);
 extern void okmm_get_ce(struct ept_pt_list **epte, pt_page **pt);
-extern int okmm_refill(void);
 
 #endif /* OKMM_H */

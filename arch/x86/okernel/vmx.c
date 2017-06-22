@@ -827,6 +827,10 @@ int set_clr_ept_page_flags(struct vmx_vcpu *vcpu, u64 paddr,
 	if (!epte) {
 		return 0;
 	}
+	if (level > PG_LEVEL_2M){
+		printk(KERN_ERR "okernel unsupported page level");
+		BUG();
+	}
 	/* split if the kernel is using 4k pages and the EPT is 2M */
 	if (level == PG_LEVEL_4K && (*epte & EPT_2M_PAGE)){
 		if (!split_2M_mapping_okmm(vcpu, (paddr & ~(PAGESIZE2M - 1)))){
@@ -2926,24 +2930,39 @@ static void vmx_handle_cpuid(struct vmx_vcpu *vcpu)
 
 static int vmx_handle_CR_access(struct vmx_vcpu *vcpu)
 {
-	unsigned long qual;
+	static const char cr4_warning[] = KERN_CRIT
+		"okernel blocking write to CR4: SMEP exploit attempt?"
+		"(uid %d, pid %d, command %s, access type %d, "
+		"register %d, reg value %#lx)\n";
+
+	static const char cr_error[] = KERN_CRIT
+		"okernel detected unhandled write to CR: bug or exploit attempt?"
+		"(uid %d, pid %d, command %s, exit qualification %#lx)\n";
+
+	unsigned long qual, gpv;
+	unsigned int cr, at, gp;
+	uid_t uid;
+	pid_t pid;
+	char *comm;
 
 	vmx_get_cpu(vcpu);
 	qual = vmcs_readl(EXIT_QUALIFICATION);
 	vmx_put_cpu(vcpu);
-	printk(KERN_ERR "BLOCKING CR REG access CR:=%u TO/FROM:=%d "
-	       "GP:=%d ECX=%#lx for pid %d \"%s\"\n",
-	       (unsigned int)(qual & CR_REG_ACCESS_MASK),
-	       (unsigned int)(qual & CR_REG_ACCESS_TYPE),
-	       (unsigned int)(qual & CR_REG_ACCESS_GP),
-	       (unsigned long)vcpu->regs[VCPU_REGS_RCX],
-	       current->pid, current->comm);
-	vmx_step_instruction();
-	return 1;
-/*
-	vmx_destroy_vcpu(vcpu);
-	do_exit(-1);
-*/
+	cr = CR_FROM_QUAL(qual);
+	at = CR_ACCESS_TYPE_FROM_QUAL(qual);
+	gp = CR_ACCESS_GP_FROM_QUAL(qual);
+	gpv = (unsigned long)vcpu->regs[gp];
+	uid = from_kuid(&init_user_ns, current_uid());
+	pid = current->pid;
+	comm = current->comm;
+
+	if (cr == 4){
+		printk(cr4_warning, uid, pid, comm, at, gp, gpv);
+		vmx_step_instruction();
+		return 1;
+	}
+	printk(cr_error, uid, pid, comm, qual);
+	return 0;
 }
 
 static void check_int(struct vmx_vcpu *vcpu, char *s)
@@ -3669,10 +3688,6 @@ int vmx_launch(unsigned int mode, unsigned int flags, struct nr_cloned_state *cl
 	if (in_atomic()) {
 		HDEBUG("!!!!!!in_atomic() true - preemption disabled!!!!!\n");
 	}
-	if ((ret = okmm_refill())){
-		HDEBUG("okmm_refill failed\n");
-		return ret;
-	}
 
 	if(!cloned_thread)
 		return -EINVAL;
@@ -3897,7 +3912,6 @@ int vmx_launch(unsigned int mode, unsigned int flags, struct nr_cloned_state *cl
 			vmx_handle_vmcall(vcpu, saved_irqs_on);
 		} else if (ret == EXIT_REASON_CR_ACCESS){
 			if (!vmx_handle_CR_access(vcpu)){
-				vmx_put_cpu(vcpu);
 				HLOG("Unhandled CR access \n");
 				BUG();
 			}

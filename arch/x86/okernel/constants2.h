@@ -124,10 +124,14 @@ struct intr_info {
 					RFLAGS_DF_BIT | \
 					RFLAGS_OF_BIT
 
-
-#define CR_REG_ACCESS_MASK              0xF
-#define CR_REG_ACCESS_TYPE              0x48
-#define CR_REG_ACCESS_GP                0xFF00   
+#define CR_ACCESS_MASK                  0xF
+#define CR_FROM_QUAL(x)                 (unsigned int)(x & CR_ACCESS_MASK)
+#define CR_ACCESS_TYPE_MASK             0x30
+#define CR_ACCESS_TYPE_FROM_QUAL(x)     (unsigned int) \
+	                                ((x & CR_ACCESS_TYPE_MASK) >> 4)
+#define CR_ACCESS_GP_MASK               0x0F00
+#define CR_ACCESS_GP_FROM_QUAL(x)       (unsigned int) \
+	                                ((x & CR_ACCESS_GP_MASK) >> 8)
 
 #define PDE_P_BIT			0x1
 #define PDE_RW_BIT			0x2
