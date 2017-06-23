@@ -2,11 +2,10 @@
 #define OKMM_H
 
 /* Mininum initial number in per CPU cache */
-//#define OKMM_N_PERCPU (1 << 8)
 #define OKMM_N_PERCPU (1 << 5)
 
 /* Mininumum number in the global cache, it grows if we go lower*/
-#define GC_N_MIN (OKMM_N_PERCPU << 1)
+#define GC_N_MIN OKMM_N_PERCPU
 
 /* Step by which to grow the cache if we go below GC_MIN*/
 #define GC_STEP OKMM_N_PERCPU

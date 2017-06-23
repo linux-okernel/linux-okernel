@@ -138,7 +138,7 @@ struct vmx_capability vmx_capability;
 
 // NJE BEGIN NEEDS TO GO
 /*
- * We can use trace_printk or printk safely when we have a process running
+ * We can't use trace_printk or printk safely when we have a process running
  * in NR mode. So this is a quick and dirty circular buffer until we
  * build something better (it is in hand).
  */
