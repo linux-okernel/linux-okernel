@@ -45,6 +45,10 @@
  * accessed. Also note since kmalloc() can call functions which sleep,
  * we release the lock before calling kmalloc.
  *
+ * TODO: Make the global cache a percpu backing cache and create a
+ * percpu allocator thread. May improve performance somewhat on
+ * large multi-processor machines.
+ *
  */
 
 static struct task_struct *okmm_allocator_th;
@@ -345,7 +349,7 @@ int __init okmm_init(void)
 		i++;
 	}
 
-	n = OKMM_N_PERCPU * (i + 1);
+	n = OKMM_N_PERCPU * i * 2;
 	printk(KERN_INFO "okmm_init %d CPUs, percpu cache size %d, global %d\n",
 	       i, OKMM_N_PERCPU, n);
 	okmm_allocator_th = kthread_run(okmm_allocator, NULL, "okmm_allocator");
