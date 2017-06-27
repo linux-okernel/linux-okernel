@@ -200,7 +200,7 @@ static int gc_refill(void)
 	printk_metrics(&gc);
 	n = gc.nentries - gc.navailable;
 	n = (n > OKMM_N_PERCPU) ? OKMM_N_PERCPU : n; //max fill is OKMM_N_PERCPU
-	m = (gc.navailable < GC_N_MIN) ? GC_STEP : 0;
+	m = (gc.navailable <= gc.min) ? GC_STEP : 0;
 	spin_unlock_irqrestore(&okmm_lock, flags);
 
 	INIT_LIST_HEAD(&new_entries.list);
@@ -299,6 +299,7 @@ static int __init fill_cache (struct ok_mm_cache *c, int n)
 	c->nentries = n;
 	c->navailable = n;
 	c->low_water = n;
+	c->min = 0;
 	return 0;
 }
 
@@ -349,7 +350,8 @@ int __init okmm_init(void)
 		i++;
 	}
 
-	n = OKMM_N_PERCPU * i * 2;
+	gc.min = OKMM_N_PERCPU * i; //consider making 1<<9 gc.min
+	n = gc.min * 3;
 	printk(KERN_INFO "okmm_init %d CPUs, percpu cache size %d, global %d\n",
 	       i, OKMM_N_PERCPU, n);
 	okmm_allocator_th = kthread_run(okmm_allocator, NULL, "okmm_allocator");

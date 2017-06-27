@@ -2932,12 +2932,12 @@ static int vmx_handle_CR_access(struct vmx_vcpu *vcpu)
 {
 	static const char cr4_warning[] = KERN_CRIT
 		"okernel blocking write to CR4: SMEP exploit attempt?"
-		"(uid %d, pid %d, command %s, access type %d, "
+		" (uid %d, pid %d, command %s, access type %d, "
 		"register %d, reg value %#lx)\n";
 
 	static const char cr_error[] = KERN_CRIT
 		"okernel detected unhandled write to CR: bug or exploit attempt?"
-		"(uid %d, pid %d, command %s, exit qualification %#lx)\n";
+		" (uid %d, pid %d, command %s, exit qualification %#lx)\n";
 
 	unsigned long qual, gpv;
 	unsigned int cr, at, gp;
@@ -2962,6 +2962,69 @@ static int vmx_handle_CR_access(struct vmx_vcpu *vcpu)
 		return 1;
 	}
 	printk(cr_error, uid, pid, comm, qual);
+	return 0;
+}
+
+void okcrit(const char *fmt, ...)
+{
+	va_list args;
+
+	va_start(args, fmt);
+	printk(fmt, args);
+	va_end(args);
+}
+
+static int vmx_handle_EPT_misconfig(struct vmx_vcpu *vcpu)
+{
+	static const char warning[] = KERN_CRIT
+		"okernel ept misconfig for NR physical address %#lx "
+		"found plm2 entry %#lx pte/pml1 %#lx\n";
+
+	unsigned long gp_addr, *pml2_e, *epte;
+	vmx_get_cpu(vcpu);
+	gp_addr = vmcs_readl(GUEST_PHYSICAL_ADDRESS);
+	vmx_put_cpu(vcpu);
+
+	if((pml2_e =  find_pd_entry(vcpu, gp_addr))){
+		epte = ept_page_entry(vcpu, gp_addr);
+	} else {
+		epte = 0;
+	}
+	printk(warning, gp_addr, (pml2_e) ? *pml2_e : 0, (epte) ? *epte : 0);
+	return 0;
+}
+
+static int vmx_handle_exception_NMI(struct vmx_vcpu *vcpu)
+{
+	static const char gp_excp[] = KERN_CRIT
+		"okernel unhandled GP exception exit qualification "
+		"%#lx err %#lx non root RIP %#lx\n";
+
+	static const char other_excp[] = KERN_CRIT
+		"okernel unhandled exception or NMI  vector %d "
+		"exit qualification %#lx\n";
+
+	union {
+		struct intr_info s;
+		ulong v;
+	} vii;
+	unsigned long qual, err, rip;
+
+	vmx_get_cpu(vcpu);
+	vii.v = vmcs_readl(VM_EXIT_INTR_INFO);
+	if(vii.s.valid == INTR_INFO_VALID_VALID){
+		qual = (u64)vmcs_readl(EXIT_QUALIFICATION);
+		if(vii.s.vector == EXCEPTION_GP){
+			err = (u64)vmcs_readl(VMCS_VMEXIT_INTR_ERRCODE);
+			rip = vmcs_readl(GUEST_RIP);
+			printk(gp_excp, qual, err, rip);
+		} else {
+			printk(other_excp, vii.s.vector, qual);
+		}
+	} else {
+		printk("okernel exception or NMI, no valid diagnosis info\n");
+	}
+	vmx_put_cpu(vcpu);
 	return 0;
 }
 
@@ -3659,16 +3722,8 @@ int vmx_launch(unsigned int mode, unsigned int flags, struct nr_cloned_state *cl
 //	struct vmx_vcpu *remote_vcpu;
 	unsigned long saved_irqs_on;
 
-	union {
-		struct intr_info s;
-		ulong v;
-	} vii;
-	unsigned long cr2;
-	unsigned long err;
 	unsigned long k_stack;
-	unsigned long gp_addr;
 	unsigned long qual;
-	unsigned long *pml2_e;
 #if defined(HPE_DEBUG)
 	int orig_cpu;
 	unsigned long nr_gs;
@@ -3891,20 +3946,19 @@ int vmx_launch(unsigned int mode, unsigned int flags, struct nr_cloned_state *cl
 		}
 
 		if(*(vcpu->nr_stack_canary) != NR_STACK_END_MAGIC){
-			HLOG("NR stack overflow detected.\n");
 			printk(KERN_ERR "Okernel: NR stack overflow detected.\n");
-			break;
+			BUG();
 		}
 
 		vmx_put_cpu(vcpu);
 
 		if(ret==VMX_EXIT_REASONS_FAILED_VMENTRY){
 			HLOG("vmentry failed (%#x)\n", ret);
-			break;
+			BUG();
 		} else if((ret == EXIT_REASON_EXTERNAL_INTERRUPT)){
 			/* We should be handling interrupts in NR-mode at the moment...*/
-			HLOG("vmexit on external interrupt.\n");
-			break;
+			printk(KERN_CRIT "vmexit on external interrupt.\n");
+			BUG();
 		} else if (ret == EXIT_REASON_CPUID){
 			HDEBUG("cpuid called.\n");
 			vmx_handle_cpuid(vcpu);
@@ -3912,61 +3966,32 @@ int vmx_launch(unsigned int mode, unsigned int flags, struct nr_cloned_state *cl
 			vmx_handle_vmcall(vcpu, saved_irqs_on);
 		} else if (ret == EXIT_REASON_CR_ACCESS){
 			if (!vmx_handle_CR_access(vcpu)){
-				HLOG("Unhandled CR access \n");
+				printk(KERN_CRIT "Unhandled CR access \n");
 				BUG();
 			}
 		} else if (ret == EXIT_REASON_EPT_VIOLATION){
 			if (!vmx_handle_EPT_violation(vcpu)){
 				vmx_put_cpu(vcpu);
-				HLOG("Unhandled EPT Violation\n");
+				printk(KERN_CRIT "Unhandled EPT Violation\n");
 				BUG();
 			}
 		} else if (ret == EXIT_REASON_EPT_MISCONFIG){
-			vmx_get_cpu(vcpu);
-			gp_addr = vmcs_readl(GUEST_PHYSICAL_ADDRESS);
-			vmx_put_cpu(vcpu);
-			HLOG("ept misconfig exit - gpa=%#lx\n", gp_addr);
-			if(!(pml2_e =  find_pd_entry(vcpu, gp_addr))){
-				printk(KERN_ERR "okernel: NULL pml2 entry for gp_addr (%#lx)\n",
-				       gp_addr);
-			} else {
-				unsigned long *epte;
-				if (!(epte = ept_page_entry(vcpu, gp_addr))){
-					HLOG("no pte; plm2 entry for gpa=%#lx is (%#lx)\n", gp_addr, *pml2_e);
-				} else{
-					HLOG("no pte; plm2 entry for gpa=%#lx is (%#lx)\n", gp_addr, *pml2_e);
-					HLOG("ept entry for gpa=%#lx is (%#lx)\n", gp_addr, *epte);
-				}
+			if (!vmx_handle_EPT_misconfig(vcpu)){
+				printk(KERN_CRIT "Unhandle EPT Misconfig\n");
+				BUG();
 			}
-			HLOG("EPT Misconfig\n");
-			break;
 		} else if (ret == EXIT_REASON_EXCEPTION_NMI) {
-			vmx_get_cpu(vcpu);
-			vii.v = vmcs_readl(VM_EXIT_INTR_INFO);
-			HDEBUG("recieved EXCEPTION or NMI\n");
-			if(vii.s.valid == INTR_INFO_VALID_VALID){
-				if(vii.s.vector == EXCEPTION_GP){
-					err = (u64)vmcs_readl(VMCS_VMEXIT_INTR_ERRCODE);
-					cr2 = (u64)vmcs_readl(EXIT_QUALIFICATION);
-					HDEBUG("Got GP error - exit qualification (%#lx) err (%#lx)\n",
-					       cr2, err);
-					HDEBUG("Guest rip (%#lx)\n", vmcs_readl(GUEST_RIP));
-				} else {
-					HDEBUG("unhandled exception/NMI: ret (%d) vector (%d), exit qual (%lx)\n",
-					       ret, vii.s.vector, vmcs_readl(EXIT_QUALIFICATION));
-				}
+			if (!vmx_handle_exception_NMI(vcpu)){
+				printk(KERN_CRIT "Unhandled NMI exception\n");
+				BUG();
 			}
-			vmx_put_cpu(vcpu);
-			HLOG("NMI Exception\n");
-			break;
 		} else {
 			vmx_get_cpu(vcpu);
-			HDEBUG("unhandled exit: reason %#x, exit qualification %#lx\n",
+			printk(KERN_CRIT "unhandled exit: reason %#x, "
+			       "exit qualification %#lx\n",
 			       ret, vmcs_readl(EXIT_QUALIFICATION));
 			vmx_put_cpu(vcpu);
-			HLOG("unhandled exit: reason %#x, exit qualification %#lx\n",
-			       ret, vmcs_readl(EXIT_QUALIFICATION));
-			break;
+			BUG();
 		}
 		HDEBUG("Done handling exit condition, looping...\n");
 	}
