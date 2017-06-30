@@ -223,6 +223,11 @@ struct intr_info {
 
 #define EPT_PERM_MASK   (EPT_R | EPT_W | EPT_X)
 
+/* EPT Violation Qualification Guest Linear address valid*/
+#define EPT_V_GLV    (1UL << 7)
+/* EPT Violation Qualification violation due to linear address translation */
+#define EPT_V_LT     (1UL << 8)
+
 #define EPT_P_MTYPE    0x6
 /* Actual value that goes into EPTP is EPT_PWL-1 */
 #define EPT_PWL        0x4
