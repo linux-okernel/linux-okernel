@@ -157,7 +157,7 @@ struct ept_pt_list {
 };
 
 #define VCPUBUFLEN 300
-#define NVCPUBUF 1000
+#define NVCPUBUF 10
 
 struct vmx_vcpu {
 	int cpu;

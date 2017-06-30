@@ -2,7 +2,9 @@
  * Author: Nigel Edwards, 2017
  */
 
+#include <linux/freezer.h>
 #include <linux/init.h>
+#include <linux/kthread.h>
 #include <linux/okernel.h>
 #include <linux/percpu.h>
 #include <linux/slab.h>
@@ -24,18 +26,15 @@
  * allocation of memory. So we need cache of entries.
  *
  * We have a small percpu cache and a global cache. Only accesses to the
- * global cache require locks.
- *
- * Only call okmm_refill, which may call kmalloc indirectly, before
- * entering NR mode for the first time. So do it during creation of
- * the vcpu structure, before starting in NR mode. It should never be
- * called during a VMEXIT.
+ * global cache require locks. The percup caches are filled on demand
+ * from the global cache. Each percpu fill wakes an allocator thread
+ * which tops up the global cache
  *
  * A futher complication is that we can never be sure whether or not
- * okmm_refill will be called with interrupts disabled or not.  So to
- * be safe we need to use spin_lock_irqsave and
- * spin_lock_irqrestore. Otherwise the following deadlock scenario is
- * possible
+ * okmm_get_ce will be called with interrupts disabled or not.  So to
+ * be safe okmm_lock must be locked with spin_lock_irqrestore. Otherwise
+ * the following deadlock scenario is possible when okmm_get_ce
+ * triggers a percpu cache fill and needs to get okmm_lock
  *
  *  CPU(0)                        CPU(1)
  *  okmm_lock                     lockA
@@ -46,38 +45,34 @@
  * accessed. Also note since kmalloc() can call functions which sleep,
  * we release the lock before calling kmalloc.
  *
- * When we refill a percpu cache from the global cache, we mark the
- * global cache as needing refill by setting refill_needed. Before
- * starting the refill will check that no other process is already
- * doing it refill_in_progress. This avoids potential race conditions
- * in which two process try to refill the global cache at the same
- * time. We can't use locks, because of the risk of deadlock discussed
- * above. 
+ * TODO: Make the global cache a percpu backing cache and create a
+ * percpu allocator thread. May improve performance somewhat on
+ * large multi-processor machines.
+ *
  */
+
+static struct task_struct *okmm_allocator_th;
+static DECLARE_WAIT_QUEUE_HEAD(okmm_refill_needed);
 
 static DEFINE_PER_CPU(struct ok_mm_cache, ok_cache);
 static struct ok_mm_cache gc; /* global backing cache*/
 static DEFINE_SPINLOCK(okmm_lock);
-static int refill_in_progress = 0;
 
-static atomic64_t refill_needed = ATOMIC64_INIT(0);
-/* 1 : gc_refill needed */
+static atomic64_t nrefills_needed = ATOMIC64_INIT(0);
+/* number of : gc_refills needed */
 
 #ifdef OKMM_DEBUG
 static atomic64_t percpu_cache_fills = ATOMIC64_INIT(0);
 static atomic64_t gc_cache_fills = ATOMIC64_INIT(0);
-static atomic64_t gc_refill_calls = ATOMIC64_INIT(0);
-
 
 static inline void kern_mess(int n, int lw, int id)
 {
 	long p = atomic64_read(&percpu_cache_fills);
 	long g = atomic64_read(&gc_cache_fills);
-	long c = atomic64_read(&gc_refill_calls);
 	
-	printk(KERN_INFO "cpu(%d) pid(%d): okmm %d entries:%d low water:%d, %ld"
-	       " gc cache refills %ld percpu cache refills %ld gc refill calls",
-	       raw_smp_processor_id(), current->pid, id, n, lw, g, p, c);
+	printk(KERN_INFO "cpu(%d) pid(%d): okmm %d, entries:%d low water:%d, "
+	       "gc refills:%ld, percpu cache refills:%ld",
+	       raw_smp_processor_id(), current->pid, id, n, lw, g, p);
 }
 
 static void do_metrics(struct ok_mm_cache *c)
@@ -193,50 +188,34 @@ static int do_new(struct okmm_ce *new_entries)
 	return i;
 }
 
-/*
- * This gets called each time a process is started before it ever goes
- * into NR mode. It only fills the cache if it is needed. A refill is
- * needed of a percpu cache has previouly been refilled from the
- * global cache gc.
- */
 static int gc_refill(void)
 {
 	int n, m;
-	unsigned long flags;
 	struct okmm_ce new_entries;
 	struct okmm_ce *refills;
+	unsigned long flags;
 
-	inc_metric(gc_refill_calls);
-	if (!atomic64_dec_and_test(&refill_needed)) {
-		return 0;
-	}
-
-	spin_lock_irqsave(&okmm_lock, flags);
-	if (refill_in_progress) {
-		spin_unlock_irqrestore(&okmm_lock, flags);
-		return 0;
-	}
-	refill_in_progress = 1;
 	inc_metric(gc_cache_fills);
+	spin_lock_irqsave(&okmm_lock, flags);
 	printk_metrics(&gc);
 	n = gc.nentries - gc.navailable;
-	m = (gc.navailable < GC_N_MIN) ? GC_STEP : 0;
+	n = (n > OKMM_N_PERCPU) ? OKMM_N_PERCPU : n; //max fill is OKMM_N_PERCPU
+	m = (gc.navailable <= gc.min) ? GC_STEP : 0;
 	spin_unlock_irqrestore(&okmm_lock, flags);
 
 	INIT_LIST_HEAD(&new_entries.list);
 	make_entries(&new_entries, m);
 	if (!(refills = make_refills(n))) {
-		return -ENOMEM;
+		printk(KERN_CRIT "Asking for %d refills\n", n);
+			return -ENOMEM;
 	}
 
 	spin_lock_irqsave(&okmm_lock, flags);
 	do_refill(refills, n);
 	m = do_new(&new_entries);
 
-	gc.navailable += n + m;
+	gc.navailable += OKMM_N_PERCPU + m;
 	gc.nentries += m;
-	gc.low_water += m;
-	refill_in_progress = 0;
 	spin_unlock_irqrestore(&okmm_lock, flags);
 
 	kfree(refills);
@@ -263,17 +242,13 @@ int static percpu_refill(struct ok_mm_cache *c)
 		list_move(&e->list, &c->available.list);
 		list_move(&f->list, &gc.used.list);
 	}
-	atomic64_set(&refill_needed, (long) 1);
+	atomic64_inc(&nrefills_needed);
 	spin_unlock_irqrestore(&okmm_lock, flags);
+	wake_up(&okmm_refill_needed);
 	if (c->navailable <= 0) {
 		return -ENOMEM;
 	}
 	return 0;
-}
-
-int okmm_refill(void)
-{
-	return gc_refill();
 }
 
 void okmm_get_ce(struct ept_pt_list **epte, pt_page **pt)
@@ -298,7 +273,7 @@ void okmm_get_ce(struct ept_pt_list **epte, pt_page **pt)
 	put_cpu_ptr(c);
 }
 
-int __init init_cache (struct ok_mm_cache *c, int cpu)
+static int __init init_cache (struct ok_mm_cache *c, int cpu)
 {
 	INIT_LIST_HEAD(&c->available.list);
 	INIT_LIST_HEAD(&c->used.list);
@@ -310,7 +285,7 @@ int __init init_cache (struct ok_mm_cache *c, int cpu)
 	return 0;
 }
 
-int __init fill_cache (struct ok_mm_cache *c, int n)
+static int __init fill_cache (struct ok_mm_cache *c, int n)
 {
 	int i;
 	struct okmm_ce *e;
@@ -324,6 +299,24 @@ int __init fill_cache (struct ok_mm_cache *c, int n)
 	c->nentries = n;
 	c->navailable = n;
 	c->low_water = n;
+	c->min = 0;
+	return 0;
+}
+
+static int okmm_allocator(void *unused)
+{
+	unsigned long i;
+	while(!kthread_should_stop()) {
+		wait_event_freezable(okmm_refill_needed,
+				     atomic64_read(&nrefills_needed) > 0);
+		for (i = atomic64_read(&nrefills_needed); i > 0;
+		     i = atomic64_dec_if_positive(&nrefills_needed)){
+			if (gc_refill() < 0) {
+				printk(KERN_ERR
+				       "okmm_allocator out of memory\n?");
+			}
+		}
+	}
 	return 0;
 }
 
@@ -357,9 +350,15 @@ int __init okmm_init(void)
 		i++;
 	}
 
-	n = OKMM_N_PERCPU * (i + 1);
+	gc.min = OKMM_N_PERCPU * i; //consider making 1<<9 gc.min
+	n = gc.min * 3;
 	printk(KERN_INFO "okmm_init %d CPUs, percpu cache size %d, global %d\n",
 	       i, OKMM_N_PERCPU, n);
-
+	okmm_allocator_th = kthread_run(okmm_allocator, NULL, "okmm_allocator");
+	if (IS_ERR(okmm_allocator_th)) {
+		printk(KERN_ERR "Unable to start okmm_allocator thread\n");
+		return -1;
+	}
 	return fill_cache(&gc, n);
 }
+

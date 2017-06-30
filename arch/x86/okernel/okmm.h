@@ -2,10 +2,7 @@
 #define OKMM_H
 
 /* Mininum initial number in per CPU cache */
-#define OKMM_N_PERCPU (1 << 8)
-
-/* Mininumum number in the global cache, it grows if we go lower*/
-#define GC_N_MIN (OKMM_N_PERCPU << 1)
+#define OKMM_N_PERCPU (1 << 5)
 
 /* Step by which to grow the cache if we go below GC_MIN*/
 #define GC_STEP OKMM_N_PERCPU
@@ -31,12 +28,12 @@ struct ok_mm_cache {
 	int cpu;
 	int nentries;
 	int navailable;
+	int min; /* min or fewer entries triggers growth */
 	int low_water;
 	int ticks; /* Count since last low_water message*/
 };
 
 extern int __init okmm_init(void);
 extern void okmm_get_ce(struct ept_pt_list **epte, pt_page **pt);
-extern int okmm_refill(void);
 
 #endif /* OKMM_H */

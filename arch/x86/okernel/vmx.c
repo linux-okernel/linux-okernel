@@ -138,7 +138,7 @@ struct vmx_capability vmx_capability;
 
 // NJE BEGIN NEEDS TO GO
 /*
- * We can use trace_printk or printk safely when we have a process running
+ * We can't use trace_printk or printk safely when we have a process running
  * in NR mode. So this is a quick and dirty circular buffer until we
  * build something better (it is in hand).
  */
@@ -826,6 +826,10 @@ int set_clr_ept_page_flags(struct vmx_vcpu *vcpu, u64 paddr,
 	unsigned long page2m = *epte & EPT_2M_PAGE;
 	if (!epte) {
 		return 0;
+	}
+	if (level > PG_LEVEL_2M){
+		printk(KERN_ERR "okernel unsupported page level");
+		BUG();
 	}
 	/* split if the kernel is using 4k pages and the EPT is 2M */
 	if (level == PG_LEVEL_4K && (*epte & EPT_2M_PAGE)){
@@ -2926,24 +2930,102 @@ static void vmx_handle_cpuid(struct vmx_vcpu *vcpu)
 
 static int vmx_handle_CR_access(struct vmx_vcpu *vcpu)
 {
-	unsigned long qual;
+	static const char cr4_warning[] = KERN_CRIT
+		"okernel blocking write to CR4: SMEP exploit attempt?"
+		" (uid %d, pid %d, command %s, access type %d, "
+		"register %d, reg value %#lx)\n";
+
+	static const char cr_error[] = KERN_CRIT
+		"okernel detected unhandled write to CR: bug or exploit attempt?"
+		" (uid %d, pid %d, command %s, exit qualification %#lx)\n";
+
+	unsigned long qual, gpv;
+	unsigned int cr, at, gp;
+	uid_t uid;
+	pid_t pid;
+	char *comm;
 
 	vmx_get_cpu(vcpu);
 	qual = vmcs_readl(EXIT_QUALIFICATION);
 	vmx_put_cpu(vcpu);
-	printk(KERN_ERR "BLOCKING CR REG access CR:=%u TO/FROM:=%d "
-	       "GP:=%d ECX=%#lx for pid %d \"%s\"\n",
-	       (unsigned int)(qual & CR_REG_ACCESS_MASK),
-	       (unsigned int)(qual & CR_REG_ACCESS_TYPE),
-	       (unsigned int)(qual & CR_REG_ACCESS_GP),
-	       (unsigned long)vcpu->regs[VCPU_REGS_RCX],
-	       current->pid, current->comm);
-	vmx_step_instruction();
-	return 1;
-/*
-	vmx_destroy_vcpu(vcpu);
-	do_exit(-1);
-*/
+	cr = CR_FROM_QUAL(qual);
+	at = CR_ACCESS_TYPE_FROM_QUAL(qual);
+	gp = CR_ACCESS_GP_FROM_QUAL(qual);
+	gpv = (unsigned long)vcpu->regs[gp];
+	uid = from_kuid(&init_user_ns, current_uid());
+	pid = current->pid;
+	comm = current->comm;
+
+	if (cr == 4){
+		printk(cr4_warning, uid, pid, comm, at, gp, gpv);
+		vmx_step_instruction();
+		return 1;
+	}
+	printk(cr_error, uid, pid, comm, qual);
+	return 0;
+}
+
+void okcrit(const char *fmt, ...)
+{
+	va_list args;
+
+	va_start(args, fmt);
+	printk(fmt, args);
+	va_end(args);
+}
+
+static int vmx_handle_EPT_misconfig(struct vmx_vcpu *vcpu)
+{
+	static const char warning[] = KERN_CRIT
+		"okernel ept misconfig for NR physical address %#lx "
+		"found plm2 entry %#lx pte/pml1 %#lx\n";
+
+	unsigned long gp_addr, *pml2_e, *epte;
+	vmx_get_cpu(vcpu);
+	gp_addr = vmcs_readl(GUEST_PHYSICAL_ADDRESS);
+	vmx_put_cpu(vcpu);
+
+	if((pml2_e =  find_pd_entry(vcpu, gp_addr))){
+		epte = ept_page_entry(vcpu, gp_addr);
+	} else {
+		epte = 0;
+	}
+	printk(warning, gp_addr, (pml2_e) ? *pml2_e : 0, (epte) ? *epte : 0);
+	return 0;
+}
+
+static int vmx_handle_exception_NMI(struct vmx_vcpu *vcpu)
+{
+	static const char gp_excp[] = KERN_CRIT
+		"okernel unhandled GP exception exit qualification "
+		"%#lx err %#lx non root RIP %#lx\n";
+
+	static const char other_excp[] = KERN_CRIT
+		"okernel unhandled exception or NMI  vector %d "
+		"exit qualification %#lx\n";
+
+	union {
+		struct intr_info s;
+		ulong v;
+	} vii;
+	unsigned long qual, err, rip;
+
+	vmx_get_cpu(vcpu);
+	vii.v = vmcs_readl(VM_EXIT_INTR_INFO);
+	if(vii.s.valid == INTR_INFO_VALID_VALID){
+		qual = (u64)vmcs_readl(EXIT_QUALIFICATION);
+		if(vii.s.vector == EXCEPTION_GP){
+			err = (u64)vmcs_readl(VMCS_VMEXIT_INTR_ERRCODE);
+			rip = vmcs_readl(GUEST_RIP);
+			printk(gp_excp, qual, err, rip);
+		} else {
+			printk(other_excp, vii.s.vector, qual);
+		}
+	} else {
+		printk("okernel exception or NMI, no valid diagnosis info\n");
+	}
+	vmx_put_cpu(vcpu);
+	return 0;
 }
 
 static void check_int(struct vmx_vcpu *vcpu, char *s)
@@ -3300,8 +3382,6 @@ int vmexit_protected_page(struct vmx_vcpu *vcpu)
 		(void)remap_ept_page(vcpu, gp_addr,
 				     ok_get_protected_dummy_paddr());
 	}
-	vpid_sync_context(vcpu->vpid);
-	vmx_put_cpu(vcpu);
 	return 1;
 }
 
@@ -3372,12 +3452,10 @@ static inline void set_clr_ok_tags(unsigned long gva, unsigned long *s_flags,
 				 unsigned long *c_flags)
 {
 	/*
-	if (!(is_user_space(gva)) && need_integrity_flag(gva, *s_flags)) {
-		*s_flags |= OK_TEXT;
-	} else {
-		*c_flags |= OK_TEXT;
-	}
-	*/
+	 * Tags a physical memory region Text or Module RO
+	 * if the current virtual address is in kernel text or module
+	 * space and marked RO.
+	 */
 	if ((is_text_space(gva)) && rx_nowrite(*s_flags)) {
 		*s_flags |= OK_TEXT;
 		*c_flags |= OK_MOD;
@@ -3390,7 +3468,8 @@ static inline void set_clr_ok_tags(unsigned long gva, unsigned long *s_flags,
 
 }
 
-void flags_from_qual(unsigned long qual, unsigned long *s, unsigned long *c)
+static void flags_from_qual(unsigned long qual, unsigned long *s,
+			    unsigned long *c)
 {
 	/*
 	 * Note if EPT_W or EPT_X is set, then EPT_R must be set
@@ -3409,42 +3488,150 @@ void flags_from_qual(unsigned long qual, unsigned long *s, unsigned long *c)
 	*c = ((~*s) & EPT_PERM_MASK);
 }
 
-int page_walk_ept_viol(struct vmx_vcpu *vcpu, unsigned long gpa,
+static int page_walk_ept_viol(struct vmx_vcpu *vcpu, unsigned long gpa,
 		       unsigned long qual)
 {
 	unsigned long s_flags, c_flags;
-	HLOG("ENTERED\n");
 	if (is_set_ept_page_flag(vcpu, gpa, OK_TEXT | OK_MOD)) {
-		HLOG("Clearing OK_TEXT and OK_MOD, allocated to page tables\n");
+		OKSEC("Clearing OK_TEXT & OK_MOD, allocated to page tables\n");
 	}
 	flags_from_qual(qual, &s_flags, &c_flags);
 	c_flags |= OK_TEXT | OK_MOD;
 	if(set_clr_ept_page_flags(vcpu, gpa, s_flags, c_flags, PG_LEVEL_NONE)){
-		vpid_sync_context(vcpu->vpid);
-		vmx_put_cpu(vcpu);
 		return 1;
 	} else {
-		HDEBUG("set_clr_ept_page_flags failed.\n");
+		OKERR("set_clr_ept_page_flags failed.\n");
 		BUG();
 	}
 	return 0;
 }
 
-int grant_all(struct vmx_vcpu *vcpu, unsigned long gpa,
+static int grant_all(struct vmx_vcpu *vcpu, unsigned long gpa,
 	      unsigned long qual, int level)
 {
 	unsigned long s_flags, c_flags;
 	c_flags = OK_TEXT | OK_MOD;
 	s_flags = EPT_W | EPT_R | EPT_X;
 	if(set_clr_ept_page_flags(vcpu, gpa, s_flags, c_flags, level)){
-		vpid_sync_context(vcpu->vpid);
-		vmx_put_cpu(vcpu);
 		return 1;
 	} else {
+		OKERR("set_clr_ept_page_flags failed.\n");
 		BUG();
 	}
 	return 0;
 }
+
+
+/*
+ * If the gva is kernel integrity memory, in an ideal world we
+ * wouldn't need to change it. Unfortunately, sometimes aliases are
+ * created. So we have to allow changes and log them.  If its a user
+ * space gva which is NOT kernel integrity protected, grant it.
+ *
+ * When user space memory is released we need to remove
+ * the grant so it can be reallocated (see xpfo use of page_ext)
+ *
+ * We don't mark any module memory as kernel integrity protected
+ * as it may end up being released and used for a gva.
+ * If we can use xpfo page_ext we can also mark module memory
+ * as kernel integrity protected.
+ *
+ * If we have mode based execute control for EPT, we should
+ * not need to ever to add EPT_X to user space, as it only
+ * controls supervisor mode.
+ *
+ */
+static int kernel_ro_ept_violation(struct vmx_vcpu *vcpu, unsigned long gpa,
+				   unsigned long gva, unsigned long qual)
+{
+	unsigned long *epte, mapped, s_flags, c_flags, eprot, n_eprot;
+	int level;
+	pgprot_t prot;
+
+	epte = ept_page_entry(vcpu, gpa);
+	if (!(mapped = text_addr(vcpu, gpa))) {
+		mapped = mod_addr(vcpu, gpa);
+	}
+	BUG_ON(!guest_physical_page_address(gva, &level, &prot));
+	if (is_user_space(gva)){
+		if (mapped){
+			OKERR("User space alias for kernel RO memory\n");
+			BUG();
+			return 0;
+		} else {
+			/* We need to fix by tracking release of memory*/
+			OKWARN("Releasing %#lx no longer mapped\n", gpa);
+			return grant_all(vcpu, gpa, qual, level);
+		}
+	}
+	ept_flags_from_prot(prot, &s_flags, &c_flags);
+	eprot = *epte & (EPT_W | EPT_R | EPT_X);
+
+	/* if already mapped, it's either a change or alias */
+	if (mapped) {
+		/* New prots = guest prot + old prot */
+		n_eprot = s_flags | eprot;
+		OKSEC("Physical address %#lx with EPT prot %#lx alias or change"
+		      " for kernel protected code mapped at page %#lx being "
+		      "created at page %#lx for virtual address %#lx, "
+		      "new EPT prot %#lx\n", gpa, eprot, mapped,
+		      gva & ~(PAGESIZE2M - 1), gva, n_eprot);
+		//dump_stack();
+		if(!set_clr_ept_page_flags(vcpu, gpa, n_eprot, 0, level)){
+			OKERR("set_clr_ept_page_flags failed.\n");
+			BUG();
+			return 0;
+		}
+	} else {
+		set_clr_ok_tags(gva, &s_flags, &c_flags);
+		/* We need to fix by tracking release */
+		OKWARN("Physical address %#lx with EPT prot %#lx no longer at "
+		       "original mapping " "New mapping created at guest "
+		       "virtual " "%#lx, new EPT prot %#lx\n",
+		       gpa, eprot, gva, s_flags);
+		if(!set_clr_ept_page_flags(vcpu, gpa, s_flags, c_flags, level)){
+			OKERR("set_clr_ept_page_flags failed.\n");
+			BUG();
+			return 0;
+		}
+	}
+	return 1;
+}
+
+int module_ept_violation(struct vmx_vcpu *vcpu, unsigned long gpa,
+			 unsigned long gva)
+{
+	/*
+	 * This handles ept violations for module code which is not
+	 * already tagged and protected by OK_MOD tags
+	 * Typically this will happen if the process does an insmod
+	 * Anything that was already installed before the process is
+	 * started will be protected by OK_MOD tags
+	 */
+	int level;
+	unsigned long s_flags, c_flags;
+	pgprot_t prot;
+
+	BUG_ON(!guest_physical_page_address(gva, &level, &prot));
+
+	/* Get the protection flags to set on the EPT from
+	 * the upper level page tables */
+	ept_flags_from_prot(prot, &s_flags, &c_flags);
+	set_clr_ok_tags(gva, &s_flags, &c_flags);
+	if (set_clr_ept_page_flags(vcpu, gpa,
+				   s_flags, c_flags, level)){
+		OKSEC("Set %#lx clear %#lx for module "
+		       "physical address %#lx virtual %#lx\n",
+		       s_flags, c_flags, gpa, gva);
+		//dump_stack();
+		return 1;
+	} else {
+		OKERR("set_clr_ept_page_flags failed.\n");
+		BUG();
+		return 0;
+	}
+}
+
 static int vmx_handle_EPT_violation(struct vmx_vcpu *vcpu)
 {
 	/*
@@ -3453,132 +3640,38 @@ static int vmx_handle_EPT_violation(struct vmx_vcpu *vcpu)
 
 	unsigned long qual;
 	unsigned long gpa;
-	unsigned long *pml2_e;
 	unsigned long gva;
 
 	vmx_get_cpu(vcpu);
 	qual = vmcs_readl(EXIT_QUALIFICATION);
 	gpa = vmcs_readl(GUEST_PHYSICAL_ADDRESS);
-	HDEBUG("ept violation exit - qualification=%#lx gpa=%#lx\n",
-	       qual, gpa);
+	gva = (u64)vmcs_readl(GUEST_LINEAR_ADDRESS);
+	vpid_sync_context(vcpu->vpid);
+	vmx_put_cpu(vcpu);
 
 	/* Grant access to protected pages lazily */
 	if(__ok_protected_phys_addr(gpa)){
 		return vmexit_protected_page(vcpu);
 	}
 
-	/* Bit 7 in exit qualification set if 'guest' virtual address valid */
-	if(qual & 0x80){
-		unsigned long *epte, mapped, s_flags, c_flags, eprot, n_eprot;
+	/* Guest linear (virtual address) is valid */
+	if(qual & EPT_V_GLV){
+		unsigned long s_flags, c_flags;
 		int level;
 		pgprot_t prot;
-		/* Bit 8 is cleared if it's a page walk or update of accessed*/
-		if (!(qual & 0x100)){
-			TDEBUG(log_ptr(vcpu),"EPT Page walk violation  "
-				       "physical address %#lx\n",
-				       gpa);
+		/* 
+		 * If EPT_V_LT is set, the violation was a result of a
+		 * result of a translation of a linear address,
+		 * otherwise it was a result of a page walk or update
+		 * of access or dirty bit
+		 */
+		if (!(qual & EPT_V_LT)){
 			return page_walk_ept_viol(vcpu, gpa, qual);
 		}
-
-		gva = (u64)vmcs_readl(GUEST_LINEAR_ADDRESS);
-		HDEBUG("gva=%#lx\n", gva);
-		//check_gva(gva);
-		//check_gpa(vcpu, gpa);
-		/*
-		 * If the gva is  kernel integrity memory, in an ideal world
-		 * we wouldn't need to change it. Unfortunately, sometimes
-		 * aliases are created. So we have to allow changes and log
-		 * them.
-		 * If its a user space gva which is NOT kernel integrity
-		 * protected, grant it.
-		 *
-		 * When user space memory is released we need to remove
-		 * the grant so it can be reallocated (see xpfo use of page_ext)
-		 *
-		 * We don't mark any module memory as kernel integrity protected
-		 * as it may end up being released and used for a gva.
-		 * If we can use xpfo page_ext we can also mark module memory
-		 * as kernel integrity protected.
-		 *
-		 * If we have mode based execute control for EPT, we should
-		 * not need to ever to add EPT_X to user space, as it only
-		 * controls supervisor mode.
-		 *
-		 */
 		if (is_set_ept_page_flag(vcpu, gpa, OK_TEXT | OK_MOD)){
-			TDEBUG(log_ptr(vcpu),"EPT violation  on tagged memory"
-			       "physical address %#lx va %#lx\n",
-			       gpa, gva);
-			epte = ept_page_entry(vcpu, gpa);
-			mapped = text_addr(vcpu, gpa);
-			if (!mapped) {
-				mapped = mod_addr(vcpu, gpa);
-			}
-			BUG_ON(!guest_physical_page_address(gva, &level, &prot));
-			if (is_user_space(gva)){
-				if (mapped){
-					HLOG("User space alias for kernel\n");
-					BUG();
-					return 0;
-				}
-				else{
-					return grant_all(vcpu, gpa, qual, level);	
-				}
-			}
-			ept_flags_from_prot(prot, &s_flags, &c_flags);
-			eprot = *epte & (EPT_W | EPT_R | EPT_X);
-
-			/* if already mapped, it's either a change or alias */
-			if (mapped) {
-				/* New prots = guest prot + old prot */
-				n_eprot = s_flags | eprot;
-				HLOG("Physical address %#lx with EPT prot %#lx"
-				       " alias or change for kernel protected "
-				       " code mapped at %#lx being created "
-				       "at %#lx, new EPT prot %#lx\n",
-				       gpa, eprot, mapped, gva, n_eprot);
-				if(!set_clr_ept_page_flags(vcpu, gpa, n_eprot,
-							   0, level)){
-					BUG();
-				}
-			} else {
-				set_clr_ok_tags(gva, &s_flags, &c_flags);
-				HDEBUG("Physical address %#lx with EPT prot %#lx"
-				       " no longer at original mapping "
-				       "New mapping created at guest virtual "
-				       "%#lx, new EPT prot %#lx\n",
-				       gpa, eprot, gva, s_flags);
-				if(!set_clr_ept_page_flags(vcpu, gpa, s_flags,
-							   c_flags, level)){
-					BUG();
-				}
-			}
-			vpid_sync_context(vcpu->vpid);
-			vmx_put_cpu(vcpu);
-			return 1;
+			return kernel_ro_ept_violation(vcpu, gpa, gva, qual);
 		} else if (is_module_space(gva)){
-			/*
-			 * Get the prot flags and set them
-			 */
-			BUG_ON(!guest_physical_page_address(gva, &level, &prot));
-			ept_flags_from_prot(prot, &s_flags, &c_flags);
-			set_clr_ok_tags(gva, &s_flags, &c_flags);
-			if (set_clr_ept_page_flags(vcpu, gpa,
-						   s_flags, c_flags, level)){
-				HDEBUG("Set %#lx clear %#lx for module "
-				       "physical address %#lx virtual %#lx\n",
-				       s_flags, c_flags, gpa, gva);
-				TDEBUG(log_ptr(vcpu),"Set %#lx clear %#lx for module "
-				       "physical address %#lx virtual %#lx level %d\n",
-				       s_flags, c_flags, gpa, gva, level);
-
-				vpid_sync_context(vcpu->vpid);
-				vmx_put_cpu(vcpu);
-				return 1;
-			} else {
-				HDEBUG("set_clr_ept_page_flags failed.\n");
-				BUG();
-			}
+			return module_ept_violation(vcpu, gpa, gva);
 		} else if (is_user_space(gva)){
 			BUG_ON(!guest_physical_page_address(gva, &level, &prot));
 			TDEBUG(log_ptr(vcpu),"EPT violation on user space mem  "
@@ -3598,19 +3691,12 @@ static int vmx_handle_EPT_violation(struct vmx_vcpu *vcpu)
 				HLOG("Kernel space EPT Violation gpa %#lx "
 				       "va %#lx set %#lx clear %#lx\n",
 				       gpa, gva, s_flags, c_flags);
-				vpid_sync_context(vcpu->vpid);
-				vmx_put_cpu(vcpu);
 				return 1;
 			} else {
 				HDEBUG("set_clr_ept_page_flags failed.\n");
 				BUG();
 			}
 		}
-	}
-	if(!(pml2_e =  find_pd_entry(vcpu, gpa))){
-		HDEBUG("NULL pml2 entry for gpa (%#lx)\n", gpa);
-	} else {
-		HDEBUG("ept entry for gpa=%#lx is (%#lx)\n", gpa, *pml2_e);
 	}
 	return 0;
 }
@@ -3640,16 +3726,8 @@ int vmx_launch(unsigned int mode, unsigned int flags, struct nr_cloned_state *cl
 //	struct vmx_vcpu *remote_vcpu;
 	unsigned long saved_irqs_on;
 
-	union {
-		struct intr_info s;
-		ulong v;
-	} vii;
-	unsigned long cr2;
-	unsigned long err;
 	unsigned long k_stack;
-	unsigned long gp_addr;
 	unsigned long qual;
-	unsigned long *pml2_e;
 #if defined(HPE_DEBUG)
 	int orig_cpu;
 	unsigned long nr_gs;
@@ -3668,10 +3746,6 @@ int vmx_launch(unsigned int mode, unsigned int flags, struct nr_cloned_state *cl
 #endif
 	if (in_atomic()) {
 		HDEBUG("!!!!!!in_atomic() true - preemption disabled!!!!!\n");
-	}
-	if ((ret = okmm_refill())){
-		HDEBUG("okmm_refill failed\n");
-		return ret;
 	}
 
 	if(!cloned_thread)
@@ -3876,20 +3950,19 @@ int vmx_launch(unsigned int mode, unsigned int flags, struct nr_cloned_state *cl
 		}
 
 		if(*(vcpu->nr_stack_canary) != NR_STACK_END_MAGIC){
-			HLOG("NR stack overflow detected.\n");
 			printk(KERN_ERR "Okernel: NR stack overflow detected.\n");
-			break;
+			BUG();
 		}
 
 		vmx_put_cpu(vcpu);
 
 		if(ret==VMX_EXIT_REASONS_FAILED_VMENTRY){
 			HLOG("vmentry failed (%#x)\n", ret);
-			break;
+			BUG();
 		} else if((ret == EXIT_REASON_EXTERNAL_INTERRUPT)){
 			/* We should be handling interrupts in NR-mode at the moment...*/
-			HLOG("vmexit on external interrupt.\n");
-			break;
+			printk(KERN_CRIT "vmexit on external interrupt.\n");
+			BUG();
 		} else if (ret == EXIT_REASON_CPUID){
 			HDEBUG("cpuid called.\n");
 			vmx_handle_cpuid(vcpu);
@@ -3897,62 +3970,32 @@ int vmx_launch(unsigned int mode, unsigned int flags, struct nr_cloned_state *cl
 			vmx_handle_vmcall(vcpu, saved_irqs_on);
 		} else if (ret == EXIT_REASON_CR_ACCESS){
 			if (!vmx_handle_CR_access(vcpu)){
-				vmx_put_cpu(vcpu);
-				HLOG("Unhandled CR access \n");
+				printk(KERN_CRIT "Unhandled CR access \n");
 				BUG();
 			}
 		} else if (ret == EXIT_REASON_EPT_VIOLATION){
 			if (!vmx_handle_EPT_violation(vcpu)){
 				vmx_put_cpu(vcpu);
-				HLOG("Unhandled EPT Violation\n");
+				printk(KERN_CRIT "Unhandled EPT Violation\n");
 				BUG();
 			}
 		} else if (ret == EXIT_REASON_EPT_MISCONFIG){
-			vmx_get_cpu(vcpu);
-			gp_addr = vmcs_readl(GUEST_PHYSICAL_ADDRESS);
-			vmx_put_cpu(vcpu);
-			HLOG("ept misconfig exit - gpa=%#lx\n", gp_addr);
-			if(!(pml2_e =  find_pd_entry(vcpu, gp_addr))){
-				printk(KERN_ERR "okernel: NULL pml2 entry for gp_addr (%#lx)\n",
-				       gp_addr);
-			} else {
-				unsigned long *epte;
-				if (!(epte = ept_page_entry(vcpu, gp_addr))){
-					HLOG("no pte; plm2 entry for gpa=%#lx is (%#lx)\n", gp_addr, *pml2_e);
-				} else{
-					HLOG("no pte; plm2 entry for gpa=%#lx is (%#lx)\n", gp_addr, *pml2_e);
-					HLOG("ept entry for gpa=%#lx is (%#lx)\n", gp_addr, *epte);
-				}
+			if (!vmx_handle_EPT_misconfig(vcpu)){
+				printk(KERN_CRIT "Unhandle EPT Misconfig\n");
+				BUG();
 			}
-			HLOG("EPT Misconfig\n");
-			break;
 		} else if (ret == EXIT_REASON_EXCEPTION_NMI) {
-			vmx_get_cpu(vcpu);
-			vii.v = vmcs_readl(VM_EXIT_INTR_INFO);
-			HDEBUG("recieved EXCEPTION or NMI\n");
-			if(vii.s.valid == INTR_INFO_VALID_VALID){
-				if(vii.s.vector == EXCEPTION_GP){
-					err = (u64)vmcs_readl(VMCS_VMEXIT_INTR_ERRCODE);
-					cr2 = (u64)vmcs_readl(EXIT_QUALIFICATION);
-					HDEBUG("Got GP error - exit qualification (%#lx) err (%#lx)\n",
-					       cr2, err);
-					HDEBUG("Guest rip (%#lx)\n", vmcs_readl(GUEST_RIP));
-				} else {
-					HDEBUG("unhandled exception/NMI: ret (%d) vector (%d), exit qual (%lx)\n",
-					       ret, vii.s.vector, vmcs_readl(EXIT_QUALIFICATION));
-				}
+			if (!vmx_handle_exception_NMI(vcpu)){
+				printk(KERN_CRIT "Unhandled NMI exception\n");
+				BUG();
 			}
-			vmx_put_cpu(vcpu);
-			HLOG("NMI Exception\n");
-			break;
 		} else {
 			vmx_get_cpu(vcpu);
-			HDEBUG("unhandled exit: reason %#x, exit qualification %#lx\n",
+			printk(KERN_CRIT "unhandled exit: reason %#x, "
+			       "exit qualification %#lx\n",
 			       ret, vmcs_readl(EXIT_QUALIFICATION));
 			vmx_put_cpu(vcpu);
-			HLOG("unhandled exit: reason %#x, exit qualification %#lx\n",
-			       ret, vmcs_readl(EXIT_QUALIFICATION));
-			break;
+			BUG();
 		}
 		HDEBUG("Done handling exit condition, looping...\n");
 	}
