@@ -3561,7 +3561,7 @@ static int kernel_ro_ept_violation(struct vmx_vcpu *vcpu, unsigned long gpa,
 		} else {
 			/* We need to fix by tracking release of memory*/
 			OKWARN("Releasing %#lx no longer mapped\n", gpa);
-			return grant_all(vcpu, gpa, qual, level);	
+			return grant_all(vcpu, gpa, qual, level);
 		}
 	}
 	ept_flags_from_prot(prot, &s_flags, &c_flags);
@@ -3623,7 +3623,7 @@ int module_ept_violation(struct vmx_vcpu *vcpu, unsigned long gpa,
 		OKSEC("Set %#lx clear %#lx for module "
 		       "physical address %#lx virtual %#lx\n",
 		       s_flags, c_flags, gpa, gva);
-		dump_stack();
+		//dump_stack();
 		return 1;
 	} else {
 		OKERR("set_clr_ept_page_flags failed.\n");
