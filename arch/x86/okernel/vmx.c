@@ -3599,7 +3599,7 @@ static int kernel_ro_ept_violation(struct vmx_vcpu *vcpu, unsigned long gpa,
 }
 
 int module_ept_violation(struct vmx_vcpu *vcpu, unsigned long gpa,
-			 unsigned long gva)
+			 unsigned long gva, unsigned long qual)
 {
 	/*
 	 * This handles ept violations for module code which is not
@@ -3623,7 +3623,24 @@ int module_ept_violation(struct vmx_vcpu *vcpu, unsigned long gpa,
 		OKSEC("Set %#lx clear %#lx for module "
 		       "physical address %#lx virtual %#lx\n",
 		       s_flags, c_flags, gpa, gva);
-		//dump_stack();
+		if (qual & EPT_R){
+			OKSEC("EPT_R\n");
+		}
+		if (qual & EPT_W){
+			OKSEC("EPT_W\n");
+		}
+		if (qual & EPT_X){
+			OKSEC("EPT_X\n");
+		}
+
+		/**********************
+Here try to figure out if it's an instruction fetch or not
+Then what is there and why is it being loaded
+
+USE CRASH DUMP with BUG to get virtual addresses on stack and corrolate with above - may need to replace OKSEC if printk
+		 ***************/
+
+		dump_stack();
 		return 1;
 	} else {
 		OKERR("set_clr_ept_page_flags failed.\n");
