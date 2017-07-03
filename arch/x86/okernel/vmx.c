@@ -3688,7 +3688,7 @@ static int vmx_handle_EPT_violation(struct vmx_vcpu *vcpu)
 		if (is_set_ept_page_flag(vcpu, gpa, OK_TEXT | OK_MOD)){
 			return kernel_ro_ept_violation(vcpu, gpa, gva, qual);
 		} else if (is_module_space(gva)){
-			return module_ept_violation(vcpu, gpa, gva);
+			return module_ept_violation(vcpu, gpa, gva, qual);
 		} else if (is_user_space(gva)){
 			BUG_ON(!guest_physical_page_address(gva, &level, &prot));
 			TDEBUG(log_ptr(vcpu),"EPT violation on user space mem  "
