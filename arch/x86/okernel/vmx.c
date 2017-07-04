@@ -1127,10 +1127,10 @@ void set_clr_module_ept_flags(struct vmx_vcpu *vcpu)
 	unsigned int level;
 	pgprot_t prot;
 
-	HDEBUG("Entered\n");
+	OKDEBUG("Entered\n");
 	vaddr = start & ~(PAGESIZE2M - 1);
 	if (start != vaddr) {
-		HDEBUG("Start address (%#lx) is not 2M aligned\n", start);
+		OKWARN("Start address (%#lx) is not 2M aligned\n", start);
 	}
 	for (vaddr = start; vaddr < end; vaddr += PAGESIZE2M){
 		paddr = guest_physical_page_address(vaddr, &level, &prot);
@@ -1151,18 +1151,17 @@ void set_clr_module_ept_flags(struct vmx_vcpu *vcpu)
 		ept_flags_from_prot(prot, &s_flags, &c_flags);
 		if (rx_nowrite(s_flags)){
 			s_flags |= OK_MOD;
-			HDEBUG("Set OK_MOD on module address\n");
 		}
-		HDEBUG("Set flag %#lx clear flag %#lx on va %#lx pa %#lx\n",
-		       s_flags, c_flags, vaddr, paddr);
+		OKDEBUG("Set flag %#lx clear flag %#lx on %s va %#lx pa %#lx\n",
+			s_flags, c_flags, (level == 1)?"4K":"2M", vaddr, paddr);
 		if (!set_clr_ept_page_flags(vcpu, paddr, s_flags, c_flags,
 					    PG_LEVEL_2M)){
-			HDEBUG("EPT set_clr_ept_page_flags failed.\n");
+			OKERR("EPT set_clr_ept_page_flags failed.\n");
 			BUG();
 		}
 	}
-	HDEBUG("Start modules %#lx\n", start);
-	HDEBUG("End modules %#lx\n", end);
+	OKDEBUG("Start modules %#lx\n", start);
+	OKDEBUG("End modules %#lx\n", end);
 }
 
 void protect_kernel_integrity(struct vmx_vcpu *vcpu)
@@ -3620,7 +3619,7 @@ int module_ept_violation(struct vmx_vcpu *vcpu, unsigned long gpa,
 	set_clr_ok_tags(gva, &s_flags, &c_flags);
 	if (set_clr_ept_page_flags(vcpu, gpa,
 				   s_flags, c_flags, level)){
-		OKSEC("Set %#lx clear %#lx for module "
+		printk("Set %#lx clear %#lx for module "
 		       "physical address %#lx virtual %#lx\n",
 		       s_flags, c_flags, gpa, gva);
 		if (qual & EPT_R){
