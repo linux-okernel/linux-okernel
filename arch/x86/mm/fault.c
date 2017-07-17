@@ -347,7 +347,7 @@ static noinline int vmalloc_fault(unsigned long address)
 	 * Do _not_ use "current" here. We might be inside
 	 * an interrupt in the middle of a task switch..
 	 */
-	pgd_paddr = read_cr3();
+	pgd_paddr = read_cr3_pa();
 	pmd_k = vmalloc_sync_one(__va(pgd_paddr), address);
 	if (!pmd_k)
 		return -1;
@@ -389,7 +389,7 @@ static bool low_pfn(unsigned long pfn)
 
 static void dump_pagetable(unsigned long address)
 {
-	pgd_t *base = __va(read_cr3());
+	pgd_t *base = __va(read_cr3_pa());
 	pgd_t *pgd = &base[pgd_index(address)];
 	p4d_t *p4d;
 	pud_t *pud;
@@ -452,7 +452,7 @@ static noinline int vmalloc_fault(unsigned long address)
 	 * happen within a race in page table update. In the later
 	 * case just flush:
 	 */
-	pgd = (pgd_t *)__va(read_cr3()) + pgd_index(address);
+	pgd = (pgd_t *)__va(read_cr3_pa()) + pgd_index(address);
 	pgd_ref = pgd_offset_k(address);
 	if (pgd_none(*pgd_ref))
 		return -1;
@@ -556,7 +556,7 @@ static int bad_address(void *p)
 
 static void dump_pagetable(unsigned long address)
 {
-	pgd_t *base = __va(read_cr3() & PHYSICAL_PAGE_MASK);
+	pgd_t *base = __va(read_cr3_pa());
 	pgd_t *pgd = base + pgd_index(address);
 	p4d_t *p4d;
 	pud_t *pud;
@@ -701,7 +701,7 @@ show_fault_oops(struct pt_regs *regs, unsigned long error_code,
 		pgd_t *pgd;
 		pte_t *pte;
 
-		pgd = __va(read_cr3() & PHYSICAL_PAGE_MASK);
+		pgd = __va(read_cr3_pa());
 		pgd += pgd_index(address);
 
 		pte = lookup_address_in_pgd(pgd, address, &level);
