@@ -15,6 +15,7 @@
 #ifndef _LINUX_OKERNEL_H
 #define _LINUX_OKERNEL_H
 #include <linux/compat.h>
+#include <linux/kern_levels.h>
 #include <asm/special_insns.h>
 #include <asm/percpu.h>
 
@@ -86,54 +87,57 @@ extern unsigned long ok_protected_pfn_start;
 extern unsigned long ok_protected_pfn_end;
 struct page *ok_alloc_protected_page(void);
 int ok_free_protected_page(struct page *pg);
+//extern int __ok_trace(const char *fmt, ...);
+extern const char *ok_trace_get_level(const char *buffer);
+
+/* OKERNEL_DEBUG */
+#define OKERNEL_DEBUG
+
+#ifdef OKERNEL_DEBUG
+
+/* #define __ok_trace(fmt, ...)					\
+ do {									\
+ 	const char *label = ok_trace_get_level(fmt);			\
+ 									\
+ 	if (strcmp(label, "OK_ERROR") == 0)					\
+ 		printk(KERN_ERR "[%s - cpu(%d) pid(%d)] %s: " fmt, vmx_nr_mode()?"NR":"R", raw_smp_processor_id(), current->pid,__func__, ## __VA_ARGS__);	\
+ 	else								\
+ 		trace_printk("(%s) [%s - cpu(%d) pid(%d)] %s: " fmt, label, vmx_nr_mode()?"NR":"R", raw_smp_processor_id(), current->pid,__func__, ## __VA_ARGS__);	\
+} while (0) */
+
+#define __ok_trace(fmt, ...) trace_printk("[%s - cpu(%d) pid(%d)] : " fmt, vmx_nr_mode()?"NR":"R", raw_smp_processor_id(), current->pid, ## __VA_ARGS__);
 
 
-/* Use trace_printk instead of printk */
+#define ok_pr_fmt(fmt) fmt
+/* maintain correspondence to levels defined in 'linux/kern_levels.h' */
+#define OK_ERR		KERN_ERR		/* "3" - error conditions */
+#define OK_WARNING	KERN_WARNING	/* "4" - warning conditions */
+#define OK_LOG		KERN_NOTICE		/* "5" - notice messages */
+#define OK_DEBUG	KERN_DEBUG		/* "7" - debug-level messages */
+#define OK_SEC		KERN_SOH "s"	/* security exception messages (custom level)*/
 
+#define ok_trace(fmt, ...) __ok_trace(fmt, ## __VA_ARGS__)
+//#define ok_trace(fmt, ...) trace_printk("[%s - cpu(%d) pid(%d)] %s: " ok_pr_fmt(fmt), vmx_nr_mode()?"NR":"R", raw_smp_processor_id(), current->pid,__func__, ## __VA_ARGS__)
+
+#define HLOG(fmt, ...) ok_trace(OK_LOG ok_pr_fmt(fmt), ## __VA_ARGS__)
+#define TDEBUG(p, fmt, args...)  if (p) snprintf(p, VCPUBUFLEN, \
+						 "pid(%d) %s: " fmt , \
+						 current->pid,__func__, ## args)
 //#define HPE_LOOP_DETECT
-#define OKERR(fmt, args...)  trace_printk("OKERR " \
-					  "%s: cpu(%d) pid(%d) %s: "	\
-					  fmt , vmx_nr_mode()?"NR":"R ",\
-					  raw_smp_processor_id(),\
-					  current->pid,__func__, ## args)
+#define OKERR(fmt, ...) ok_trace(OK_ERR ok_pr_fmt(fmt), ## __VA_ARGS__)
+#define OKWARN(fmt, ...) ok_trace(OK_WARNING ok_pr_fmt(fmt), ## __VA_ARGS__)
+#define OKDEBUG(fmt, ...) ok_trace(OK_DEBUG ok_pr_fmt(fmt), ## __VA_ARGS__)
+#define OKSEC(fmt, ...) ok_trace(OK_SEC ok_pr_fmt(fmt), ## __VA_ARGS__)
 
-#define OKWARN(fmt, args...)  trace_printk("OKWARN " \
-					  "%s: cpu(%d) pid(%d) %s: "	\
-					  fmt , vmx_nr_mode()?"NR":"R ", \
-					  raw_smp_processor_id(),\
-					  current->pid,__func__, ## args)
-
-#define OKDEBUG(fmt, args...)  trace_printk("OKDEBUG " \
-					  "%s: cpu(%d) pid(%d) %s: "\
-					  fmt , vmx_nr_mode()?"NR":"R ",\
-					  raw_smp_processor_id(),\
-					  current->pid,__func__, ## args)
-
-#define OKSEC(fmt, args...)  trace_printk("OKSEC " \
-					  "%s: cpu(%d) pid(%d) %s: "	\
-					  fmt , vmx_nr_mode()?"NR":"R ",\
-					  raw_smp_processor_id(),\
-					  current->pid,__func__, ## args)
-
-//#define HPE_DEBUG
-#ifdef HPE_DEBUG
-#define HDEBUG(fmt, args...)  trace_printk( KERN_ERR "%s: cpu(%d) pid(%d) %s: " fmt , vmx_nr_mode()?"NR":"R ", raw_smp_processor_id(), current->pid,__func__, ## args)
-//#define HDEBUG(fmt, args...)  printk( KERN_ERR "%s: cpu(%d) pid(%d) %s: " fmt , vmx_nr_mode()?"NR":"R ", raw_smp_processor_id(), current->pid,__func__, ## args)
-#else
-#define HDEBUG(fmt, args...)
-#endif
-//#define HPE_DEBUG2
-#ifdef HPE_DEBUG2
-#define HDEBUG2(fmt, args...) trace_printk( KERN_ERR "%s: cpu(%d) pid(%d) %s: " fmt, vmx_nr_mode()?"NR":"R ", raw_smp_processor_id(), current->pid,__func__, ## args)
-#else
-#define HDEBUG2(fmt, args...)
-#endif
-//#define HPE_DEBUG3
-#ifdef HPE_DEBUG3
-#define HDEBUG3(fmt, args...) trace_printk( KERN_ERR "%s: cpu(%d) pid(%d) %s: " fmt, vmx_nr_mode()?"NR":"R ", raw_smp_processor_id(), current->pid,__func__, ## args)
-#else
-#define HDEBUG3(fmt, args...)
-#endif
+#else /* !OKERNEL_DEBUG */
+#define HLOG(fmt, ...)
+#define TDEBUG(p, fmt, args...)
+#define OKERR(fmt, ...)
+#define OKWARN(fmt, ...)
+#define OKDEBUG(fmt, ...)
+#define OKSEC(fmt, ...)
+#define ok_trace(fmt, ...)
+#endif /* OKERNEL_DEBUG */
 
 
 

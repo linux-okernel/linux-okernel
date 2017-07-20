@@ -1,5 +1,5 @@
 config OKERNEL
-        bool "Enable inner/outer intra-kernel protection using process virtualization with Vt-x"
+        bool "Enable inner/outer intra-kernel protection using process virtualization with VT-x"
         depends on DEBUG_KERNEL
         depends on X86_64
         depends on !VIRTUALIZATION
@@ -8,7 +8,7 @@ config OKERNEL
         select PREEMPT_NONE
         default n
         ---help---
-          Suport for splitting the kernel into inner and outer regions.
+          Support for splitting the kernel into inner and outer regions.
           Processes marked as 'PKERNEL' run under vmx non-root mode, e.g. processes
           are virtualized, aka Dune, c.f. full machine virtualization.
           They enter the kernel in that mode too (outer-kernel mode)

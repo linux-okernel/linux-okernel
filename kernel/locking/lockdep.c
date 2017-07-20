@@ -3996,14 +3996,14 @@ static void check_flags(unsigned long flags)
 	if (irqs_disabled_flags(flags)) {
 		if (DEBUG_LOCKS_WARN_ON(current->hardirqs_enabled)) {
 #if defined(CONFIG_OKERNEL)
-                       HDEBUG("possible reason: unannotated irqs-off.\n");
+                       OKDEBUG("possible reason: unannotated irqs-off.\n");
 #endif
 			printk("possible reason: unannotated irqs-off.\n");
 		}
 	} else {
 		if (DEBUG_LOCKS_WARN_ON(!current->hardirqs_enabled)) {
 #if defined(CONFIG_OKERNEL)
-                       HDEBUG("possible reason: unannotated irqs-on.\n");
+                       OKDEBUG("possible reason: unannotated irqs-on.\n");
 #endif
 			printk("possible reason: unannotated irqs-on.\n");
 		}
