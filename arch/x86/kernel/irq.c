@@ -231,10 +231,10 @@ __visible unsigned int __irq_entry do_IRQ(struct pt_regs *regs)
 	 * IRQs.
 	 */
 #if defined(CONFIG_OKERNEL)
-#ifdef HPE_DEBUG
+#ifdef OKERNEL_DEBUG
 #if 0
        if(is_in_vmx_nr_mode()){
-               HDEBUG("called.\n");
+               OKDEBUG("called.\n");
        }
 #endif
 #endif

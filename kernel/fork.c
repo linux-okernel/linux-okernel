@@ -2008,9 +2008,9 @@ long _do_fork(unsigned long clone_flags,
 	long nr;
 
 #if defined(CONFIG_OKERNEL)
-#ifdef HPE_DEBUG
+#ifdef OKERNEL_DEBUG
        if(is_in_vmx_nr_mode()){
-               HDEBUG("called...\n");
+               OKDEBUG("called...\n");
        }
 #endif
 #endif
@@ -2066,7 +2066,7 @@ long _do_fork(unsigned long clone_flags,
                         * NR-mode RIP will be set to
                         * return-from-fork.
                         */
-                       HDEBUG("about to vmcall DO_FORK_FIXUP before wake_up_new_task...\n");
+                       OKDEBUG("about to vmcall DO_FORK_FIXUP before wake_up_new_task...\n");
                        (void)vmcall3(VMCALL_DO_FORK_FIXUP, (unsigned long)p, (unsigned long)tls);
                } else {
                        p->okernel_status = OKERNEL_OFF;
@@ -2161,9 +2161,9 @@ SYSCALL_DEFINE5(clone, unsigned long, clone_flags, unsigned long, newsp,
        long ret;
        
        if(is_in_vmx_nr_mode()){
-               HDEBUG("sys clone called tls=%#lx\n", tls);
+               OKDEBUG("sys clone called tls=%#lx\n", tls);
                ret = _do_fork(clone_flags, newsp, 0, parent_tidptr, child_tidptr, tls);
-               HDEBUG("sys clone returning (%ld) from _do_fork()\n", ret);
+               OKDEBUG("sys clone returning (%ld) from _do_fork()\n", ret);
                return ret;
        } else {
                return _do_fork(clone_flags, newsp, 0, parent_tidptr, child_tidptr, tls);
