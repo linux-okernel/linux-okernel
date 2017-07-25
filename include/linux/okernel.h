@@ -97,19 +97,19 @@ int ok_free_protected_page(struct page *pg);
 					  raw_smp_processor_id(),\
 					  current->pid,__func__, ## args)
 
-#define OKWARN(fmt, args...)  trace_printk("OKWARN" \
+#define OKWARN(fmt, args...)  trace_printk("OKWARN " \
 					  "%s: cpu(%d) pid(%d) %s: "	\
 					  fmt , vmx_nr_mode()?"NR":"R ", \
 					  raw_smp_processor_id(),\
 					  current->pid,__func__, ## args)
 
-#define OKDEBUG(fmt, args...)  trace_printk("OKDEBUG" \
+#define OKDEBUG(fmt, args...)  trace_printk("OKDEBUG " \
 					  "%s: cpu(%d) pid(%d) %s: "\
 					  fmt , vmx_nr_mode()?"NR":"R ",\
 					  raw_smp_processor_id(),\
 					  current->pid,__func__, ## args)
 
-#define OKSEC(fmt, args...)  trace_printk("OKSEC" \
+#define OKSEC(fmt, args...)  trace_printk("OKSEC " \
 					  "%s: cpu(%d) pid(%d) %s: "	\
 					  fmt , vmx_nr_mode()?"NR":"R ",\
 					  raw_smp_processor_id(),\

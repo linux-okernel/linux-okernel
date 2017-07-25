@@ -975,9 +975,10 @@ void set_clr_kmem_ept_flags(struct vmx_vcpu *vcpu, unsigned long start,
 	if (start != vaddr) { /* Not 2M aligned*/
 		vaddr = start & ~(PAGESIZE - 1);
 		if (start == vaddr){ /* 4K aligned*/
-			OKDEBUG("Doing set_clr_kmem_ept_flags_4k start %#lx, end %#lx", vaddr, end);
-			return set_clr_kmem_ept_flags_4k(vcpu, vaddr, end,
+			end_4k = (vaddr + PAGESIZE2M) & ~(PAGESIZE2M-1);
+			set_clr_kmem_ept_flags_4k(vcpu, vaddr, end_4k,
 						  s_flags, c_flags);
+			vaddr = end_4k; //vaddr now 2M aligned
 
 		} else {
 			OKERR("Address (%#lx) not 2M or 4k aligned\n", start);
@@ -1020,23 +1021,29 @@ unsigned long find_vaddr(struct vmx_vcpu *vcpu, unsigned long paddr,
 	unsigned int level;
 	pgprot_t prot;
 
+	ps = PAGESIZE2M;
 	vaddr = start & ~(PAGESIZE2M - 1);
 	if (start != vaddr) {
-		OKWARN("Start address (%#lx) is not 2M aligned\n", start);
+		ps = PAGE_SIZE;
+		OKWARN("Start address %#lx is not 2M aligned\n", start);
 	}
 	for (; vaddr < end; vaddr += ps){
 		pa = guest_physical_page_address(vaddr, &level, &prot);
-		if (level == 1){
+		if (!pa) {
+			/* vaddr NOT MAPPED */
+			continue;
+		}
+		if (level == 1) {
 			ps = PAGE_SIZE;
 			match = paddr & PAGE_MASK;
-		} else if (level == 2){
+		} else if (level == 2) {
 			ps = PAGESIZE2M;
 			match = paddr & ~(PAGESIZE2M - 1);
-		}else {
+		} else {
 			OKWARN("Unsupported page size, level %u\n", level);
 			return 0;
 		}
-		if (pa == match){
+		if (pa == match) { 
 			return vaddr;
 		}
 	}
@@ -2951,10 +2958,17 @@ static int vmx_handle_CR_access(struct vmx_vcpu *vcpu)
 
 	if (cr == 4){
 		printk(cr4_warning, uid, pid, comm, at, gp, gpv);
+		OKSEC("okernel blocking write to CR4: SMEP exploit attempt?"
+		      " (uid %d, pid %d, command %s, access type %d, "
+		      "register %d, ""reg value %#lx)\n",
+		      uid, pid, comm, at, gp, gpv);
 		vmx_step_instruction();
 		return 1;
 	}
 	printk(cr_error, uid, pid, comm, qual);
+	OKSEC("okernel detected unhandled write to CR: bug or exploit attempt?"
+	      " (uid %d, pid %d, command %s, exit qualification %#lx)\n",
+	      uid, pid, comm, qual);
 	return 0;
 }
 
@@ -3548,8 +3562,8 @@ static int kernel_ro_ept_violation(struct vmx_vcpu *vcpu, unsigned long gpa,
 		mapped = mod_addr(vcpu, gpa);
 	}
 	BUG_ON(!guest_physical_page_address(gva, &level, &prot));
-	if (is_user_space(gva)){
-		if (mapped){
+	if (is_user_space(gva)) {
+		if (mapped) {
 			OKERR("User space alias for kernel RO memory\n");
 			BUG();
 			return 0;
@@ -3574,7 +3588,7 @@ static int kernel_ro_ept_violation(struct vmx_vcpu *vcpu, unsigned long gpa,
 		      "created at page %#lx for virtual address %#lx, "
 		      "new EPT prot %#lx, uid %d, command %s\n", gpa, eprot,
 		      mapped, gva & ~(PAGESIZE2M - 1), gva, n_eprot, uid, comm);
-		if(!set_clr_ept_page_flags(vcpu, gpa, n_eprot, 0, level)){
+		if(!set_clr_ept_page_flags(vcpu, gpa, n_eprot, 0, level)) {
 			OKERR("set_clr_ept_page_flags failed.\n");
 			BUG();
 			return 0;
@@ -3583,10 +3597,9 @@ static int kernel_ro_ept_violation(struct vmx_vcpu *vcpu, unsigned long gpa,
 		set_clr_ok_tags(gva, &s_flags, &c_flags);
 		/* We need to fix by tracking release */
 		OKDEBUG("Physical address %#lx with EPT prot %#lx no longer at "
-		       "original mapping " "New mapping created at guest "
-		       "virtual " "%#lx, new EPT prot %#lx\n",
-		       gpa, eprot, gva, s_flags);
-		if(!set_clr_ept_page_flags(vcpu, gpa, s_flags, c_flags, level)){
+		       "original mapping. New mapping created at guest virtual "
+		       "%#lx, new EPT prot %#lx\n", gpa, eprot, gva, s_flags);
+		if(!set_clr_ept_page_flags(vcpu, gpa, s_flags, c_flags, level)) {
 			OKERR("set_clr_ept_page_flags failed.\n");
 			BUG();
 			return 0;
@@ -3615,10 +3628,9 @@ int module_ept_violation(struct vmx_vcpu *vcpu, unsigned long gpa,
 	 * the upper level page tables */
 	ept_flags_from_prot(prot, &s_flags, &c_flags);
 	set_clr_ok_tags(gva, &s_flags, &c_flags);
-	if (set_clr_ept_page_flags(vcpu, gpa, s_flags, c_flags, level)){
-		OKSEC("Set %#lx clear %#lx for module "
-		       "physical address %#lx virtual %#lx\n",
-		       s_flags, c_flags, gpa, gva);
+	if (set_clr_ept_page_flags(vcpu, gpa, s_flags, c_flags, level)) {
+		if (s_flags & EPT_X) 
+			OKSEC("New module code at pa %#lx va %#lx\n", gpa, gva);
 		return 1;
 	} else {
 		OKERR("set_clr_ept_page_flags failed.\n");
@@ -3642,10 +3654,9 @@ int kernel_ept_violation(struct vmx_vcpu *vcpu, unsigned long gpa,
 	BUG_ON(!guest_physical_page_address(gva, &level, &prot));
 	ept_flags_from_prot(prot, &s_flags, &c_flags);
 	set_clr_ok_tags(gva, &s_flags, &c_flags);
-	if (set_clr_ept_page_flags(vcpu, gpa, s_flags, c_flags, level)){
-		OKSEC("Kernel space EPT Violation gpa %#lx "
-			"va %#lx set %#lx clear %#lx\n",
-			gpa, gva, s_flags, c_flags);
+	if (set_clr_ept_page_flags(vcpu, gpa, s_flags, c_flags, level)) {
+		if (s_flags & EPT_X) 
+			OKSEC("New kernel code at pa %#lx va %#lx\n", gpa, gva);
 		return 1;
 	} else {
 		OKERR("set_clr_ept_page_flags failed.\n");
