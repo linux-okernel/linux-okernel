@@ -194,7 +194,7 @@ struct intr_info {
  */ 
 #define OK_TEXT                           (1UL << 52)
 #define OK_MOD                            (1UL << 53)
-/* Taken the memory map description in Documentation/x86/x86_64/mm.txt */
+/* Taken from the memory map description in Documentation/x86/x86_64/mm.txt */
 #define USER_HI_MEM                     0X00007FFFFFFFFFFFUL
 
 /* Mapping limits of each type of page table in Gbytes. */
