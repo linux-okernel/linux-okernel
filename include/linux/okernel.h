@@ -87,37 +87,35 @@ extern unsigned long ok_protected_pfn_start;
 extern unsigned long ok_protected_pfn_end;
 struct page *ok_alloc_protected_page(void);
 int ok_free_protected_page(struct page *pg);
-//extern int __ok_trace(const char *fmt, ...);
-extern const char *ok_trace_get_level(const char *buffer);
+extern int do_ok_trace(unsigned long, const char *, ...);
+
 
 /* OKERNEL_DEBUG */
 #define OKERNEL_DEBUG
 
 #ifdef OKERNEL_DEBUG
 
-/* #define __ok_trace(fmt, ...)					\
- do {									\
- 	const char *label = ok_trace_get_level(fmt);			\
- 									\
- 	if (strcmp(label, "OK_ERROR") == 0)					\
- 		printk(KERN_ERR "[%s - cpu(%d) pid(%d)] %s: " fmt, vmx_nr_mode()?"NR":"R", raw_smp_processor_id(), current->pid,__func__, ## __VA_ARGS__);	\
- 	else								\
- 		trace_printk("(%s) [%s - cpu(%d) pid(%d)] %s: " fmt, label, vmx_nr_mode()?"NR":"R", raw_smp_processor_id(), current->pid,__func__, ## __VA_ARGS__);	\
-} while (0) */
-
-#define __ok_trace(fmt, ...) trace_printk("[%s - cpu(%d) pid(%d)] : " fmt, vmx_nr_mode()?"NR":"R", raw_smp_processor_id(), current->pid, ## __VA_ARGS__);
-
-
+#define OKERNEL_LOG_BUFFER_MAX 928
 #define ok_pr_fmt(fmt) fmt
-/* maintain correspondence to levels defined in 'linux/kern_levels.h' */
-#define OK_ERR		KERN_ERR		/* "3" - error conditions */
+
+/* okernel logging levels:
+ (maintain correspondence to levels defined in 'linux/kern_levels.h') */
+#define OK_ERR		KERN_ERR	/* "3" - error conditions */
 #define OK_WARNING	KERN_WARNING	/* "4" - warning conditions */
-#define OK_LOG		KERN_NOTICE		/* "5" - notice messages */
-#define OK_DEBUG	KERN_DEBUG		/* "7" - debug-level messages */
+#define OK_LOG		KERN_NOTICE	/* "5" - notice messages */
+#define OK_DEBUG	KERN_DEBUG	/* "7" - debug-level messages */
 #define OK_SEC		KERN_SOH "s"	/* security exception messages (custom level)*/
 
-#define ok_trace(fmt, ...) __ok_trace(fmt, ## __VA_ARGS__)
-//#define ok_trace(fmt, ...) trace_printk("[%s - cpu(%d) pid(%d)] %s: " ok_pr_fmt(fmt), vmx_nr_mode()?"NR":"R", raw_smp_processor_id(), current->pid,__func__, ## __VA_ARGS__)
+#define ok_trace(fmt, ...) do_ok_trace(_THIS_IP_, fmt, ## __VA_ARGS__)
+
+//#define ok_trace(fmt, ...) __ok_trace(_THIS_IP_, fmt, ## __VA_ARGS__)
+/*
+#define __ok_trace(ip, fmt, ...)			\
+	do {									\
+		trace_printk("[%s - cpu(%d) pid(%d)] : " fmt, vmx_nr_mode()?"NR":"R", raw_smp_processor_id(), current->pid, ## __VA_ARGS__);	\
+		do_ok_trace(ip, fmt, ## __VA_ARGS__);			\
+} while (0)
+*/
 
 #define HLOG(fmt, ...) ok_trace(OK_LOG ok_pr_fmt(fmt), ## __VA_ARGS__)
 #define TDEBUG(p, fmt, args...)  if (p) snprintf(p, VCPUBUFLEN, \
