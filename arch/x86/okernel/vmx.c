@@ -1,7 +1,7 @@
 /*
  * vmx.c - The Intel VT-x driver for intra-kernel protection using
  * vt-x features. The vmx setup code of this file is derived from the
- * dune code base which itself is dervied from the kvm code base (with
+ * dune code base which itself is derived from the kvm code base (with
  * the hope that we can possibly at some point share code).  The EPT
  * code is not dune/kvm based and was developed originally for
  * microvisor use.
@@ -61,7 +61,6 @@
 #include <linux/smp.h>
 #include <linux/percpu.h>
 #include <linux/syscalls.h>
-#include <linux/version.h>
 #include <linux/console.h>
 #include <linux/compat.h>
 #include <linux/cred.h>
@@ -363,7 +362,7 @@ int vt_alloc_pages(struct pt_page *pt, int order)
 	int i;
 
 	if(!pt){
-		printk(KERN_ERR "Null pt passed.\n");
+		printk(KERN_ERR "okernel: Null pt passed.\n");
 		return 0;
 	}
 
@@ -649,7 +648,7 @@ void* replace_ept_page(struct vmx_vcpu *vcpu, u64 paddr, unsigned long perms)
 	OKDEBUG("orig paddr (%#lx)\n", (unsigned long)orig_paddr);
 
 	if(orig_paddr != paddr){
-		printk(KERN_ERR "address mis-match in EPT tables.\n");
+		printk(KERN_ERR "okernel: address mis-match in EPT tables.\n");
 		return NULL;
 	}
 
@@ -679,7 +678,7 @@ int modify_ept_physaddr_perms(struct vmx_vcpu *vcpu, u64 paddr, unsigned long pe
 	OKDEBUG("Check or split 2M mapping at (%#lx)\n", (unsigned long)split_addr);
 
 	if(!(split_2M_mapping(vcpu, split_addr))){
-		printk(KERN_ERR "okernel %s: couldn't split 2MB mapping for (%#lx)\n",
+		printk(KERN_ERR "okernel: %s: couldn't split 2MB mapping for (%#lx)\n",
 		       __func__, (unsigned long)paddr);
 		return 0;
 	}
@@ -701,7 +700,7 @@ int modify_ept_physaddr_perms(struct vmx_vcpu *vcpu, u64 paddr, unsigned long pe
 	OKDEBUG("orig paddr (%#lx)\n", (unsigned long)orig_paddr);
 
 	if(orig_paddr != paddr){
-		printk(KERN_ERR "address mis-match in EPT tables.\n");
+		printk(KERN_ERR "okernel: address mis-match in EPT tables.\n");
 		return 0;
 	}
 
@@ -723,10 +722,10 @@ int modify_ept_page_range_perms(struct vmx_vcpu *vcpu, struct page *pg, int page
 	for(i = 0; i < pages; i++){
 		p_addr = page_to_phys(pg + i);
 		if(!(modify_ept_physaddr_perms(vcpu, p_addr, perms))){
-			printk("ok: couldn't modify perms on:=%#lx\n", p_addr);
+			printk("okernel: couldn't modify perms on:=%#lx\n", p_addr);
 			return 0;
 		}
-		OKDEBUG("ok: modified perms on:=%#lx\n", p_addr);
+		OKDEBUG("modified perms on:=%#lx\n", p_addr);
 	}
 	return 1;
 }
@@ -740,7 +739,7 @@ int add_ept_page_perms(struct vmx_vcpu *vcpu, u64 paddr)
 	perms = EPT_R | EPT_W | EPT_CACHE_2 | EPT_CACHE_3;
 
 	if(!(modify_ept_physaddr_perms(vcpu, paddr, perms))){
-		printk("Failed to modify EPT page permissions.\n");
+		printk("okernel: Failed to modify EPT page permissions.\n");
 		BUG();
 	}
 	return 0;
@@ -832,7 +831,7 @@ static int remap_ept_page(struct vmx_vcpu *vcpu, u64 paddr, u64 new_paddr)
 	OKDEBUG("Check or split 2M mapping at (%#lx)\n", (unsigned long)split_addr);
 
 	if(!(split_2M_mapping(vcpu, split_addr))){
-		printk(KERN_ERR "okernel %s: couldn't split 2MB mapping for (%#lx)\n",
+		printk(KERN_ERR "okernel: %s: couldn't split 2MB mapping for (%#lx)\n",
 		       __func__, (unsigned long)paddr);
 		return 0;
 	}
@@ -854,7 +853,7 @@ static int remap_ept_page(struct vmx_vcpu *vcpu, u64 paddr, u64 new_paddr)
 	OKDEBUG("orig paddr (%#lx)\n", (unsigned long)orig_paddr);
 
 	if(orig_paddr != paddr){
-		printk(KERN_ERR "address mis-match in EPT tables.\n");
+		printk(KERN_ERR "okernel: address mis-match in EPT tables.\n");
 		return 0;
 	}
 
@@ -1207,7 +1206,7 @@ int clone_kstack2(struct vmx_vcpu *vcpu, unsigned long perms)
        OKDEBUG("ept page clone on (%#lx)\n", (unsigned long)paddr);
        /* also need replace_ept_contiguous_region */
        if(!(vaddr = replace_ept_page(vcpu, paddr, perms))){
-	       printk(KERN_ERR "failed to clone page at (%#lx)\n",
+	       printk(KERN_ERR "okernel: failed to clone page at (%#lx)\n",
 		      (unsigned long)paddr);
 	       return 0;
        }
@@ -1283,7 +1282,7 @@ int vt_ept_2M_init(struct vmx_vcpu *vcpu)
 
 	if((rounded_mappingsize >> GIGABYTE_SHIFT) >  PML4E_MAP_LIMIT){
 		/* Only setup one PDPTE entry for now so can map up to 512Gb */
-		printk(KERN_ERR "Physical memory greater than (%d) Gb not supported.\n",
+		printk(KERN_ERR "okernel: Physical memory greater than (%d) Gb not supported.\n",
 		       PML4E_MAP_LIMIT);
 		return 0;
 	}
@@ -1632,7 +1631,7 @@ static void vmcs_load(struct vmcs *vmcs)
 			: "=qm"(error) : "a"(&phys_addr), "m"(phys_addr)
 			: "cc", "memory");
 	if (error)
-		printk(KERN_ERR "vmx: vmptrld %p/%llx failed\n",
+		printk(KERN_ERR "okernel: vmx: vmptrld %p/%llx failed\n",
 		       vmcs, phys_addr);
 }
 
@@ -1657,7 +1656,7 @@ static __always_inline u64 vmcs_read64(unsigned long field)
 
 static noinline void vmwrite_error(unsigned long field, unsigned long value)
 {
-	printk(KERN_ERR "vmwrite error: reg %lx value %lx (err %d)\n",
+	printk(KERN_ERR "okernel: vmwrite error: reg %lx value %lx (err %d)\n",
 	       field, value, vmcs_read32(VM_INSTRUCTION_ERROR));
 	//dump_stack();
 }
@@ -2210,30 +2209,30 @@ struct vmcs_cpu_state {
 
 void show_cpu_state(struct vmcs_cpu_state state)
 {
-	OKDEBUG("Control regs / flags: \n");
-	OKDEBUG("rsp     (%#lx)\n", state.rsp);
-	OKDEBUG("rbp     (%#lx)\n", state.rbp);
-	OKDEBUG("cr0     (%#lx)\n", state.cr0);
-	OKDEBUG("cr3     (%#lx)\n", state.cr3);
-	OKDEBUG("cr4     (%#lx)\n", state.cr4);
-	OKDEBUG("rflags  (%#lx)\n", state.rflags);
-	OKDEBUG("efer    (%#lx)\n", state.efer);
+	OKLOG("Control regs / flags: \n");
+	OKLOG("rsp     (%#lx)\n", state.rsp);
+	OKLOG("rbp     (%#lx)\n", state.rbp);
+	OKLOG("cr0     (%#lx)\n", state.cr0);
+	OKLOG("cr3     (%#lx)\n", state.cr3);
+	OKLOG("cr4     (%#lx)\n", state.cr4);
+	OKLOG("rflags  (%#lx)\n", state.rflags);
+	OKLOG("efer    (%#lx)\n", state.efer);
 
-	OKDEBUG("idt base (%#lx) limit (%#x)\n", state.idt_base, state.idt_limit);
-	OKDEBUG("gdt base (%#lx) limit (%#x)\n", state.gdt_base, state.gdt_limit);
-	OKDEBUG("ldt base (%#lx) limit (%#x)\n", state.ldt_base, state.ldt_limit);
+	OKLOG("idt base (%#lx) limit (%#x)\n", state.idt_base, state.idt_limit);
+	OKLOG("gdt base (%#lx) limit (%#x)\n", state.gdt_base, state.gdt_limit);
+	OKLOG("ldt base (%#lx) limit (%#x)\n", state.ldt_base, state.ldt_limit);
 
-	OKDEBUG("Selectors: \n");
-	OKDEBUG("cs_s (%#x) ds_s (%#x) es_s (%#x) ss_s (%#x) tr_s (%#x)\n",
+	OKLOG("Selectors: \n");
+	OKLOG("cs_s (%#x) ds_s (%#x) es_s (%#x) ss_s (%#x) tr_s (%#x)\n",
 		state.cs_selector, state.ds_selector, state.es_selector,
 		state.ss_selector, state.tr_selector);
-	OKDEBUG("fs_s (%#x) gs_s (%#x)\n",
+	OKLOG("fs_s (%#x) gs_s (%#x)\n",
 		state.fs_selector, state.gs_selector);
 
-	OKDEBUG("fs_base (%#lx) gs_base (%#lx)\n",
+	OKLOG("fs_base (%#lx) gs_base (%#lx)\n",
 		state.fs_base,state.gs_base);
 
-	OKDEBUG("sysenter_cs (%lx), systenter_esp (%lx) systenter_eip (%lx)\n",
+	OKLOG("sysenter_cs (%lx), systenter_esp (%lx) systenter_eip (%lx)\n",
 		state.sysenter_cs, state.sysenter_esp, state.sysenter_eip);
 	return;
 }
@@ -2594,12 +2593,12 @@ static struct vmx_vcpu * vmx_create_vcpu(struct nr_cloned_state* cloned_thread)
 	struct vmx_vcpu *vcpu = kmalloc(sizeof(struct vmx_vcpu), GFP_KERNEL);
 
 	if (!vcpu){
-		printk(KERN_ERR "vmx_create_vcpu: failed to kmalloc vcpu.\n");
+		printk(KERN_ERR "okernel: vmx_create_vcpu: failed to kmalloc vcpu.\n");
 		return NULL;
 	}
 
 	if(!cloned_thread){
-		printk(KERN_ERR "vmx_create_vcpu: passed NULL cloned_thread_state.\n");
+		printk(KERN_ERR "okernel: vmx_create_vcpu: passed NULL cloned_thread_state.\n");
 		return NULL;
 	}
 
@@ -2642,7 +2641,7 @@ static struct vmx_vcpu * vmx_create_vcpu(struct nr_cloned_state* cloned_thread)
 #if defined (OKERNEL_PROTECTED_MEMORY)
 	/* Example of the kind of memory protection we can provide: unmap 'protected pages' from any EPT tables */
 	if(!(modify_ept_page_range_perms(vcpu, ok_protected_page, OK_NR_PROTECTED_PAGES, 0))){
-		printk("ok: failed to remove protected pages from EPT...\n");
+		printk("okernel: failed to remove protected pages from EPT...\n");
 		BUG();
 	}
 #endif
@@ -2981,7 +2980,7 @@ static void check_int(struct vmx_vcpu *vcpu, char *s)
 {
 	vmx_get_cpu(vcpu);
 	if((vmcs_readl(GUEST_RFLAGS) & RFLAGS_IF_BIT)){
-		OKDEBUG("INFO: %s with interrupts enabled\n", s);
+		OKLOG("INFO: %s with interrupts enabled\n", s);
 	}else{
 		OKWARN("WARNING: %s with interrupts disabled\n",s);
 	}
@@ -3247,7 +3246,7 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu, int nr_irqs_enabled)
 		} else if (arg1 == OK_SCHED_PREEMPT){
 			preempt_schedule_r_mode();
 		} else {
-			OKDEBUG("Invalid vmcall schedule argument.\n");
+			OKERR("Invalid vmcall schedule argument.\n");
 			BUG();
 		}
 		vpid_sync_vcpu_global();
@@ -3297,7 +3296,7 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu, int nr_irqs_enabled)
 		vmx_destroy_vcpu(vcpu);
 		do_exit(code);
 	} else {
-		OKDEBUG("unexpected VMCALL argument.\n");
+		OKERR("unexpected VMCALL argument.\n");
 		BUG();
 		ret = -1;
 	}
@@ -3861,7 +3860,7 @@ int vmx_launch(unsigned int mode, unsigned int flags, struct nr_cloned_state *cl
 			last_time = current_time;
 		}
 #endif
-		OKDEBUG("Entering vmxit handler loop...\n");
+		OKDEBUG("Entering vmexit handler loop...\n");
 
 		vmx_get_cpu(vcpu);
 
@@ -3941,7 +3940,7 @@ int vmx_launch(unsigned int mode, unsigned int flags, struct nr_cloned_state *cl
 		}
 
 		if(*(vcpu->nr_stack_canary) != NR_STACK_END_MAGIC){
-			printk(KERN_ERR "Okernel: NR stack overflow detected.\n");
+			printk(KERN_ERR "okernel: NR stack overflow detected.\n");
 			BUG();
 		}
 
@@ -3961,28 +3960,28 @@ int vmx_launch(unsigned int mode, unsigned int flags, struct nr_cloned_state *cl
 			vmx_handle_vmcall(vcpu, saved_irqs_on);
 		} else if (ret == EXIT_REASON_CR_ACCESS){
 			if (!vmx_handle_CR_access(vcpu)){
-				printk(KERN_CRIT "Unhandled CR access \n");
+				printk(KERN_CRIT "okernel: Unhandled CR access \n");
 				BUG();
 			}
 		} else if (ret == EXIT_REASON_EPT_VIOLATION){
 			if (!vmx_handle_EPT_violation(vcpu)){
 				vmx_put_cpu(vcpu);
-				printk(KERN_CRIT "Unhandled EPT Violation\n");
+				printk(KERN_CRIT "okernel: Unhandled EPT Violation\n");
 				BUG();
 			}
 		} else if (ret == EXIT_REASON_EPT_MISCONFIG){
 			if (!vmx_handle_EPT_misconfig(vcpu)){
-				printk(KERN_CRIT "Unhandle EPT Misconfig\n");
+				printk(KERN_CRIT "okernel: Unhandle EPT Misconfig\n");
 				BUG();
 			}
 		} else if (ret == EXIT_REASON_EXCEPTION_NMI) {
 			if (!vmx_handle_exception_NMI(vcpu)){
-				printk(KERN_CRIT "Unhandled NMI exception\n");
+				printk(KERN_CRIT "okernel: Unhandled NMI exception\n");
 				BUG();
 			}
 		} else {
 			vmx_get_cpu(vcpu);
-			printk(KERN_CRIT "unhandled exit: reason %#x, "
+			printk(KERN_CRIT "okernel: unhandled exit: reason %#x, "
 			       "exit qualification %#lx\n",
 			       ret, vmcs_readl(EXIT_QUALIFICATION));
 			vmx_put_cpu(vcpu);
@@ -4095,13 +4094,13 @@ static __init void vmx_enable(void *unused)
 	__this_cpu_write(vmx_enabled, 1);
 	native_store_gdt(this_cpu_ptr(&host_gdt));
 
-	printk(KERN_INFO "vmx: VMX enabled on CPU %d\n",
+	printk(KERN_INFO "okernel vmx: VMX enabled on CPU %d\n",
 	       raw_smp_processor_id());
 	return;
 
 failed:
 	atomic_inc(&vmx_enable_failed);
-	printk(KERN_ERR "vmx: failed to enable VMX, err = %d\n", ret);
+	printk(KERN_ERR "okernel vmx: failed to enable VMX, err = %d\n", ret);
 }
 
 /**
@@ -4159,23 +4158,23 @@ void ok_init_protected_pages(void)
 	struct page_ext *pg_ext;
 
 	if(!static_branch_unlikely(&okernel_inited)){
-		printk("ok: ext page info not available - can't init protected pages.\n");
+		printk(KERN_ERR "okernel: ext page info not available - can't init protected pages.\n");
 		return;
 	}
 
 	spin_lock(&ok_protected_pg_lock);
 	pg = alloc_pages(GFP_KERNEL, order_base_2(OK_NR_PROTECTED_PAGES));
 	if(!pg){
-		printk(KERN_ERR "ok: failed to allocate protected memory page array.\n");
+		printk(KERN_ERR "okernel: failed to allocate protected memory page array.\n");
 		BUG();
 	}
 	/* Set PG_protected attribute on the pages */
 	for(i = 0; i < OK_NR_PROTECTED_PAGES; i++){
-		printk(KERN_ERR "ok: protected page (%#lx) pfn (%#lx) vaddr (%#lx)\n",
+		printk(KERN_ERR "okernel: protected page (%#lx) pfn (%#lx) vaddr (%#lx)\n",
 		       (unsigned long)(pg + i), page_to_pfn(pg + i), (unsigned long)page_address(pg+i));
 		pg_ext = lookup_page_ext(pg + i);
 		if(!pg_ext){
-			printk("ok: pg_ext NULL\n");
+			printk("okernel: pg_ext NULL\n");
 			continue;
 		}
 		set_bit(PAGE_EXT_OK_PROTECTED, &pg_ext->flags);
@@ -4186,7 +4185,7 @@ void ok_init_protected_pages(void)
 	ok_protected_page = pg;
 	/* And the dummy page to redirect invalid access requests to */
 	if(!(pg = alloc_page(GFP_KERNEL))){
-		printk("ok: failed to alloc dummy protected page.\n");
+		printk(KERN_ERR "okernel: failed to alloc dummy protected page.\n");
 		BUG();
 	}
 	ok_protected_dummy_page = pg;
@@ -4242,7 +4241,7 @@ struct page *ok_alloc_protected_page(void)
 		pg_ext = lookup_page_ext(pg);
 		pg_ext->pid = current->pid;
 	} else {
-		printk("ok: out of protected memory pages.\n");
+		printk(KERN_ERR "okernel: out of protected memory pages.\n");
 		pg = NULL;
 	}
 	spin_unlock(&ok_protected_pg_lock);
@@ -4272,7 +4271,7 @@ int __ok_free_protected_page(struct page *pg)
 	pfn = page_to_pfn(pg);
 
 	if((pfn < ok_protected_pfn_start) || (pfn > ok_protected_pfn_end)){
-		printk("OK: tried to free invalid protected page (%#lx) pfn (%#lx) vaddr (%#lx)\n",
+		printk(KERN_ERR "okernel: tried to free invalid protected page (%#lx) pfn (%#lx) vaddr (%#lx)\n",
 		       (unsigned long)(pg), page_to_pfn(pg), (unsigned long)page_address(pg));
 		ret = 1;
 		goto fail;
@@ -4281,7 +4280,7 @@ int __ok_free_protected_page(struct page *pg)
 	i = (pfn - ok_protected_pfn_start);
 	memset(page_address(pg), 0, PAGE_SIZE);
 	__clear_bit(i, ok_protected_pg_bitmap);
-	printk(KERN_ERR "ok: free protected page (%#lx) pfn (%#lx) vaddr (%#lx) index:=(%d)\n",
+	printk(KERN_ERR "okernel: free protected page (%#lx) pfn (%#lx) vaddr (%#lx) index:=(%d)\n",
 	       (unsigned long)(pg), page_to_pfn(pg),
 	       (unsigned long)page_address(pg), i);
 	pg_ext = lookup_page_ext(pg);
@@ -4407,9 +4406,9 @@ int __init vmx_init(void)
 	}
 
 	if (cpu_has_vmx_ept_mode_ctl()){
-		printk("Mode-based execute control for EPT available\n");
+		printk(KERN_INFO "okernel: Mode-based execute control for EPT available\n");
 	} else {
-		printk("Mode-based execute control for EPT unavailable\n");
+		printk(KERN_INFO "okernel: Mode-based execute control for EPT unavailable\n");
 	}
 
 

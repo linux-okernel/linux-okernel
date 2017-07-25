@@ -117,21 +117,21 @@ extern int do_ok_trace(unsigned long, const char *, ...);
 } while (0)
 */
 
-#define HLOG(fmt, ...) ok_trace(OK_LOG ok_pr_fmt(fmt), ## __VA_ARGS__)
 #define TDEBUG(p, fmt, args...)  if (p) snprintf(p, VCPUBUFLEN, \
 						 "pid(%d) %s: " fmt , \
 						 current->pid,__func__, ## args)
 //#define HPE_LOOP_DETECT
 #define OKERR(fmt, ...) ok_trace(OK_ERR ok_pr_fmt(fmt), ## __VA_ARGS__)
 #define OKWARN(fmt, ...) ok_trace(OK_WARNING ok_pr_fmt(fmt), ## __VA_ARGS__)
+#define OKLOG(fmt, ...) ok_trace(OK_LOG ok_pr_fmt(fmt), ## __VA_ARGS__)
 #define OKDEBUG(fmt, ...) ok_trace(OK_DEBUG ok_pr_fmt(fmt), ## __VA_ARGS__)
 #define OKSEC(fmt, ...) ok_trace(OK_SEC ok_pr_fmt(fmt), ## __VA_ARGS__)
 
 #else /* !OKERNEL_DEBUG */
-#define HLOG(fmt, ...)
 #define TDEBUG(p, fmt, args...)
 #define OKERR(fmt, ...)
 #define OKWARN(fmt, ...)
+#define OKLOG(fmt, ...)
 #define OKDEBUG(fmt, ...)
 #define OKSEC(fmt, ...)
 #define ok_trace(fmt, ...)
