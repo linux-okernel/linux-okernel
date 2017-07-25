@@ -2,7 +2,7 @@
  * linux/arch/x86/okernel/core.c
  *
  * Copyright (C) 2015 - Chris Dalton (cid@hpe.com), HPE Corp.
- * Suport for splitting the kernel into inner and outer regions,
+ * Support for splitting the kernel into inner and outer regions,
  * with the aim of achieving some degree of intra-kernel protection.
  * Processes marked as 'OKERNEL' run under vmx non-root mode (x86).
  * They enter the kernel in that mode too (outer-kernel mode)
@@ -25,7 +25,6 @@
 #include <linux/okernel.h>
 #include <linux/kdev_t.h>
 
-
 #include <linux/mm.h>
 #include <linux/highmem.h>
 #include <linux/sched.h>
@@ -36,7 +35,6 @@
 #include <linux/smp.h>
 #include <linux/percpu.h>
 #include <linux/syscalls.h>
-#include <linux/version.h>
 
 #include <asm/desc.h>
 #include <asm/vmx.h>
@@ -326,13 +324,13 @@ long ok_device_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 		/* Really we should do an mmap interface above protected pages - this will suffice for now */
 	case OKERNEL_ALLOCATE_PROTECTED_PAGE:
 		if(!(pg = ok_alloc_protected_page())){
-			printk("ok: failed to alloc protected page.\n");
+			printk("okernel: failed to alloc protected page.\n");
 			return -EINVAL;
 		}
 
 		phys_addr = page_to_phys(pg);
 
-		printk("ok: allocated protected page at phys addr (%#lx)\n", phys_addr);
+		OKDEBUG("ok: allocated protected page at phys addr (%#lx)\n", phys_addr);
 
 		if(copy_to_user((void*)arg, &phys_addr, sizeof(unsigned long))){
 			return -EFAULT;
@@ -341,7 +339,7 @@ long ok_device_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 		break;
 	case OKERNEL_FREE_PROTECTED_PAGE:
 		phys_addr = arg;
-		printk("ok: Passed physical Address for permission removal:=(%#lx)\n", phys_addr);
+		OKDEBUG("ok: Passed physical Address for permission removal:=(%#lx)\n", phys_addr);
 		(void)ok_free_protected_page(pfn_to_page(__phys_to_pfn(phys_addr)));
 		return 0;
 		break;
@@ -349,7 +347,7 @@ long ok_device_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 		copy_from_user(&pd, (void*)arg, sizeof(struct protected_data));
 		p_addr = pd.p_addr;
 
-		printk("OK page reaad: Passed physical Address <%#lx>\n", p_addr);
+		OKDEBUG("OK page read: Passed physical Address <%#lx>\n", p_addr);
 
 		/* In range? */
 		pfn = __phys_to_pfn(p_addr);
@@ -360,10 +358,10 @@ long ok_device_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 
 
 		v_addr = phys_to_virt(p_addr);
-		printk("OK: Kernel virtual address <%p>\n", v_addr);
+		OKDEBUG("OK: Kernel virtual address <%p>\n", v_addr);
 		p = (char*)v_addr;
 
-		printk("OK: Read from p_addr/vaddr (%#lx/%#lx) in kernel: %s\n",
+		OKDEBUG("OK: Read from p_addr/vaddr (%#lx/%#lx) in kernel: %s\n",
 		       p_addr, (unsigned long)v_addr, p);
 		copy_to_user(pd.p_data, p, PAGE_SIZE);
 		break;
@@ -371,7 +369,7 @@ long ok_device_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 		copy_from_user(&pd, (void*)arg, sizeof(struct protected_data));
 		p_addr = pd.p_addr;
 
-		printk("OK page write: Passed physical Address <%#lx>\n", p_addr);
+		OKDEBUG("OK page write: Passed physical Address <%#lx>\n", p_addr);
 
 		/* In range? */
 		pfn = __phys_to_pfn(p_addr);
@@ -382,12 +380,12 @@ long ok_device_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 
 		v_addr = phys_to_virt(p_addr);
 
-		printk("OK: Kernel virtual address <%p>\n", v_addr);
+		OKDEBUG("OK: Kernel virtual address <%p>\n", v_addr);
 
 		p = (char*)v_addr;
 		memset(p, 0, PAGE_SIZE);
 		copy_from_user(p, pd.p_data, PAGE_SIZE-1);
-		printk("OK: write to p_addr/vaddr (%#lx/%#lx) in kernel: %s\n",
+		OKDEBUG("OK: write to p_addr/vaddr (%#lx/%#lx) in kernel: %s\n",
 		       p_addr, (unsigned long)v_addr, p);
 		break;
 	case OKERNEL_ON_CMD:
@@ -399,7 +397,7 @@ long ok_device_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 
 
 		if(val != 1){
-			OKDEBUG("OKERNEL_ON_CMD arg not 1.\n");
+			OKERR("OKERNEL_ON_CMD arg not 1.\n");
 			return -EINVAL;
 		}
 		/* do okernel_enter() here... */
@@ -409,7 +407,7 @@ long ok_device_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 		current->okernel_status = OKERNEL_ON;
 
 		if(is_in_vmx_nr_mode()){
-			printk(KERN_CRIT "NR: Calling okernel_enter in  NR mode kernel...shouldn't get here!!\n");
+			printk(KERN_CRIT "okernel: NR: Calling okernel_enter in  NR mode kernel...shouldn't get here!!\n");
 		}
 
 		ret = okernel_enter(OKERNEL_ENTER_IOCTL);
@@ -449,7 +447,7 @@ long ok_device_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 		current->okernel_status = OKERNEL_OFF;
 
 		if(ret){
-			printk(KERN_ERR "okernel_enter failed for pid <%d> ret (%d)\n",
+			printk(KERN_ERR "okernel: okernel_enter failed for pid <%d> ret (%d)\n",
 			       current->pid, ret);
 		}
 		OKDEBUG("outer kernel off for <%d>\n", current->pid);
@@ -457,7 +455,7 @@ long ok_device_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 		break;
 	default:
 
-		printk(KERN_ERR "okernel invalid IOCTL cmd.\n");
+		printk(KERN_ERR "okernel: invalid IOCTL cmd.\n");
 		return -ENODEV;
 
 	}
