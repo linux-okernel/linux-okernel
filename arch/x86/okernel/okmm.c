@@ -320,23 +320,6 @@ static int okmm_allocator(void *unused)
 	return 0;
 }
 
-static int okmm_allocator(void *unused)
-{
-	unsigned long i;
-	while(!kthread_should_stop()) {
-		wait_event_freezable(okmm_refill_needed,
-				     atomic64_read(&nrefills_needed) > 0);
-		for (i = atomic64_read(&nrefills_needed); i > 0;
-		     i = atomic64_dec_if_positive(&nrefills_needed)){
-			if (gc_refill() < 0) {
-				printk(KERN_ERR
-				       "okmm_allocator out of memory\n?");
-			}
-		}
-	}
-	return 0;
-}
-
 int __init okmm_init(void)
 {
 	/* Returns Null if successful*/
