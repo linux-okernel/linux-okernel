@@ -282,6 +282,7 @@ static int __init init_cache (struct ok_mm_cache *c, int cpu)
 	c->low_water = 0;
 	c->ticks = 0;
 	c->cpu = cpu;
+	c->min = 0;
 	return 0;
 }
 
@@ -299,7 +300,6 @@ static int __init fill_cache (struct ok_mm_cache *c, int n)
 	c->nentries = n;
 	c->navailable = n;
 	c->low_water = n;
-	c->min = 0;
 	return 0;
 }
 
@@ -329,7 +329,7 @@ int __init okmm_init(void)
 	int ret;
 	struct ok_mm_cache *c;
 
-	printk(KERN_ERR "Initializing okmm_cache.\n");
+	printk(KERN_INFO "Initializing okmm_cache.\n");
 
 	for_each_possible_cpu(cpu){
 		c = per_cpu_ptr(&ok_cache, cpu);
