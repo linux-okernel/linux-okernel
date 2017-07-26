@@ -1071,12 +1071,12 @@ void ept_flags_from_prot(pgprot_t prot, unsigned long *s_flags,
 {
 	*s_flags = 0;
 	*c_flags = 0;
-	if (pgprot_val(prot) & pgprot_val(__pgprot(_PAGE_NX))){
+	if (pgprot_val(prot) & pgprot_val(__pgprot(_PAGE_NX))) {
 		*c_flags |= EPT_X;
 	} else {
 		*s_flags |= EPT_X;
 	}
-	if (pgprot_val(prot) & pgprot_val(__pgprot(_PAGE_RW))){
+	if (pgprot_val(prot) & pgprot_val(__pgprot(_PAGE_RW))) {
 		*s_flags |= EPT_R | EPT_W;
 	} else {
 		*s_flags |= EPT_R;
@@ -1084,12 +1084,13 @@ void ept_flags_from_prot(pgprot_t prot, unsigned long *s_flags,
 	}
 }
 
-unsigned long rx_nowrite(unsigned long flags)
+unsigned long nowrite(unsigned long flags)
 {
 	if ((flags & EPT_X) && (flags & EPT_W)){
-		OKWARN("WARNING WX module memory\n");
+		OKSEC("WARNING WX memory\n");
+		dump_stack();
 	}
-	return ((flags & EPT_X) && !(flags & EPT_W));
+	return (((flags & EPT_X) || (flags & EPT_R)) && !(flags & EPT_W));
 }
 
 void set_clr_module_flags_4k(struct vmx_vcpu *vcpu, unsigned long start,
@@ -1098,7 +1099,7 @@ void set_clr_module_flags_4k(struct vmx_vcpu *vcpu, unsigned long start,
 	unsigned long vaddr, paddr, s_flags, c_flags;
 	unsigned int level;
 	pgprot_t prot;
-	for (vaddr = start; vaddr < end; vaddr += PAGE_SIZE){
+	for (vaddr = start; vaddr < end; vaddr += PAGE_SIZE) {
 		paddr = guest_physical_page_address(vaddr, &level, &prot);
 		if (!paddr) {
 			/* vaddr NOT MAPPED */
@@ -1108,14 +1109,14 @@ void set_clr_module_flags_4k(struct vmx_vcpu *vcpu, unsigned long start,
 		 * Make sure it's split as the physical memory
 		 * is being used for 4k pages
 		 */
-		if (!split_2M_mapping(vcpu, paddr & ~(PAGESIZE2M -1))){
+		if (!split_2M_mapping(vcpu, paddr & ~(PAGESIZE2M -1))) {
 			OKERR(KERN_ERR "okernel %s: couldn't split "
 			       "2MB mapping for (%#lx)\n",
 			       __func__, (unsigned long)paddr);
 			BUG();
 		}
 		ept_flags_from_prot(prot, &s_flags, &c_flags);
-		if (rx_nowrite(s_flags)){
+		if (nowrite(s_flags)) {
 			s_flags |= OK_MOD;
 		}
 		if (!set_clr_ept_page_flags(vcpu, paddr, s_flags, c_flags,
@@ -1157,7 +1158,7 @@ void set_clr_module_ept_flags(struct vmx_vcpu *vcpu)
 		}
 		/* Update 2M page mapping */
 		ept_flags_from_prot(prot, &s_flags, &c_flags);
-		if (rx_nowrite(s_flags)){
+		if (nowrite(s_flags)){
 			s_flags |= OK_MOD;
 		}
 		if (!set_clr_ept_page_flags(vcpu, paddr, s_flags, c_flags,
@@ -2928,6 +2929,13 @@ static void vmx_handle_cpuid(struct vmx_vcpu *vcpu)
 	vcpu->regs[VCPU_REGS_RDX] = edx;
 }
 
+static void  get_upc(uid_t *uid, pid_t *pid, char** comm)
+{
+	*uid = from_kuid(&init_user_ns, current_uid());
+	*pid = current->pid;
+	*comm = current->comm;
+}
+
 static int vmx_handle_CR_access(struct vmx_vcpu *vcpu)
 {
 	static const char cr4_warning[] = KERN_CRIT
@@ -2952,9 +2960,7 @@ static int vmx_handle_CR_access(struct vmx_vcpu *vcpu)
 	at = CR_ACCESS_TYPE_FROM_QUAL(qual);
 	gp = CR_ACCESS_GP_FROM_QUAL(qual);
 	gpv = (unsigned long)vcpu->regs[gp];
-	uid = from_kuid(&init_user_ns, current_uid());
-	pid = current->pid;
-	comm = current->comm;
+	get_upc(&uid, &pid, &comm);
 
 	if (cr == 4){
 		printk(cr4_warning, uid, pid, comm, at, gp, gpv);
@@ -3417,7 +3423,7 @@ static inline int is_text_space (unsigned long vaddr)
 static inline int need_integrity_flag(unsigned long va, unsigned long s_flags)
 {
 	if ((is_module_space(va) | is_text_space(va)) &&
-	    rx_nowrite(s_flags)) {
+	    nowrite(s_flags)) {
 		return 1;
 	} else {
 		return 0;
@@ -3432,10 +3438,10 @@ static inline void set_clr_ok_tags(unsigned long gva, unsigned long *s_flags,
 	 * if the current virtual address is in kernel text or module
 	 * space and marked RO.
 	 */
-	if ((is_text_space(gva)) && rx_nowrite(*s_flags)) {
+	if ((is_text_space(gva)) && nowrite(*s_flags)) {
 		*s_flags |= OK_TEXT;
 		*c_flags |= OK_MOD;
-	} else if ((is_module_space(gva)) && rx_nowrite(*s_flags)){
+	} else if ((is_module_space(gva)) && nowrite(*s_flags)){
 		*s_flags |= OK_MOD;
 		*c_flags |= OK_TEXT;
 	} else {
@@ -3479,21 +3485,24 @@ static int grant_all(struct vmx_vcpu *vcpu, unsigned long gpa,
 	return 0;
 }
 
-
 /*
  * Handler for ept violations that are a result of access to protected pages
  */
 int vmexit_protected_page(struct vmx_vcpu *vcpu)
 {
+	uid_t uid;
+	pid_t pid;
+	char *comm;
 	unsigned long gp_addr = vmcs_readl(GUEST_PHYSICAL_ADDRESS);
+	get_upc(&uid, &pid, &comm);
 
 	if(ok_allow_protected_access(gp_addr)){
 		(void)add_ept_page_perms(vcpu, gp_addr);
-		OKDEBUG("ok: allowing protected access for pid:=(%d)\n",
-		       current->pid);
+		OKDEBUG("Allow protected access for uid %d pid %d command %s\n",
+			uid, pid, comm);
 	} else {
-		OKSEC("ok: protected access denied for pid:=(%d)\n",
-		       current->pid);
+		OKSEC("Deny protected access for uid %d pid %d command %s\n",
+		      uid, pid, comm);
 		/*
 		 * Map in 'dummy' page for now  - need to be careful
 		 * not to create another vulnerability.
@@ -3569,7 +3578,7 @@ static int kernel_ro_ept_violation(struct vmx_vcpu *vcpu, unsigned long gpa,
 			return 0;
 		} else {
 			/* We need to fix by tracking release of memory*/
-			OKWARN("Releasing %#lx no longer mapped\n", gpa);
+			OKDEBUG("Releasing %#lx no longer mapped\n", gpa);
 			return grant_all(vcpu, gpa, qual, level);
 		}
 	}
