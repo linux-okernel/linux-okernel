@@ -194,7 +194,7 @@ struct intr_info {
  */ 
 #define OK_TEXT                           (1UL << 52)
 #define OK_MOD                            (1UL << 53)
-/* Taken the memory map description in Documentation/x86/x86_64/mm.txt */
+/* Taken from the memory map description in Documentation/x86/x86_64/mm.txt */
 #define USER_HI_MEM                     0X00007FFFFFFFFFFFUL
 
 /* Mapping limits of each type of page table in Gbytes. */
@@ -223,10 +223,10 @@ struct intr_info {
 
 #define EPT_PERM_MASK   (EPT_R | EPT_W | EPT_X)
 
-/* EPT Violation Qualification Guest Linear address valid*/
-#define EPT_V_GLV    (1UL << 7)
-/* EPT Violation Qualification violation due to linear address translation */
-#define EPT_V_LT     (1UL << 8)
+/* EPT Violation Qualification Guest Linear address Valid*/
+#define EPT_GLV    (1UL << 7)
+/* EPT Violation Qualification violation due to Linear address Translation */
+#define EPT_LT     (1UL << 8)
 
 #define EPT_P_MTYPE    0x6
 /* Actual value that goes into EPTP is EPT_PWL-1 */
