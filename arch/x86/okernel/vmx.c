@@ -1512,15 +1512,6 @@ static inline bool cpu_has_vmx_xsaves(void)
 		SECONDARY_EXEC_XSAVES;
 }
 
-/* Tmp define until linux catches up */
-#define SECONDARY_EXEC_EPT_MODE                 0x00400000
-
-static inline bool cpu_has_vmx_mode_ept(void)
-{
-	return vmcs_config.cpu_based_2nd_exec_ctrl &
-		SECONDARY_EXEC_EPT_MODE;
-}
-
 static inline bool cpu_has_vmx_vpid(void)
 {
 	return vmcs_config.cpu_based_2nd_exec_ctrl &
