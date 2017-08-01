@@ -135,6 +135,12 @@ static struct vmcs_config {
 
 struct vmx_capability vmx_capability;
 
+static struct ok_fixup_page ok_fixup_pages = {
+	.list = LIST_HEAD_INIT(ok_fixup_pages.list),
+	.pa = 0,
+	.level = 0,
+};
+
 
 // NJE BEGIN NEEDS TO GO
 /*
@@ -823,22 +829,19 @@ int set_clr_ept_page_flags(struct vmx_vcpu *vcpu, u64 paddr,
 {
 	unsigned long *epte = ept_page_entry(vcpu, paddr);
 	unsigned long page2m = *epte & EPT_2M_PAGE;
-	if (!epte) {
+	if (!epte) 
 		return 0;
-	}
-	if (level > PG_LEVEL_2M){
+	if (level > PG_LEVEL_2M) {
 		printk(KERN_ERR "okernel unsupported page level");
 		BUG();
+		return 0;
 	}
 	/* split if the kernel is using 4k pages and the EPT is 2M */
-	if (level == PG_LEVEL_4K && (*epte & EPT_2M_PAGE)){
-		if (!split_2M_mapping_okmm(vcpu, (paddr & ~(PAGESIZE2M - 1)))){
+	if (level == PG_LEVEL_4K && (*epte & EPT_2M_PAGE)) {
+		if (!split_2M_mapping_okmm(vcpu, (paddr & ~(PAGESIZE2M - 1))))
 				return 0;
-			}
-		else {
-			/* get new epte after split*/
+		else /* get new epte after split*/
 			epte = ept_page_entry(vcpu, paddr);
-		}
 	}
 	*epte |= s_flags;
 	*epte &= ~(c_flags);
@@ -1169,6 +1172,38 @@ void set_clr_module_ept_flags(struct vmx_vcpu *vcpu)
 	}
 }
 
+/*
+ * Code to fix up any anomalies in kernel integrity coverage
+ * will go when we have a shared base EPT, as we will fix up
+ * the anomalies in the master EPT when we chose to allow them
+ */
+void do_fixups(struct vmx_vcpu *vcpu)
+{
+	struct ok_fixup_page *p, *q;
+	unsigned long clr = OK_TEXT | OK_MOD;
+	unsigned long set = EPT_W | EPT_R;
+	list_for_each_entry_safe(p, q, &ok_fixup_pages.list, list){
+
+		if (!set_clr_ept_page_flags(vcpu, p->pa, set, clr, p->level)) {
+			OKERR("set_clr_ept_page_flags failed.\n");
+			BUG();
+		}
+	}
+}
+
+void add_fixup(unsigned long gpa, int level)
+{
+	struct ok_fixup_page *p;
+	p = (struct ok_fixup_page *) kmalloc(sizeof(*p), GFP_KERNEL);
+	if (!p) {
+		OKERR("Failed to allocate ok_fixpage out of memory?\n");
+		return;
+	}
+	p->pa = gpa;
+	p->level = level;
+	list_add(&p->list, &ok_fixup_pages.list);
+}
+
 void protect_kernel_integrity(struct vmx_vcpu *vcpu)
 {
 	/*
@@ -1189,11 +1224,12 @@ void protect_kernel_integrity(struct vmx_vcpu *vcpu)
 			       EPT_X | OK_TEXT, EPT_W);
 
 	/*
-	 * Protect read-only data can't set OK_TEXT as some pages get released
-	 * and reused - need to hook memory management code if we want to set
-	 * OK_TEXT
+	 * Protect read-only data. Setting OK_TEXT will generate
+         * a significant number of vmexits, as 5 or 6 of the pages
+	 * in this region seemed to be released and given to user space
 	 */
-	set_clr_kmem_ept_flags(vcpu, text_end, end, 0, EPT_W);
+	set_clr_kmem_ept_flags(vcpu, text_end, end, OK_TEXT, EPT_W);
+	do_fixups(vcpu);
 
 	/* Set protection for modules*/
 	set_clr_module_ept_flags(vcpu);
@@ -3558,9 +3594,8 @@ static int kernel_ro_ept_violation(struct vmx_vcpu *vcpu, unsigned long gpa,
 	char *comm;
 
 	epte = ept_page_entry(vcpu, gpa);
-	if (!(mapped = text_addr(vcpu, gpa))) {
+	if (!(mapped = text_addr(vcpu, gpa)))
 		mapped = mod_addr(vcpu, gpa);
-	}
 	BUG_ON(!guest_physical_page_address(gva, &level, &prot));
 	if (is_user_space(gva)) {
 		if (mapped) {
@@ -3570,6 +3605,7 @@ static int kernel_ro_ept_violation(struct vmx_vcpu *vcpu, unsigned long gpa,
 		} else {
 			/* We need to fix by tracking release of memory*/
 			OKDEBUG("Releasing %#lx no longer mapped\n", gpa);
+			add_fixup(gpa, level);
 			return grant_all(vcpu, gpa, qual, level);
 		}
 	}
@@ -3596,9 +3632,17 @@ static int kernel_ro_ept_violation(struct vmx_vcpu *vcpu, unsigned long gpa,
 	} else {
 		set_clr_ok_tags(gva, &s_flags, &c_flags);
 		/* We need to fix by tracking release */
-		OKDEBUG("Physical address %#lx with EPT prot %#lx no longer at "
-		       "original mapping. New mapping created at guest virtual "
-		       "%#lx, new EPT prot %#lx\n", gpa, eprot, gva, s_flags);
+		if (s_flags & EPT_X)
+			OKSEC("New executable code added to kernel "
+			      "Physical address %#lx with EPT prot %#lx no "
+			      "longer at original mapping. New mapping created "
+			      "at guest virtual %#lx, new EPT prot %#lx\n",
+			      gpa, eprot, gva, s_flags);
+		else
+			OKDEBUG("Physical address %#lx with EPT prot %#lx no "
+			"longer at original mapping. New mapping created "
+			"at guest virtual %#lx, new EPT prot %#lx\n",
+			gpa, eprot, gva, s_flags);
 		if(!set_clr_ept_page_flags(vcpu, gpa, s_flags, c_flags, level)) {
 			OKERR("set_clr_ept_page_flags failed.\n");
 			BUG();
