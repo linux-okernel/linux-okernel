@@ -3604,8 +3604,10 @@ static int kernel_ro_ept_violation(struct vmx_vcpu *vcpu, unsigned long gpa,
 			return 0;
 		} else {
 			/* We need to fix by tracking release of memory*/
-			OKDEBUG("Releasing %#lx no longer mapped\n", gpa);
-			add_fixup(gpa, level);
+			OKDEBUG("Releasing %#lx OK_TEXT %d OK_MOD %d no longer "
+				"mapped, new gva %#lx\n", gpa,
+				(*epte & OK_TEXT)?1:0, (*epte & OK_MOD)?1:0, gva);
+//			add_fixup(gpa, level);
 			return grant_all(vcpu, gpa, qual, level);
 		}
 	}
@@ -3640,9 +3642,12 @@ static int kernel_ro_ept_violation(struct vmx_vcpu *vcpu, unsigned long gpa,
 			      gpa, eprot, gva, s_flags);
 		else
 			OKDEBUG("Physical address %#lx with EPT prot %#lx no "
-			"longer at original mapping. New mapping created "
-			"at guest virtual %#lx, new EPT prot %#lx\n",
-			gpa, eprot, gva, s_flags);
+				"longer at original mapping. New mapping created "
+				"at guest virtual %#lx, new EPT prot %#lx"
+				" OK_TEXT %d OK_MOD %d""\n",
+				gpa, eprot, gva, s_flags, (*epte & OK_TEXT)?1:0,
+				(*epte & OK_MOD)?1:0);
+//		add_fixup(gpa, level);
 		if(!set_clr_ept_page_flags(vcpu, gpa, s_flags, c_flags, level)) {
 			OKERR("set_clr_ept_page_flags failed.\n");
 			BUG();
