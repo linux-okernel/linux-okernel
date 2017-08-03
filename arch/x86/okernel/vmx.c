@@ -4316,7 +4316,7 @@ void ok_init_protected_pages(void)
 	}
 	/* Set PG_protected attribute on the pages */
 	for(i = 0; i < OK_NR_PROTECTED_PAGES; i++){
-		printk(KERN_ERR "okernel: protected page (%#lx) pfn (%#lx) vaddr (%#lx)\n",
+		printk(KERN_INFO "okernel: protected page (%#lx) pfn (%#lx) vaddr (%#lx)\n",
 		       (unsigned long)(pg + i), page_to_pfn(pg + i), (unsigned long)page_address(pg+i));
 		pg_ext = lookup_page_ext(pg + i);
 		if(!pg_ext){
