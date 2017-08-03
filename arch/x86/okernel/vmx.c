@@ -942,6 +942,9 @@ void set_clr_kmem_ept_flags_4k(struct vmx_vcpu *vcpu, unsigned long start,
 	unsigned long vaddr, paddr;
 	unsigned int level;
 	pgprot_t prot;
+	vaddr = start & ~(PAGESIZE - 1);
+	if (start != vaddr)
+		OKWARN("Start address not 4k aligned");
 	for (vaddr = start; vaddr < end; vaddr += PAGE_SIZE){
 		paddr = guest_physical_page_address(vaddr, &level, &prot);
 		if (!paddr) {
@@ -959,6 +962,52 @@ void set_clr_kmem_ept_flags_4k(struct vmx_vcpu *vcpu, unsigned long start,
 			BUG();
 		}
 		if (!set_clr_ept_page_flags(vcpu, paddr, s_flags, c_flags,
+			    PG_LEVEL_4K)){
+			OKERR("EPT set_clr_ept_page_flags failed.\n");
+			BUG();
+		}
+	}
+}
+
+void set_clr_ktext_ept_flags_4k(struct vmx_vcpu *vcpu, unsigned long start,
+			  unsigned long end, unsigned long s_flags,
+			  unsigned long c_flags)
+{
+	unsigned long vaddr, paddr, q, r;
+	unsigned int level;
+	pgprot_t prot;
+	vaddr = start & ~(PAGESIZE - 1);
+	if (start != vaddr){
+		OKWARN("Start address not 4k aligned");
+		return;
+	}
+	for (vaddr = start; vaddr < end; vaddr += PAGE_SIZE){
+		paddr = guest_physical_page_address(vaddr, &level, &prot);
+		if (!paddr) {
+			/* vaddr NOT MAPPED */
+			continue;
+		}
+		/*
+		 * Make sure it is split as the physical memory
+		 * is being used for 4k pages
+		 */
+		if (!split_2M_mapping(vcpu, paddr & ~(PAGESIZE2M -1))){
+			OKERR(KERN_ERR "okernel %s: couldn't split "
+			       "2MB mapping for (%#lx)\n",
+			       __func__, (unsigned long)paddr);
+			BUG();
+		}
+		if (level == PG_LEVEL_2M) {
+			(q = paddr + PAGESIZE2M) & ~(PAGESIZE2M-1);
+			for (r = paddr; r < q; r + PAGE_SIZE){
+				if (!set_clr_ept_page_flags(vcpu, r, s_flags, c_flags,
+							    PG_LEVEL_4K)){
+					OKERR("EPT set_clr_ept_page_flags failed.\n");
+					BUG();
+				}
+				vaddr += q - paddr - PAGE_SIZE;
+			}
+		} else  if (!set_clr_ept_page_flags(vcpu, paddr, s_flags, c_flags,
 			    PG_LEVEL_4K)){
 			OKERR("EPT set_clr_ept_page_flags failed.\n");
 			BUG();
@@ -1177,7 +1226,7 @@ void set_clr_module_ept_flags(struct vmx_vcpu *vcpu)
  * will go when we have a shared base EPT, as we will fix up
  * the anomalies in the master EPT when we chose to allow them
  */
-void do_fixups(struct vmx_vcpu *vcpu)
+static void do_fixups(struct vmx_vcpu *vcpu)
 {
 	struct ok_fixup_page *p, *q;
 	unsigned long clr = OK_TEXT | OK_MOD;
@@ -1191,7 +1240,7 @@ void do_fixups(struct vmx_vcpu *vcpu)
 	}
 }
 
-void add_fixup(unsigned long gpa, int level)
+static void add_fixup(unsigned long gpa, int level)
 {
 	struct ok_fixup_page *p;
 	p = (struct ok_fixup_page *) kmalloc(sizeof(*p), GFP_KERNEL);
@@ -1220,7 +1269,7 @@ void protect_kernel_integrity(struct vmx_vcpu *vcpu)
 	unsigned long end = (unsigned long) &__end_rodata_hpage_align;
 
 	/* Set execute remove write for kernel text*/
-	set_clr_kmem_ept_flags(vcpu, text_start, text_end,
+	set_clr_ktext_ept_flags_4k(vcpu, text_start, text_end,
 			       EPT_X | OK_TEXT, EPT_W);
 
 	/*
@@ -1228,8 +1277,9 @@ void protect_kernel_integrity(struct vmx_vcpu *vcpu)
          * a significant number of vmexits, as 5 or 6 of the pages
 	 * in this region seemed to be released and given to user space
 	 */
-	set_clr_kmem_ept_flags(vcpu, text_end, end, OK_TEXT, EPT_W);
-	do_fixups(vcpu);
+	//set_clr_kmem_ept_flags(vcpu, text_end, end, OK_TEXT, EPT_W);
+	set_clr_kmem_ept_flags_4k(vcpu, &__start_rodata, &__end_rodata, OK_TEXT|OK_MOD, EPT_W);
+//	do_fixups(vcpu);
 
 	/* Set protection for modules*/
 	set_clr_module_ept_flags(vcpu);
@@ -3604,9 +3654,9 @@ static int kernel_ro_ept_violation(struct vmx_vcpu *vcpu, unsigned long gpa,
 			return 0;
 		} else {
 			/* We need to fix by tracking release of memory*/
-			OKDEBUG("Releasing %#lx OK_TEXT %d OK_MOD %d no longer "
-				"mapped, new gva %#lx\n", gpa,
-				(*epte & OK_TEXT)?1:0, (*epte & OK_MOD)?1:0, gva);
+			OKDEBUG("Releasing to user space %#lx OK_TEXT %d OK_MOD %d no longer "
+				"mapped by kernel new mapping level %d\n", gpa,
+				(*epte & OK_TEXT)?1:0, (*epte & OK_MOD)?1:0, level);
 //			add_fixup(gpa, level);
 			return grant_all(vcpu, gpa, qual, level);
 		}
@@ -3644,9 +3694,9 @@ static int kernel_ro_ept_violation(struct vmx_vcpu *vcpu, unsigned long gpa,
 			OKDEBUG("Physical address %#lx with EPT prot %#lx no "
 				"longer at original mapping. New mapping created "
 				"at guest virtual %#lx, new EPT prot %#lx"
-				" OK_TEXT %d OK_MOD %d""\n",
+				" OK_TEXT %d OK_MOD %d new mapping level %d""\n",
 				gpa, eprot, gva, s_flags, (*epte & OK_TEXT)?1:0,
-				(*epte & OK_MOD)?1:0);
+				(*epte & OK_MOD)?1:0, level);
 //		add_fixup(gpa, level);
 		if(!set_clr_ept_page_flags(vcpu, gpa, s_flags, c_flags, level)) {
 			OKERR("set_clr_ept_page_flags failed.\n");
@@ -4500,6 +4550,12 @@ int __init vmx_init(void)
 	if ((r = okmm_init())) {
 		goto failed2;
 	}
+
+	printk(KERN_CRIT "okernel _text %#lx\n", _text);
+	printk(KERN_CRIT "okernel &__stop___ex_table %#lx\n", &__stop___ex_table);
+	printk(KERN_CRIT "okernel &__end_rodata_hpage_align %#lx\n", &__end_rodata_hpage_align);
+	printk(KERN_CRIT "okernel &__start_rodata %#lx\n", &__start_rodata);
+	printk(KERN_CRIT "okernel &__end_rodata %#lx\n", &__end_rodata);
 
         return 0;
 
