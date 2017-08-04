@@ -903,6 +903,7 @@ int remap_ept_page(struct vmx_vcpu *vcpu, u64 paddr, u64 new_paddr)
 	return 1;
 }
 
+
 unsigned long  guest_physical_page_address(unsigned long addr,
 					   unsigned int *level,
 					   pgprot_t *prot)
@@ -915,8 +916,6 @@ unsigned long  guest_physical_page_address(unsigned long addr,
 	 */
 
 	pte_t *pte;
-	/*need to mask out upper 51 bits*/
-	unsigned long umask = 0x7FFFFFFFFFFFF;
 	pgd_t *pgd = pgd_offset(current->active_mm, addr);
 	pte = lookup_address_in_pgd(pgd,addr, level);
 	if (!pte || !pte_present(*pte)){
@@ -924,15 +923,38 @@ unsigned long  guest_physical_page_address(unsigned long addr,
 	}
 	*prot = pte_pgprot(*pte);
 	if (*level == 1){
-		return pte_val(*pte) & ~(PAGE_SIZE-1) & umask;
+		return pte_val(*pte) & ~(PAGE_SIZE-1) & __PHYSICAL_MASK;
 	}
 	if (*level == 2){
-		return pte_val(*pte) & ~(PAGESIZE2M-1) & umask;
+		return pte_val(*pte) & ~(PAGESIZE2M-1) & __PHYSICAL_MASK;
 	} else {
 		OKERR("Unsupported page level %d\n", *level);
 		BUG();
 		return 0;
 	}
+}
+
+unsigned long guest_physical_address(unsigned long vaddr)
+{
+	unsigned long int level;
+	pgprot_t prot;
+	unsigned long pa;
+	pa = guest_physical_page_address(vaddr, &level, & prot);
+	if (!pa)
+		return 0;
+	switch(level) {
+	case PG_LEVEL_4K:
+		pa += (vaddr & (PAGE_SIZE - 1));
+		break;
+	case PG_LEVEL_2M:
+		pa += (vaddr & (PAGESIZE2M - 1));
+		break;
+	default:
+		OKWARN("Unsupported page level %d\n", level);
+		pa = 0;
+		break;
+	}
+	return pa;
 }
 
 void set_clr_kmem_ept_flags_4k(struct vmx_vcpu *vcpu, unsigned long start,
@@ -998,15 +1020,14 @@ void set_clr_ktext_ept_flags_4k(struct vmx_vcpu *vcpu, unsigned long start,
 			BUG();
 		}
 		if (level == PG_LEVEL_2M) {
-			(q = paddr + PAGESIZE2M) & ~(PAGESIZE2M-1);
-			for (r = paddr; r < q; r + PAGE_SIZE){
+			q = (paddr + PAGESIZE2M) & ~(PAGESIZE2M-1);
+			for (r = paddr; r < q; r += PAGE_SIZE)
 				if (!set_clr_ept_page_flags(vcpu, r, s_flags, c_flags,
 							    PG_LEVEL_4K)){
 					OKERR("EPT set_clr_ept_page_flags failed.\n");
 					BUG();
 				}
-				vaddr += q - paddr - PAGE_SIZE;
-			}
+			vaddr += q - paddr - PAGE_SIZE;
 		} else  if (!set_clr_ept_page_flags(vcpu, paddr, s_flags, c_flags,
 			    PG_LEVEL_4K)){
 			OKERR("EPT set_clr_ept_page_flags failed.\n");
@@ -4556,7 +4577,9 @@ int __init vmx_init(void)
 	printk(KERN_CRIT "okernel &__end_rodata_hpage_align %#lx\n", &__end_rodata_hpage_align);
 	printk(KERN_CRIT "okernel &__start_rodata %#lx\n", &__start_rodata);
 	printk(KERN_CRIT "okernel &__end_rodata %#lx\n", &__end_rodata);
-
+	printk(KERN_CRIT "okernel __PHYSICAL_MASK is %#lX\n", __PHYSICAL_MASK);
+	printk(KERN_CRIT "okernel ~(PAGE_SIZE-1) %#lx\n", ~(PAGE_SIZE-1));
+	printk(KERN_CRIT "okernel ~(PAGESIZE2M-1)", ~(PAGESIZE2M-1));
         return 0;
 
 
