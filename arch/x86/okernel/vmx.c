@@ -936,7 +936,7 @@ unsigned long  guest_physical_page_address(unsigned long addr,
 
 unsigned long guest_physical_address(unsigned long vaddr)
 {
-	unsigned long int level;
+	unsigned int level;
 	pgprot_t prot;
 	unsigned long pa;
 	pa = guest_physical_page_address(vaddr, &level, & prot);
@@ -957,6 +957,30 @@ unsigned long guest_physical_address(unsigned long vaddr)
 	return pa;
 }
 
+void set_kmem_ept(struct vmx_vcpu *vcpu, unsigned long start, unsigned long end,
+		  unsigned long set, unsigned long clr)
+{
+	unsigned long gvs, gva, gpa;
+	gvs = start & ~(PAGESIZE - 1);
+	if (start != gvs)
+		OKWARN("Start address not 4k aligned");
+	OKDEBUG("Start va %#lx start pa %#lx, end va %#lx\n", start, guest_physical_address(gvs), end);
+	for (gva = gvs; gva < end; gva += PAGE_SIZE){
+		gpa = guest_physical_address(gva);
+		if (!gpa) {
+			OKWARN("Guest physical address not found\n");
+			continue;
+		}
+		if (!set_clr_ept_page_flags(vcpu, gpa, set, clr, PG_LEVEL_4K)){
+			OKERR("EPT set_clr_ept_page_flags failed.\n");
+			BUG();
+		}
+		//OKDEBUG("gpa %#lx\n", gpa);
+	}
+	OKDEBUG("End va %#lx pa %#lx\n", gva - PAGE_SIZE, gpa);
+}
+
+
 void set_clr_kmem_ept_flags_4k(struct vmx_vcpu *vcpu, unsigned long start,
 			  unsigned long end, unsigned long s_flags,
 			  unsigned long c_flags)
@@ -967,6 +991,7 @@ void set_clr_kmem_ept_flags_4k(struct vmx_vcpu *vcpu, unsigned long start,
 	vaddr = start & ~(PAGESIZE - 1);
 	if (start != vaddr)
 		OKWARN("Start address not 4k aligned");
+	OKDEBUG("Start\n");
 	for (vaddr = start; vaddr < end; vaddr += PAGE_SIZE){
 		paddr = guest_physical_page_address(vaddr, &level, &prot);
 		if (!paddr) {
@@ -988,7 +1013,9 @@ void set_clr_kmem_ept_flags_4k(struct vmx_vcpu *vcpu, unsigned long start,
 			OKERR("EPT set_clr_ept_page_flags failed.\n");
 			BUG();
 		}
+		OKDEBUG("gpa %#lx\n", paddr);
 	}
+	OKDEBUG("End\n");
 }
 
 void set_clr_ktext_ept_flags_4k(struct vmx_vcpu *vcpu, unsigned long start,
@@ -1290,8 +1317,9 @@ void protect_kernel_integrity(struct vmx_vcpu *vcpu)
 	unsigned long end = (unsigned long) &__end_rodata_hpage_align;
 
 	/* Set execute remove write for kernel text*/
-	set_clr_ktext_ept_flags_4k(vcpu, text_start, text_end,
-			       EPT_X | OK_TEXT, EPT_W);
+//	set_clr_ktext_ept_flags_4k(vcpu, text_start, text_end,
+//			       EPT_X | OK_TEXT, EPT_W);
+	set_kmem_ept(vcpu, text_start, text_end, EPT_X | OK_TEXT, EPT_W);
 
 	/*
 	 * Protect read-only data. Setting OK_TEXT will generate
@@ -1299,7 +1327,8 @@ void protect_kernel_integrity(struct vmx_vcpu *vcpu)
 	 * in this region seemed to be released and given to user space
 	 */
 	//set_clr_kmem_ept_flags(vcpu, text_end, end, OK_TEXT, EPT_W);
-	set_clr_kmem_ept_flags_4k(vcpu, &__start_rodata, &__end_rodata, OK_TEXT|OK_MOD, EPT_W);
+//	set_clr_kmem_ept_flags_4k(vcpu, &__start_rodata, &__end_rodata, OK_TEXT|OK_MOD, EPT_W);
+	set_kmem_ept(vcpu, &__start_rodata, &__end_rodata, OK_TEXT|OK_MOD, EPT_W);
 //	do_fixups(vcpu);
 
 	/* Set protection for modules*/
@@ -4575,11 +4604,13 @@ int __init vmx_init(void)
 	printk(KERN_CRIT "okernel _text %#lx\n", _text);
 	printk(KERN_CRIT "okernel &__stop___ex_table %#lx\n", &__stop___ex_table);
 	printk(KERN_CRIT "okernel &__end_rodata_hpage_align %#lx\n", &__end_rodata_hpage_align);
-	printk(KERN_CRIT "okernel &__start_rodata %#lx\n", &__start_rodata);
-	printk(KERN_CRIT "okernel &__end_rodata %#lx\n", &__end_rodata);
+	printk(KERN_CRIT "okernel &__start_rodata va %#lx, pa %#lx\n",
+	       &__start_rodata, guest_physical_address(&__start_rodata));
+	printk(KERN_CRIT "okernel &__end_rodata va %#lx pa %#lx\n",
+	       &__end_rodata, guest_physical_address(&__end_rodata));
 	printk(KERN_CRIT "okernel __PHYSICAL_MASK is %#lX\n", __PHYSICAL_MASK);
 	printk(KERN_CRIT "okernel ~(PAGE_SIZE-1) %#lx\n", ~(PAGE_SIZE-1));
-	printk(KERN_CRIT "okernel ~(PAGESIZE2M-1)", ~(PAGESIZE2M-1));
+	printk(KERN_CRIT "okernel ~(PAGESIZE2M-1) %#lx\n", ~(PAGESIZE2M-1));
         return 0;
 
 
