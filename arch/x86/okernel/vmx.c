@@ -135,11 +135,18 @@ static struct vmcs_config {
 
 struct vmx_capability vmx_capability;
 
+/*
 static struct ok_fixup_page ok_fixup_pages = {
 	.list = LIST_HEAD_INIT(ok_fixup_pages.list),
 	.pa = 0,
 	.level = 0,
 };
+*/
+#define NR_FIXUP_PAGES 3
+static struct fixup_pages{
+	unsigned long pages[NR_FIXUP_PAGES];
+	int index;
+} fixup_pages = {.index = 0};
 
 
 // NJE BEGIN NEEDS TO GO
@@ -964,7 +971,7 @@ void set_kmem_ept(struct vmx_vcpu *vcpu, unsigned long start, unsigned long end,
 	gvs = start & ~(PAGESIZE - 1);
 	if (start != gvs)
 		OKWARN("Start address not 4k aligned");
-	OKDEBUG("Start va %#lx start pa %#lx, end va %#lx\n", start, guest_physical_address(gvs), end);
+//	OKDEBUG("Start va %#lx start pa %#lx, end va %#lx\n", start, guest_physical_address(gvs), end);
 	for (gva = gvs; gva < end; gva += PAGE_SIZE){
 		gpa = guest_physical_address(gva);
 		if (!gpa) {
@@ -977,7 +984,7 @@ void set_kmem_ept(struct vmx_vcpu *vcpu, unsigned long start, unsigned long end,
 		}
 		//OKDEBUG("gpa %#lx\n", gpa);
 	}
-	OKDEBUG("End va %#lx pa %#lx\n", gva - PAGE_SIZE, gpa);
+//	OKDEBUG("End va %#lx pa %#lx\n", gva - PAGE_SIZE, gpa);
 }
 
 
@@ -1276,6 +1283,7 @@ void set_clr_module_ept_flags(struct vmx_vcpu *vcpu)
  */
 static void do_fixups(struct vmx_vcpu *vcpu)
 {
+	/*
 	struct ok_fixup_page *p, *q;
 	unsigned long clr = OK_TEXT | OK_MOD;
 	unsigned long set = EPT_W | EPT_R;
@@ -1286,10 +1294,21 @@ static void do_fixups(struct vmx_vcpu *vcpu)
 			BUG();
 		}
 	}
+	*/
+	int i;
+	unsigned long clr = OK_TEXT | OK_MOD;
+	unsigned long set = EPT_W | EPT_R;
+	for (i = 0; i < fixup_pages.index; i++) {
+		if (!set_clr_ept_page_flags(vcpu, fixup_pages.pages[i], set, clr, PG_LEVEL_4K)) {
+			OKERR("set_clr_ept_page_flags failed.\n");
+			BUG();
+		}
+	}
 }
 
 static void add_fixup(unsigned long gpa, int level)
 {
+	/*
 	struct ok_fixup_page *p;
 	p = (struct ok_fixup_page *) kmalloc(sizeof(*p), GFP_KERNEL);
 	if (!p) {
@@ -1299,7 +1318,10 @@ static void add_fixup(unsigned long gpa, int level)
 	p->pa = gpa;
 	p->level = level;
 	list_add(&p->list, &ok_fixup_pages.list);
-}
+	*/
+	if (fixup_pages.index < (NR_FIXUP_PAGES - 1))
+		fixup_pages.pages[fixup_pages.index++] = gpa;
+ }
 
 void protect_kernel_integrity(struct vmx_vcpu *vcpu)
 {
@@ -1329,7 +1351,7 @@ void protect_kernel_integrity(struct vmx_vcpu *vcpu)
 	//set_clr_kmem_ept_flags(vcpu, text_end, end, OK_TEXT, EPT_W);
 //	set_clr_kmem_ept_flags_4k(vcpu, &__start_rodata, &__end_rodata, OK_TEXT|OK_MOD, EPT_W);
 	set_kmem_ept(vcpu, &__start_rodata, &__end_rodata, OK_TEXT|OK_MOD, EPT_W);
-//	do_fixups(vcpu);
+	do_fixups(vcpu);
 
 	/* Set protection for modules*/
 	set_clr_module_ept_flags(vcpu);
@@ -3704,10 +3726,10 @@ static int kernel_ro_ept_violation(struct vmx_vcpu *vcpu, unsigned long gpa,
 			return 0;
 		} else {
 			/* We need to fix by tracking release of memory*/
-			OKDEBUG("Releasing to user space %#lx OK_TEXT %d OK_MOD %d no longer "
-				"mapped by kernel new mapping level %d\n", gpa,
+			OKDEBUG("Releasing to user space %#lx 4k block %#lx OK_TEXT %d OK_MOD %d no longer "
+				"mapped by kernel new mapping level %d\n", gpa, gpa & ~(PAGESIZE - 1),
 				(*epte & OK_TEXT)?1:0, (*epte & OK_MOD)?1:0, level);
-//			add_fixup(gpa, level);
+			add_fixup(gpa, level);
 			return grant_all(vcpu, gpa, qual, level);
 		}
 	}
