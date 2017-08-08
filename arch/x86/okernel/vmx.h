@@ -199,12 +199,6 @@ struct vmx_vcpu {
 	int lp;
 };
 
-struct ok_fixup_page{
-	struct list_head list;
-	unsigned long pa;
-	int level;
-};
-
 extern __init int vmx_init(void);
 extern void vmx_exit(void);
 extern int vmx_launch(unsigned int mode, unsigned int flags, struct nr_cloned_state *cloned_thread);
