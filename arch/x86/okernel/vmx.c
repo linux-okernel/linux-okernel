@@ -960,29 +960,6 @@ static unsigned long guest_physical_address(unsigned long va, int *level,
 	return pa;
 }
 
-static void set_kmem_ept(struct vmx_vcpu *vcpu, unsigned long start,
-			 unsigned long end, unsigned long set, unsigned long clr)
-{
-	unsigned long gvs, gva, gpa;
-	int l;
-	pgprot_t p;
-
-	gvs = start & ~(PAGESIZE - 1);
-	if (start != gvs)
-		OKWARN("Start address not 4k aligned");
-	for (gva = gvs; gva < end; gva += PAGE_SIZE){
-		gpa = guest_physical_address(gva, &l, &p);
-		if (!gpa) {
-			OKWARN("Guest physical address not found\n");
-			continue;
-		}
-		if (!set_clr_ept_page_flags(vcpu, gpa, set, clr, PG_LEVEL_4K)){
-			OKERR("EPT set_clr_ept_page_flags failed.\n");
-			BUG();
-		}
-	}
-}
-
 static unsigned long find_vaddr(struct vmx_vcpu *vcpu, unsigned long paddr,
 			 unsigned long start, unsigned long end)
 {
@@ -1057,17 +1034,16 @@ static void ept_flags_from_prot(pgprot_t prot, unsigned long *s_flags,
 	}
 }
 
-static unsigned long x_or_ro(unsigned long flags)
+static int x_or_ro(unsigned long flags)
 {
 	if ((flags & EPT_X) && (flags & EPT_W)){
 		OKSEC("WARNING WX memory\n");
-		dump_stack();
 	}
 	return (((flags & EPT_X) || (flags & EPT_R)) && !(flags & EPT_W));
 }
 
 /*
- * Code to fix up any anomalies in kernel integrity coverage
+ * Fix up any anomalies in kernel integrity coverage. This
  * will go when we have a shared base EPT, as we will fix up
  * the anomalies in the master EPT when we chose to allow them
  */
@@ -1091,76 +1067,36 @@ static void add_fixup(unsigned long gpa, int level)
 		fixup_pages.pages[fixup_pages.index++] = gpa;
  }
 
-static void set_clr_module_flags_4k(struct vmx_vcpu *vcpu, unsigned long start,
-			  unsigned long end)
+static void set_kmem_ept(struct vmx_vcpu *vcpu, unsigned long start,
+			 unsigned long end, unsigned long set, unsigned long clr)
 {
-	unsigned long vaddr, paddr, s_flags, c_flags;
-	unsigned int level;
-	pgprot_t prot;
-	for (vaddr = start; vaddr < end; vaddr += PAGE_SIZE) {
-		paddr = guest_physical_page_address(vaddr, &level, &prot);
-		if (!paddr) {
-			/* vaddr NOT MAPPED */
+	unsigned long gvs, va, pa;
+	int l;
+	pgprot_t p;
+
+	gvs = start & ~(PAGESIZE - 1);
+	if (start != gvs)
+		OKWARN("Start address not 4k aligned");
+	for (va = gvs; va < end; va += PAGE_SIZE){
+		pa = guest_physical_address(va, &l, &p);
+		if (!pa) {
+			OKWARN("Guest physical address not found\n");
 			continue;
 		}
-		/*
-		 * Make sure it's split as the physical memory
-		 * is being used for 4k pages
-		 */
-		if (!split_2M_mapping(vcpu, paddr & ~(PAGESIZE2M -1))) {
-			OKERR(KERN_ERR "okernel %s: couldn't split "
-			       "2MB mapping for (%#lx)\n",
-			       __func__, (unsigned long)paddr);
-			BUG();
-		}
-		ept_flags_from_prot(prot, &s_flags, &c_flags);
-		if (x_or_ro(s_flags)) {
-			s_flags |= OK_MOD;
-		}
-		if (!set_clr_ept_page_flags(vcpu, paddr, s_flags, c_flags,
-					    PG_LEVEL_4K)){
-			OKERR("EPT set_clr_ept_page_flags failed.\n");
-			BUG();
-		}
-	}
-}
-
-static void old_set_clr_module_ept_flags(struct vmx_vcpu *vcpu)
-{
-	unsigned long start = PFN_ALIGN(MODULES_VADDR);
-	unsigned long end = PFN_ALIGN(MODULES_END);
-	unsigned long vaddr, paddr, end_4k, s_flags, c_flags;
-	unsigned int level;
-	pgprot_t prot;
-
-	vaddr = start & ~(PAGESIZE2M - 1);
-	if (start != vaddr) {
-		OKWARN("Start address (%#lx) is not 2M aligned\n", start);
-	}
-	for (vaddr = start; vaddr < end; vaddr += PAGESIZE2M){
-		paddr = guest_physical_page_address(vaddr, &level, &prot);
-		if ((!paddr) || (level == 1)){
-			/* 
-			 * If there's no physical address the
-			 * beginning of the 2M region isn't mapped as
-			 * a 2M page, but there could be 4k pages
-			 * which are mapped
-			 */
-			end_4k = (vaddr + PAGESIZE2M) & ~(PAGESIZE2M-1);
-			set_clr_module_flags_4k(vcpu, vaddr, end_4k);
-			continue;
-		} else if (level > 2) {
-			printk(KERN_ERR "okernel %s: unsupported page level\n",
-			       __func__);
+		if ((pa != (pa &  ~(PAGESIZE - 1)))) {
+			OKERR("PA not 4k aligned kernel protection failed\n");
 			return;
 		}
-		/* Update 2M page mapping */
-		ept_flags_from_prot(prot, &s_flags, &c_flags);
-		if (x_or_ro(s_flags)){
-			s_flags |= OK_MOD;
+		/* 
+		 * Split explicitly to avoid using and exhausting
+		 * okmm. okmm is only needed when we've started
+		 * running in NR mode
+		 */
+		if (!split_2M_mapping(vcpu, pa & ~(PAGESIZE2M - 1))) {
+			OKERR("Failed to split page");
+			BUG();
 		}
-		if (!set_clr_ept_page_flags(vcpu, paddr, s_flags, c_flags,
-					    PG_LEVEL_2M)){
+		if (!set_clr_ept_page_flags(vcpu, pa, set, clr, PG_LEVEL_4K)){
 			OKERR("EPT set_clr_ept_page_flags failed.\n");
 			BUG();
 		}
@@ -1184,14 +1120,22 @@ static void set_clr_module_ept_flags(struct vmx_vcpu *vcpu)
 			return;
 		}
 		ept_flags_from_prot(prot, &set, &clr);
-		if (x_or_ro(set)) {
+		if (x_or_ro(set)) 
 			set |= OK_MOD;
-			if ((set & EPT_W) && (set & EPT_X))
+		if ((set & EPT_W) && (set & EPT_X))
 				OKSEC("WX on pa %lx\n", pa);
+		/* 
+		 * Split explicitly to avoid using and exhausting
+		 * okmm. okmm is only needed when we've started
+		 * running in NR mode
+		 */
+		if (!split_2M_mapping(vcpu, pa & ~(PAGESIZE2M - 1))) {
+			OKERR("Failed to split page");
+			BUG();
 		}
 		if (!set_clr_ept_page_flags(vcpu, pa, set, clr, PG_LEVEL_4K)) {
 			OKERR("set_clr_ept_page_flags failed.\n");
-			return;
+			BUG();
 		}
 	}
 }
@@ -3691,7 +3635,6 @@ static int vmx_handle_EPT_violation(struct vmx_vcpu *vcpu)
 	qual = vmcs_readl(EXIT_QUALIFICATION);
 	gpa = vmcs_readl(GUEST_PHYSICAL_ADDRESS);
 	gva = (u64)vmcs_readl(GUEST_LINEAR_ADDRESS);
-	vpid_sync_context(vcpu->vpid);
 	vmx_put_cpu(vcpu);
 
 	/* Grant access to protected pages lazily */
