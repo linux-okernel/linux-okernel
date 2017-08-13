@@ -3,6 +3,7 @@ config OKERNEL
         depends on DEBUG_KERNEL
         depends on X86_64
         depends on !VIRTUALIZATION
+        depends on THREAD_INFO_IN_TASK
         select PREEMPT_NOTIFIERS
         select MMU_NOTIFIER
         select PREEMPT_NONE

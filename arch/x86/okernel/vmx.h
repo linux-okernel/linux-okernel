@@ -54,10 +54,6 @@ struct nr_cloned_state {
 #define VMX_EPT_AD_ENABLE_BIT   (1ull << 6)
 #endif
 
-#ifndef VMX_EPT_EXTENT_INDIVIDUAL_BIT
-#define VMX_EPT_EXTENT_INDIVIDUAL_BIT           (1ull << 24)
-#endif
-
 #ifndef X86_CR4_PCIDE
 #define X86_CR4_PCIDE		0x00020000 /* enable PCID support */
 #endif
@@ -170,7 +166,9 @@ struct vmx_vcpu {
 	unsigned long ept_root;
 	unsigned long eptp;
 	bool ept_ad_enabled;
-
+	u64 stack_clone_paddr;
+	u64 stack_clone_vaddr;
+	
 	u8  fail;
 	u64 exit_reason;
 	u64 host_rsp;
@@ -190,7 +188,6 @@ struct vmx_vcpu {
 	struct thread_info *cloned_thread_info;
 	struct task_struct *cloned_tsk;
 	struct nr_cloned_state *cloned_thread;
-	unsigned int *nr_stack_canary;
 	void *syscall_tbl;
 
 	/* Circular log pending NR-mode lock-safe logging*/

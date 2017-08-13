@@ -48,6 +48,8 @@
 #define VMCALL_DOEXIT 3
 #define VMCALL_DO_FORK_FIXUP 4
 #define VMCALL_DO_GET_CPU_HELPER 5
+#define VMCALL_DO_EPT_SYNC_HELPER 6
+#define VMCALL_DO_IPI_CALLBACK_HELPER 7
 #define VMCALL_DO_EXEC_FIXUP_HOST 10
 #define VMCALL_DO_TLS_FIXUP 11
 
@@ -67,7 +69,7 @@ void do_page_fault_r(struct pt_regs *regs, unsigned long error_code, unsigned lo
 
 
 /* Enforce rudimentary protected interface */
-#define OKERNEL_PROTECTED_MEMORY
+//#define OKERNEL_PROTECTED_MEMORY
 extern struct page_ext_operations page_okernel_ops;
 
 struct protected_data {
