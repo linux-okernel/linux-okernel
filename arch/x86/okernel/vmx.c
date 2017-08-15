@@ -136,8 +136,11 @@ static struct vmcs_config {
 struct vmx_capability vmx_capability;
 
 #define NR_FIXUP_PAGES 3
-static struct fixup_pages{
-	unsigned long pages[NR_FIXUP_PAGES];
+static struct fixup_pages {
+	struct {
+		unsigned long pa;
+		unsigned long prot;
+	} pages[NR_FIXUP_PAGES];
 	int index;
 } fixup_pages = {.index = 0};
 
@@ -960,12 +963,13 @@ static unsigned long guest_physical_address(unsigned long va, int *level,
 	return pa;
 }
 
-static unsigned long find_vaddr(struct vmx_vcpu *vcpu, unsigned long paddr,
+static unsigned long find_pg_va(struct vmx_vcpu *vcpu, unsigned long paddr,
 			 unsigned long start, unsigned long end)
 {
 	/*
-	 * Returns the vaddr within the given range if the physical
-	 * address is mapped there
+	 * Searches a range of virtual addresses to see if the physical
+	 * address is mapped there. If it is mapped returns the
+	 * virtual address of the start of the page, otherwise 0
 	 */
 	unsigned long vaddr, pa, ps, match;
 	unsigned int level;
@@ -997,23 +1001,43 @@ static unsigned long find_vaddr(struct vmx_vcpu *vcpu, unsigned long paddr,
 			return vaddr;
 		}
 	}
-	/* No match found so not mapped in the text region*/
+	/* No match found so not mapped in the range*/
 	return 0;
 }
 
-static unsigned long mod_addr(struct vmx_vcpu *vcpu, unsigned long paddr){
+static unsigned long kmod_page(struct vmx_vcpu *vcpu, unsigned long paddr){
 	unsigned long start = PFN_ALIGN(MODULES_VADDR);
 	unsigned long end = PFN_ALIGN(MODULES_END);
 
-	return find_vaddr(vcpu, paddr, start, end);
+	return find_pg_va(vcpu, paddr, start, end);
 }
 
-static unsigned long text_addr(struct vmx_vcpu *vcpu, unsigned long paddr)
+static unsigned long ktext_page(struct vmx_vcpu *vcpu, unsigned long paddr)
 {
 	unsigned long start = PFN_ALIGN(_text);
 	unsigned long end = PFN_ALIGN(&__stop___ex_table);
 
-	return find_vaddr(vcpu, paddr, start, end);
+	return find_pg_va(vcpu, paddr, start, end);
+}
+
+static unsigned long kdata_page(struct vmx_vcpu *vcpu, unsigned long paddr)
+{
+	unsigned long data_start = PFN_ALIGN(&__start_rodata);
+	unsigned long data_end = PFN_ALIGN(&__end_rodata);
+
+	return find_pg_va(vcpu, paddr, data_start, data_end);
+}
+
+static unsigned long kmapped_page(struct vmx_vcpu *vcpu, unsigned long pa)
+{
+	unsigned long addr;
+	if ((addr = ktext_page(vcpu, pa)))
+	    return addr;
+	if ((addr = kmod_page(vcpu, pa)))
+		return addr;
+	if ((addr = kdata_page(vcpu, pa)))
+		return addr;
+	return 0;
 }
 
 static void ept_flags_from_prot(pgprot_t prot, unsigned long *s_flags,
@@ -1050,10 +1074,9 @@ static int x_or_ro(unsigned long flags)
 static void do_fixups(struct vmx_vcpu *vcpu)
 {
 	int i;
-	unsigned long clr = OK_TEXT | OK_MOD;
-	unsigned long set = EPT_W | EPT_R;
 	for (i = 0; i < fixup_pages.index; i++) {
-		if (!set_clr_ept_page_flags(vcpu, fixup_pages.pages[i], set, clr,
+		if (!set_clr_ept_page_flags(vcpu, fixup_pages.pages[i].pa,
+					    fixup_pages.pages[i].prot, 0,
 					    PG_LEVEL_4K)) {
 			OKERR("set_clr_ept_page_flags failed.\n");
 			BUG();
@@ -1061,10 +1084,13 @@ static void do_fixups(struct vmx_vcpu *vcpu)
 	}
 }
 
-static void add_fixup(unsigned long gpa, int level)
+static void add_fixup(unsigned long pa, unsigned long prot)
 {
-	if (fixup_pages.index < (NR_FIXUP_PAGES - 1))
-		fixup_pages.pages[fixup_pages.index++] = gpa;
+	if (fixup_pages.index < (NR_FIXUP_PAGES - 1)) {
+		fixup_pages.pages[fixup_pages.index].pa = pa;
+		fixup_pages.pages[fixup_pages.index].prot = prot;
+		fixup_pages.index++;
+	}
  }
 
 static void set_kmem_ept(struct vmx_vcpu *vcpu, unsigned long start,
@@ -3473,66 +3499,81 @@ static int page_walk_ept_viol(struct vmx_vcpu *vcpu, unsigned long gpa,
 	return 0;
 }
 
+static int kro_userspace_eptv(struct vmx_vcpu *vcpu, unsigned long gpa,
+			      unsigned long gva, unsigned long qual,
+			      int level, pgprot_t prot)
+{
+	unsigned long ktp, kmp, kdp, kva, set, clr, eprot, n_eprot, *epte;
+	int l;
+	pgprot_t p;
+	ktp = ktext_page(vcpu, gpa);
+	kmp = kmod_page(vcpu, gpa);
+	kdp = kdata_page(vcpu, gpa);
+	epte = ept_page_entry(vcpu, gpa);
+
+	if (ktp || kmp) {
+		OKERR("User space alias for kernel RO memory\n");
+		BUG();
+		return 0;
+	} else if (kdp) {
+		kva = kdp + (gpa - guest_physical_address(kdp, &l, &p));
+		eprot = *epte & (EPT_W | EPT_R | EPT_X);
+		ept_flags_from_prot(prot, &set, &clr);
+		n_eprot = set | eprot;
+		OKDEBUG("VDSO fix up for protected 4k page %#lx"
+			" OK_TEXT %d OK_MOD %d kernel va %#lx, user space va "
+			"%#lx EPT exit qual %#lx\n",
+			gpa & ~(PAGESIZE - 1), (*epte & OK_TEXT)?1:0,
+			(*epte & OK_MOD)?1:0, kva, gva, qual);
+		if(!set_clr_ept_page_flags(vcpu, gpa, n_eprot, 0, level)) {
+			OKERR("set_clr_ept_page_flags failed.\n");
+			BUG();
+			return 0;
+		}
+		add_fixup(gpa, n_eprot);
+		return 1;
+	} else {
+		OKDEBUG("Protected 4k block %#lx released to user space"
+			" OK_TEXT %d OK_MOD %d no longer mapped by "
+			"kernel exit qual %#lx guest virtual %#lx\n",
+			gpa & ~(PAGESIZE - 1), (*epte & OK_TEXT)?1:0,
+			(*epte & OK_MOD)?1:0, qual, gva);
+		return grant_all(vcpu, gpa, qual, level);
+	}
+}
+
 /*
  * Handler for EPT violations on kernel RO memory we've previously marked
  * for protection with OK_MOD or OK_TEXT.
  * 
  * If the gva is kernel integrity memory, in an ideal world we
  * wouldn't need to change it. Unfortunately, sometimes aliases are
- * created. So we have to allow changes and log them.  If its a user
- * space gva which is NOT kernel integrity protected, grant it.
- *
- * When user space memory is released we need to remove
- * the grant so it can be reallocated (see xpfo use of page_ext)
- *
- * We don't mark any module memory as kernel integrity protected
- * as it may end up being released and used for a gva.
- * If we can use xpfo page_ext we can also mark module memory
- * as kernel integrity protected.
- *
- * If we have mode based execute control for EPT, we should
- * not need to ever to add EPT_X to user space, as it only
- * controls supervisor mode.
+ * created. So we have to allow changes and log them.
  *
  */
 static int kernel_ro_ept_violation(struct vmx_vcpu *vcpu, unsigned long gpa,
 				   unsigned long gva, unsigned long qual)
 {
-	unsigned long *epte, mapped, s_flags, c_flags, eprot, n_eprot;
+	unsigned long *epte, set, clr, eprot, n_eprot, mapped;
 	int level;
 	pgprot_t prot;
 	uid_t uid;
 	char *comm;
 
-	epte = ept_page_entry(vcpu, gpa);
-	if (!(mapped = text_addr(vcpu, gpa)))
-		mapped = mod_addr(vcpu, gpa);
 	BUG_ON(!guest_physical_page_address(gva, &level, &prot));
-	if (is_user_space(gva)) {
-		if (mapped) {
-			OKERR("User space alias for kernel RO memory\n");
-			BUG();
-			return 0;
-		} else {
-			/* We need to fix by tracking release of memory*/
-			OKDEBUG("Releasing to user space %#lx 4k block %#lx OK_TEXT %d OK_MOD %d no longer "
-				"mapped by kernel new mapping level %d, exit qual was %#lx gva was %#lx\n",
-				gpa, gpa & ~(PAGESIZE - 1), (*epte & OK_TEXT)?1:0,
-				(*epte & OK_MOD)?1:0, level, qual, gva);
-			add_fixup(gpa, level);
-			return grant_all(vcpu, gpa, qual, level);
-		}
-	}
-	ept_flags_from_prot(prot, &s_flags, &c_flags);
+	if (is_user_space(gva))
+		return kro_userspace_eptv(vcpu, gpa, gva, qual, level, prot);
+
+	epte = ept_page_entry(vcpu, gpa);
 	eprot = *epte & (EPT_W | EPT_R | EPT_X);
+	ept_flags_from_prot(prot, &set, &clr);
 
 	/* if already mapped, it's either a change or alias */
-	if (mapped) {
+	if ((mapped = kmapped_page(vcpu, gpa))) {
 		uid = from_kuid(&init_user_ns, current_uid());
 		comm = current->comm;
-
 		/* New prots = guest prot + old prot */
-		n_eprot = s_flags | eprot;
+		n_eprot = set | eprot;
 		OKSEC("Physical address %#lx with EPT prot %#lx alias or change"
 		      " for kernel protected code mapped at page %#lx being "
 		      "created at page %#lx for virtual address %#lx, "
@@ -3544,22 +3585,22 @@ static int kernel_ro_ept_violation(struct vmx_vcpu *vcpu, unsigned long gpa,
 			return 0;
 		}
 	} else {
-		set_clr_ok_tags(gva, &s_flags, &c_flags);
+		set_clr_ok_tags(gva, &set, &clr);
 		/* We need to fix by tracking release */
-		if (s_flags & EPT_X)
+		if (set & EPT_X)
 			OKSEC("New executable code added to kernel "
 			      "Physical address %#lx with EPT prot %#lx no "
 			      "longer at original mapping. New mapping created "
 			      "at guest virtual %#lx, new EPT prot %#lx\n",
-			      gpa, eprot, gva, s_flags);
+			      gpa, eprot, gva, set);
 		else
 			OKDEBUG("Physical address %#lx with EPT prot %#lx no "
 				"longer at original mapping. New mapping created "
 				"at guest virtual %#lx, new EPT prot %#lx"
 				" OK_TEXT %d OK_MOD %d new mapping level %d""\n",
-				gpa, eprot, gva, s_flags, (*epte & OK_TEXT)?1:0,
+				gpa, eprot, gva, set, (*epte & OK_TEXT)?1:0,
 				(*epte & OK_MOD)?1:0, level);
-		if(!set_clr_ept_page_flags(vcpu, gpa, s_flags, c_flags, level)) {
+		if(!set_clr_ept_page_flags(vcpu, gpa, set, clr, level)) {
 			OKERR("set_clr_ept_page_flags failed.\n");
 			BUG();
 			return 0;
