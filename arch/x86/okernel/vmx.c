@@ -3516,8 +3516,9 @@ static int kernel_ro_ept_violation(struct vmx_vcpu *vcpu, unsigned long gpa,
 		} else {
 			/* We need to fix by tracking release of memory*/
 			OKDEBUG("Releasing to user space %#lx 4k block %#lx OK_TEXT %d OK_MOD %d no longer "
-				"mapped by kernel new mapping level %d\n", gpa, gpa & ~(PAGESIZE - 1),
-				(*epte & OK_TEXT)?1:0, (*epte & OK_MOD)?1:0, level);
+				"mapped by kernel new mapping level %d, exit qual was %#lx gva was %#lx\n",
+				gpa, gpa & ~(PAGESIZE - 1), (*epte & OK_TEXT)?1:0,
+				(*epte & OK_MOD)?1:0, level, qual, gva);
 			add_fixup(gpa, level);
 			return grant_all(vcpu, gpa, qual, level);
 		}
