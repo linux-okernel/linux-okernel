@@ -108,8 +108,7 @@ bool ok_allow_protected_access(unsigned long phys_addr);
 unsigned long ok_get_protected_dummy_paddr(void);
 
 static void ept_invalidate_global(struct vmx_vcpu *vcpu);
-int modify_ept_physaddr_perms_master(epte_t *root, u64 paddr, unsigned long perms);
-int modify_ept_physaddr_perms(struct vmx_vcpu *vcpu, u64 paddr, unsigned long perms);
+int modify_ept_physaddr_perms(epte_t *root, u64 paddr, unsigned long perms);
 
 /* For Demo Hack Only */
 //#define OK_DEMO_HACK_MESSAGE
@@ -699,7 +698,7 @@ u64 vt_ept_4K_init(void)
 }
 
 // CID: need to consolidate
-unsigned long* find_pd_entry_master(epte_t* root, u64 paddr)
+unsigned long* find_pd_entry(epte_t* root, u64 paddr)
 {
 	/* Find index in a PD that maps a particular 2MB range containing a given address. */
 
@@ -734,7 +733,7 @@ unsigned long* find_pd_entry_master(epte_t* root, u64 paddr)
 	return pml2_p;
 }
 
-unsigned long* find_pt_entry_master(epte_t* root, u64 paddr)
+unsigned long* find_pt_entry(epte_t* root, u64 paddr)
 {
 	/* Find index in a PT that maps a particular 4K range containing a given address. */
 
@@ -776,7 +775,7 @@ unsigned long* find_pt_entry_master(epte_t* root, u64 paddr)
 }
 
 
-int split_2M_mapping_master(epte_t* root, u64 paddr)
+int split_2M_mapping(epte_t* root, u64 paddr)
 {
 	unsigned long *pml2_e;
 	pt_page *pt = NULL;
@@ -792,7 +791,7 @@ int split_2M_mapping_master(epte_t* root, u64 paddr)
 		return 0;
 	}
 
-	if(!(pml2_e =  find_pd_entry_master(root, paddr))){
+	if(!(pml2_e =  find_pd_entry(root, paddr))){
 		printk(KERN_ERR "okernel: NULL pml2 entry for paddr (%#lx)\n",
 		       (unsigned long)paddr);
 		return 0;
@@ -852,15 +851,15 @@ int split_2M_mapping_master(epte_t* root, u64 paddr)
 }
 
 /* Restores 1:1 ept mapping for a given phyiscal address */
-int reset_ept_page_master(struct vmx_vcpu *vcpu, epte_t* root, u64 paddr, unsigned long perms)
+int reset_ept_page(struct vmx_vcpu *vcpu, epte_t* root, u64 paddr, unsigned long perms)
 {
-	modify_ept_physaddr_perms_master(root, paddr, perms); 
+	modify_ept_physaddr_perms(root, paddr, perms); 
 	HDEBUG("Reset 1:1 mapping for paddr (%#lx)\n", (unsigned long)paddr);
 	return 1;
 }
 
 /* Returns virtual mapping of the new page */
-u64 replace_ept_page_master(epte_t* root, u64 paddr, unsigned long perms)
+u64 replace_ept_page(epte_t* root, u64 paddr, unsigned long perms)
 {
 	unsigned long *pml1_p;
 	pt_page *pt;
@@ -872,7 +871,7 @@ u64 replace_ept_page_master(epte_t* root, u64 paddr, unsigned long perms)
 
 	HDEBUG("Check or split 2M mapping at (%#lx)\n", (unsigned long)split_addr);
 
-	if(!(split_2M_mapping_master(root, split_addr))){
+	if(!(split_2M_mapping(root, split_addr))){
 		printk(KERN_ERR "okernel: %s couldn't split 2MB mapping for (%#lx)\n",
 		       __func__, (unsigned long)paddr);
 		return 0;
@@ -881,7 +880,7 @@ u64 replace_ept_page_master(epte_t* root, u64 paddr, unsigned long perms)
 	HDEBUG("Split or check ok: looking for pte for paddr (%#lx)\n",
 		(unsigned long)paddr);
 
-	if(!(pml1_p = find_pt_entry_master(root, paddr))){
+	if(!(pml1_p = find_pt_entry(root, paddr))){
 		printk(KERN_ERR "okernel: failed to find pte for (%#lx)\n",
 		       (unsigned long)paddr);
 		return 0;
@@ -943,7 +942,7 @@ u64 replace_ept_page_master(epte_t* root, u64 paddr, unsigned long perms)
 
 /* Modify access permissions on an EPT mapping (W,R,X)  */
 /* To do: should also pay attemtion to eth EPT MT / PAT bits */
-int modify_ept_physaddr_perms_master(epte_t *root, u64 paddr, unsigned long perms)
+int modify_ept_physaddr_perms(epte_t *root, u64 paddr, unsigned long perms)
 {
 	unsigned long *pml1_p;
 	u64 orig_paddr;
@@ -953,7 +952,7 @@ int modify_ept_physaddr_perms_master(epte_t *root, u64 paddr, unsigned long perm
 
 	HDEBUG("Check or split 2M mapping at (%#lx)\n", (unsigned long)split_addr);
 
-	if(!(split_2M_mapping_master(root, split_addr))){
+	if(!(split_2M_mapping(root, split_addr))){
 		printk(KERN_ERR "okernel %s: couldn't split 2MB mapping for (%#lx)\n",
 		       __func__, (unsigned long)paddr);
 		return 0;
@@ -962,7 +961,7 @@ int modify_ept_physaddr_perms_master(epte_t *root, u64 paddr, unsigned long perm
 	HDEBUG("Split or check ok: looking for pte for paddr (%#lx)\n",
 		(unsigned long)paddr);
 
-	if(!(pml1_p = find_pt_entry_master(root, paddr))){
+	if(!(pml1_p = find_pt_entry(root, paddr))){
 		printk(KERN_ERR "okernel: failed to find pte for (%#lx)\n",
 		       (unsigned long)paddr);
 		return 0;
@@ -990,13 +989,13 @@ int modify_ept_physaddr_perms_master(epte_t *root, u64 paddr, unsigned long perm
 	return 1;
 }
 
-unsigned long *ept_page_entry_master(epte_t *root, u64 paddr)
+unsigned long *ept_page_entry(epte_t *root, u64 paddr)
 {
 	unsigned long *pml2_e;
 	unsigned long *pml1_e;
 	unsigned long *ept_page_entry;
 
-	if(!(pml2_e =  find_pd_entry_master(root, paddr))){
+	if(!(pml2_e =  find_pd_entry(root, paddr))){
 		HDEBUG("NULL pml2 entry for paddr (%#lx)\n",
 		       (unsigned long)paddr);
 		return 0;
@@ -1010,7 +1009,7 @@ unsigned long *ept_page_entry_master(epte_t *root, u64 paddr)
 	} else {
 		/* Need to find the 4k page entry */
 
-		if(!(pml1_e = find_pt_entry_master(root, paddr))){
+		if(!(pml1_e = find_pt_entry(root, paddr))){
 			HDEBUG("failed to find pte for (%#lx)\n",
 			       (unsigned long)paddr);
 			return 0;
@@ -1438,7 +1437,7 @@ void do_4k_split(struct vmx_vcpu *vcpu){
 #endif
 
 /* We just clone the bottom page of the stack for now */
-int clone_kstack2_master(struct vmx_vcpu *vcpu, unsigned long perms)
+int clone_kstack2(struct vmx_vcpu *vcpu, unsigned long perms)
 {
 	int n_pages;
 	unsigned long k_stack;
@@ -1466,14 +1465,14 @@ int clone_kstack2_master(struct vmx_vcpu *vcpu, unsigned long perms)
 
 	// Just remove ept write perm for now on the stack page, don't actually clone.
 	spin_lock(&init_ept_root_lock);
-	modify_ept_physaddr_perms_master(init_ept_root, paddr, perms);
+	modify_ept_physaddr_perms(init_ept_root, paddr, perms);
 	ept_sync_global();
 	ept_invalidate_global(vcpu);
 	spin_unlock(&init_ept_root_lock);
 #if 0
 	/* also need replace_ept_contiguous_region */
 	spin_lock_irqsave(&init_ept_root_lock, flags);
-	if(!(vaddr = (void*)replace_ept_page_master(init_ept_root, paddr, perms))){
+	if(!(vaddr = (void*)replace_ept_page(init_ept_root, paddr, perms))){
 		spin_unlock(&init_ept_root_lock);
 		printk(KERN_ERR "failed to clone page at (%#lx)\n",
 		       (unsigned long)paddr);
@@ -2635,7 +2634,7 @@ static struct vmx_vcpu * vmx_create_vcpu(struct nr_cloned_state* cloned_thread)
 
 #if defined (OKERNEL_PROTECTED_MEMORY)
 	/* Example of the kind of memory protection we can provide: unmap 'protected pages' from any EPT tables */
-	if(!(modify_ept_page_range_perms(vcpu, ok_protected_page, OK_NR_PROTECTED_PAGES, 0))){
+	if(!(modify_ept_page_range_perms(init_ept_root, ok_protected_page, OK_NR_PROTECTED_PAGES, 0))){
 		printk("ok: failed to remove protected pages from EPT...\n");
 		BUG();
 	}
@@ -2658,7 +2657,7 @@ static void vmx_destroy_vcpu(struct vmx_vcpu *vcpu)
 	vmx_get_cpu(vcpu);
 
 	spin_lock(&init_ept_root_lock);
-	if(!reset_ept_page_master(vcpu, init_ept_root,
+	if(!reset_ept_page(vcpu, init_ept_root,
 				  vcpu->stack_clone_paddr,
 				  EPT_R | EPT_W | EPT_X | EPT_CACHE_2 | EPT_CACHE_3)){
 		HDEBUG("Failed to reset 1:1 mapping at (%#lx)\n",
@@ -2903,8 +2902,8 @@ static int vmx_handle_EPT_misconfig(struct vmx_vcpu *vcpu)
 	vmx_put_cpu(vcpu);
 
 	spin_lock(&init_ept_root_lock);	
-	if((pml2_e =  find_pd_entry_master(init_ept_root, gp_addr))){
-		epte = ept_page_entry_master(init_ept_root, gp_addr);
+	if((pml2_e =  find_pd_entry(init_ept_root, gp_addr))){
+		epte = ept_page_entry(init_ept_root, gp_addr);
 	} else {
 		epte = 0;
 	}
@@ -3622,8 +3621,8 @@ static int vmx_handle_EPT_violation(struct vmx_vcpu *vcpu)
 	       (unsigned long)vcpu->stack_clone_paddr, (unsigned long)vcpu->stack_clone_vaddr);
 
 	spin_lock(&init_ept_root_lock);
-	if((pml2_e =  find_pd_entry_master(init_ept_root, gpa))){
-		epte = ept_page_entry_master(init_ept_root, gpa);
+	if((pml2_e =  find_pd_entry(init_ept_root, gpa))){
+		epte = ept_page_entry(init_ept_root, gpa);
 	} else {
 		epte = 0;
 	}
@@ -3731,7 +3730,7 @@ int vmx_launch(unsigned int mode, unsigned int flags, struct nr_cloned_state *cl
 	 */
 	perms =  EPT_R | EPT_X | EPT_CACHE_2 | EPT_CACHE_3;
 
-	if(!clone_kstack2_master(vcpu, perms)){
+	if(!clone_kstack2(vcpu, perms)){
 		printk(KERN_ERR "okernel: clone kstack failed.\n");
 		return -ENOMEM;
 	}
