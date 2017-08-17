@@ -1699,8 +1699,18 @@ epte_t* vt_ept_setup_master(void)
 #endif
        ret =  (epte_t*)pml4_virt;
 free_tables_exit:
-       kfree(pdpt);
+       /* Remove EPT structures themselves from the EPT mappings we create */
+       for(i = 0; i < n_pd; i++){
+	       (void)modify_ept_physaddr_perms(ret, pd[i].phys, 0);
+       }
+       for(i = 0; i < n_pdpt; i++){
+	       (void)modify_ept_physaddr_perms(ret, pdpt[i].phys, 0);
+       }
+       for(i = 0; i < n_pt; i++){
+	       (void)modify_ept_physaddr_perms(ret, pt[i].phys, 0);
+       }
        kfree(pd);
+       kfree(pdpt);
        kfree(pt);
        return ret;
 }
