@@ -4414,15 +4414,13 @@ int __init vmx_init(void)
 	in_vmx_nr_mode = real_in_vmx_nr_mode;
 
 	
-	spin_lock(&init_ept_root_lock);
 	if(!(init_ept_root = vt_ept_setup_master())){
 		printk(KERN_ERR "vmx: failed to setup master EPT page tables.\n");
 		r = -ENOMEM;
 		spin_unlock(&init_ept_root_lock);
 		goto failed2;
 	}
-	spin_unlock(&init_ept_root_lock);
-		
+	
 	(void)ok_init_protected_pages();
 
 #if 0
