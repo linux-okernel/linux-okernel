@@ -1709,6 +1709,7 @@ free_tables_exit:
        for(i = 0; i < n_pt; i++){
 	       (void)modify_ept_physaddr_perms(ret, pt[i].phys, 0);
        }
+       (void)modify_ept_physaddr_perms(ret, pml4_phys, 0);
        kfree(pd);
        kfree(pdpt);
        kfree(pt);
