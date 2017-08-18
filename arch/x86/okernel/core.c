@@ -312,6 +312,7 @@ long ok_device_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 	unsigned long val;
 	int ret;
 	struct thread_info *ti;
+#if 0
 	struct page *pg;
 	unsigned long phys_addr = 0;
 	struct protected_data pd;
@@ -319,10 +320,12 @@ long ok_device_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 	unsigned long p_addr;
 	char *p;
 	unsigned long *v_addr;
-
+#endif
+	
 	HDEBUG("called.\n");
 	switch(cmd)
 	{
+#if 0
 		/* Really we should do an mmap interface above protected pages - this will suffice for now */
 	case OKERNEL_ALLOCATE_PROTECTED_PAGE:
 		if(!(pg = ok_alloc_protected_page())){
@@ -390,6 +393,7 @@ long ok_device_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 		printk("OK: write to p_addr/vaddr (%#lx/%#lx) in kernel: %s\n",
 		       p_addr, (unsigned long)v_addr, p);
 		break;
+#endif
 	case OKERNEL_ON_CMD:
 		set_vmx_r_mode();
 		val = arg;
