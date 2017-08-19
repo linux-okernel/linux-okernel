@@ -85,6 +85,7 @@
 
 
 epte_t *init_ept_root;
+//unsigned long flags;
 static DEFINE_SPINLOCK(init_ept_root_lock);
 
 static atomic_t vmx_enable_failed;
@@ -771,7 +772,10 @@ unsigned long* find_pt_entry(epte_t* root, u64 paddr)
 int do_split_2M_mapping(epte_t* root, u64 paddr, int cache)
 {
 	unsigned long *pml2_e;
-	pt_page *pt = NULL;
+
+	struct page *pg;
+	void* v;
+	u64 phys;
 	unsigned int n_entries = PAGESIZE / 8;
 	u64* q = NULL;
 	int i = 0;
@@ -798,7 +802,6 @@ int do_split_2M_mapping(epte_t* root, u64 paddr, int cache)
 	}
 
 	/* 2M region base address */
-
 	p_base_addr = (*pml2_e & ~(PAGESIZE2M-1));
 	pml1_attrs = (*pml2_e & PDE_ATTR_MASK & ~EPT_2M_PAGE);
 
@@ -806,40 +809,30 @@ int do_split_2M_mapping(epte_t* root, u64 paddr, int cache)
 	 * Intel SDM says EPT_2M_PAGE is ignored in PL1 4k entries
 	 * But we are using it for sanity checking
 	 */
-
 	HDEBUG("base EPT physical addr for table 2M split (%#lx) paddr (%#lx)\n",
 		(unsigned long)p_base_addr, (unsigned long)paddr);
 
 	/* split the plm2_e into 4k ptes,i.e. have it point to a PML1 table */
-
         /* First allocate a physical page for the PML1 table (512*4K entries) */
-
-	if (!(pt = (pt_page*)kmalloc(sizeof(pt_page), GFP_KERNEL))) {
-		printk(KERN_ERR
-		       "okernel: failed to allocate PT table.\n");
+	pg = alloc_page(GFP_ATOMIC);
+	v = page_address(pg);
+		
+	if(!v){
+		printk(KERN_ERR "okernel: failed to alloc page.\n");
 		return 0;
 	}
 
-	if (!(vt_alloc_page((void**)&pt[0].virt, &pt[0].phys))) {
-		kfree(pt);
-		printk(KERN_ERR
-		       "okernel: failed to allocate PML1 table.\n");
-		return 0;
-	}
+        phys = page_to_phys(pg);
+	memset(v, 0, PAGESIZE);
+	HDEBUG("PML1 virt (%llX) phys (%llX)\n", (unsigned long)v, (unsigned long)phys);
 
-	memset(pt[0].virt, 0, PAGESIZE);
-	HDEBUG("PML1 pt virt (%llX) pt phys (%llX)\n", (unsigned long long)pt[0].virt, pt[0].phys);
-
-	/* Fill in eack of the 4k ptes for the PML1 */
-	q = pt[0].virt;
-
+	q = v;
 	for(i = 0; i < n_entries; i++){
 		addr = p_base_addr + i*PAGESIZE;
 		q[i] = addr | pml1_attrs;
 	}
 
-	*pml2_e = pt[0].phys + EPT_R + EPT_W + EPT_X;
-	kfree(pt);
+	*pml2_e = phys + EPT_R + EPT_W + EPT_X;
 	return 1;
 }
 
@@ -1473,11 +1466,13 @@ int clone_kstack2(struct vmx_vcpu *vcpu, unsigned long perms)
 
         /* Remove ept write perm on the stack page, don't actuall
 	 * clone anymore. */
+	//spin_lock_irqsave(&init_ept_root_lock,flags);
 	spin_lock(&init_ept_root_lock);
 	modify_ept_physaddr_perms(init_ept_root, paddr, perms);
 	ept_sync_global();
 	ept_invalidate_global(vcpu);
 	spin_unlock(&init_ept_root_lock);
+	//spin_unlock_irqrestore(&init_ept_root_lock,flags);
 	return 1;
 }
 
@@ -2662,6 +2657,7 @@ static void vmx_destroy_vcpu(struct vmx_vcpu *vcpu)
 	root = init_ept_root;
 	
 	vmx_get_cpu(vcpu);
+	//spin_lock_irqsave(&init_ept_root_lock,flags);
 	spin_lock(&init_ept_root_lock);
 	if(!reset_ept_page(root,
 			   vcpu->stack_clone_paddr,
@@ -2672,6 +2668,7 @@ static void vmx_destroy_vcpu(struct vmx_vcpu *vcpu)
 	ept_sync_global();
 	ept_invalidate_global(vcpu);
 	spin_unlock(&init_ept_root_lock);
+	//spin_unlock_irqrestore(&init_ept_root_lock, flags);
 	vmcs_clear(vcpu->vmcs);
 	__this_cpu_write(local_vcpu, NULL);
 	vmx_put_cpu(vcpu);
@@ -2907,6 +2904,7 @@ static int vmx_handle_EPT_misconfig(struct vmx_vcpu *vcpu)
 	gp_addr = vmcs_readl(GUEST_PHYSICAL_ADDRESS);
 	vmx_put_cpu(vcpu);
 
+	//spin_lock_irqsave(&init_ept_root_lock,flags);
 	spin_lock(&init_ept_root_lock);	
 	if((pml2_e =  find_pd_entry(init_ept_root, gp_addr))){
 		epte = ept_page_entry(init_ept_root, gp_addr);
@@ -2914,6 +2912,7 @@ static int vmx_handle_EPT_misconfig(struct vmx_vcpu *vcpu)
 		epte = 0;
 	}
 	spin_unlock(&init_ept_root_lock);
+	//spin_unlock_irqrestore(&init_ept_root_lock, flags);
 	printk(warning, gp_addr, (pml2_e) ? *pml2_e : 0, (epte) ? *epte : 0);
 	return 0;
 }
@@ -3602,6 +3601,7 @@ int vmx_handle_EPT_violation(struct vmx_vcpu *vcpu)
 	int level;
 	pgprot_t prot;
 	epte_t *root;
+	int ret = 0;
 	
 	//root =  (epte_t*) __va((vcpu->eptp & PAGE_MASK));
 
@@ -3612,12 +3612,14 @@ int vmx_handle_EPT_violation(struct vmx_vcpu *vcpu)
 	gpa = vmcs_readl(GUEST_PHYSICAL_ADDRESS);
 	gva = (u64)vmcs_readl(GUEST_LINEAR_ADDRESS);
         vmx_put_cpu(vcpu);
-	
+
+	spin_lock(&init_ept_root_lock);
 	
 #if 0 // Replace later
 	/* Grant access to protected pages lazily */
 	if(__ok_protected_phys_addr(gpa)){
-		return vmexit_protected_page(vcpu);
+		ret = vmexit_protected_page(vcpu);
+		goto done;
 	}
 #endif
 	/* Guest linear (virtual address) is valid */
@@ -3628,22 +3630,26 @@ int vmx_handle_EPT_violation(struct vmx_vcpu *vcpu)
 		 * otherwise it was a result of a page walk or update
 		 * of access or dirty bit
 		 */
+
+		
 		if (!(qual & EPT_LT)){
-			return page_walk_ept_viol(root, gpa, qual);
+			ret = page_walk_ept_viol(root, gpa, qual);
+			goto done;
 		}
 		if (is_set_ept_page_flag(root, gpa, OK_TEXT | OK_MOD)){
-			return kernel_ro_ept_violation(root, gpa, gva, qual);
+			ret = kernel_ro_ept_violation(root, gpa, gva, qual);
 		} else if (is_module_space(gva)){
-			return module_ept_violation(root, gpa, gva, qual);
+			ret = module_ept_violation(root, gpa, gva, qual);
 		} else if (is_user_space(gva)){
 			BUG_ON(!guest_physical_page_address(gva, &level, &prot));
-			return grant_all(root, gpa, qual, level);
-			
+			ret = grant_all(root, gpa, qual, level);
 		} else {
-			return kernel_ept_violation(root, gpa, gva, qual);
+			ret = kernel_ept_violation(root, gpa, gva, qual);
 		}
 	}
-	return 0;
+done:
+	spin_unlock(&init_ept_root_lock);
+	return ret;
 }
 
 
