@@ -350,7 +350,7 @@ int __init okmm_init(void)
 		i++;
 	}
 
-	gc.min = OKMM_N_PERCPU * i; //consider making 1<<9 gc.min
+	gc.min = OKMM_N_PERCPU * i;
 	n = gc.min * 3;
 	printk(KERN_INFO "okmm_init %d CPUs, percpu cache size %d, global %d\n",
 	       i, OKMM_N_PERCPU, n);
