@@ -106,18 +106,34 @@ static struct okmm_ce *make_entry(void)
 	pt_page *pt;
 
 	e = (struct okmm_ce *) kmalloc(sizeof(*e), GFP_KERNEL);
+	if (!e) {
+		return NULL;
+	}
+
 	ept = (struct ept_pt_list*) kmalloc(sizeof(*ept), GFP_KERNEL);
-	pt   = (pt_page*)kmalloc(sizeof(*pt), GFP_KERNEL);
-	if (!e | !ept | !pt ){
-		return 0;
+	if (!ept) {
+		goto err_e;
+	}
+
+	pt = (pt_page*)kmalloc(sizeof(*pt), GFP_KERNEL);
+	if (!pt) {
+		goto err_ept;
 	}
 	if(!(vt_alloc_page((void**)&pt[0].virt, &pt[0].phys))){
-		return 0;
+		goto err_pt;
 	}
 	e->epte = ept;
 	e->pt = pt;
 	INIT_LIST_HEAD(&e->list);
 	return e;
+
+err_pt:
+	kfree(pt);
+err_ept:
+	kfree(ept);
+err_e:
+	kfree(e);
+	return NULL;
 
 }
 
