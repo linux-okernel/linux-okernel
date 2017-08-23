@@ -1254,6 +1254,8 @@ ENTRY(nmi)
 	 * other IST entries.
 	 */
 
+	ASM_CLAC
+
 	/* Use %rdx as our temp variable throughout */
 	pushq	%rdx
 
