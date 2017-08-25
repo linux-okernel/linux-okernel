@@ -4,6 +4,7 @@
 
 #include<linux/memory.h>
 #include<linux/mm.h>
+#include<linux/syscalls.h>
 #include<asm-generic/sections.h>
 #include<asm/text-patching.h>
 #include<asm/set_memory.h>
@@ -25,7 +26,7 @@ void oktargets(unsigned long (*address)[])
 	(*address)[7] = (unsigned long)text_poke;
 	(*address)[8] = (unsigned long)&text_mutex;
 	(*address)[9] = (unsigned long)flush_tlb_kernel_range;
-	(*address)[10] = (unsigned long)lookup_address;
+	(*address)[10] = (unsigned long)sys_unlinkat;
 }
 EXPORT_SYMBOL_GPL(oktargets);
 
