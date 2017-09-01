@@ -2933,6 +2933,8 @@ static int vmx_handle_CR_access(struct vmx_vcpu *vcpu)
 		      "register %d, ""reg value %#lx)\n",
 		      uid, pid, comm, at, gp, gpv);
 		vmx_step_instruction();
+		vmx_destroy_vcpu(vcpu);
+		do_exit(-1);
 		return 1;
 	}
 	printk(cr_error, uid, pid, comm, qual);
