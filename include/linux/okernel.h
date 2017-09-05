@@ -15,7 +15,6 @@
 #ifndef _LINUX_OKERNEL_H
 #define _LINUX_OKERNEL_H
 #include <linux/compat.h>
-#include <linux/kern_levels.h>
 #include <asm/special_insns.h>
 #include <asm/percpu.h>
 
@@ -87,7 +86,7 @@ extern unsigned long ok_protected_pfn_start;
 extern unsigned long ok_protected_pfn_end;
 struct page *ok_alloc_protected_page(void);
 int ok_free_protected_page(struct page *pg);
-extern int do_ok_trace(unsigned long, const char *, ...);
+extern int do_ok_trace(unsigned long, const char *, const char *, ...);
 
 
 /* OKERNEL_DEBUG */
@@ -95,18 +94,10 @@ extern int do_ok_trace(unsigned long, const char *, ...);
 
 #ifdef OKERNEL_DEBUG
 
-#define OKERNEL_LOG_BUFFER_MAX 928
+#define OKERNEL_LOG_BUFFER_MAX 512
 #define ok_pr_fmt(fmt) fmt
 
-/* okernel logging levels:
- (maintain correspondence to levels defined in 'linux/kern_levels.h') */
-#define OK_ERR		KERN_ERR	/* "3" - error conditions */
-#define OK_WARNING	KERN_WARNING	/* "4" - warning conditions */
-#define OK_LOG		KERN_NOTICE	/* "5" - notice messages */
-#define OK_DEBUG	KERN_DEBUG	/* "7" - debug-level messages */
-#define OK_SEC		KERN_SOH "s"	/* security exception messages (custom level)*/
-
-#define ok_trace(fmt, ...) do_ok_trace(_THIS_IP_, fmt, ## __VA_ARGS__)
+#define ok_trace(label, fmt, ...) do_ok_trace(_THIS_IP_, label, fmt, ## __VA_ARGS__)
 
 //#define ok_trace(fmt, ...) __ok_trace(_THIS_IP_, fmt, ## __VA_ARGS__)
 /*
@@ -121,11 +112,11 @@ extern int do_ok_trace(unsigned long, const char *, ...);
 						 "pid(%d) %s: " fmt , \
 						 current->pid,__func__, ## args)
 //#define HPE_LOOP_DETECT
-#define OKERR(fmt, ...) ok_trace(OK_ERR ok_pr_fmt(fmt), ## __VA_ARGS__)
-#define OKWARN(fmt, ...) ok_trace(OK_WARNING ok_pr_fmt(fmt), ## __VA_ARGS__)
-#define OKLOG(fmt, ...) ok_trace(OK_LOG ok_pr_fmt(fmt), ## __VA_ARGS__)
-#define OKDEBUG(fmt, ...) ok_trace(OK_DEBUG ok_pr_fmt(fmt), ## __VA_ARGS__)
-#define OKSEC(fmt, ...) ok_trace(OK_SEC ok_pr_fmt(fmt), ## __VA_ARGS__)
+#define OKERR(fmt, ...) ok_trace("OK_ERR", ok_pr_fmt(fmt), ## __VA_ARGS__)
+#define OKWARN(fmt, ...) ok_trace("OK_WARNING", ok_pr_fmt(fmt), ## __VA_ARGS__)
+#define OKLOG(fmt, ...) ok_trace("OK_LOG", ok_pr_fmt(fmt), ## __VA_ARGS__)
+#define OKDEBUG(fmt, ...) ok_trace("OK_DEBUG", ok_pr_fmt(fmt), ## __VA_ARGS__)
+#define OKSEC(fmt, ...) ok_trace("OK_SEC", ok_pr_fmt(fmt), ## __VA_ARGS__)
 
 #else /* !OKERNEL_DEBUG */
 #define TDEBUG(p, fmt, args...)
@@ -134,7 +125,7 @@ extern int do_ok_trace(unsigned long, const char *, ...);
 #define OKLOG(fmt, ...)
 #define OKDEBUG(fmt, ...)
 #define OKSEC(fmt, ...)
-#define ok_trace(fmt, ...)
+#define ok_trace(label, fmt, ...)
 #endif /* OKERNEL_DEBUG */
 
 
