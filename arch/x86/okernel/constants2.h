@@ -189,11 +189,13 @@ struct intr_info {
 #define PAGESIZE4M_MASK			(PAGESIZE4M - 1)
 
 /* 
- * Bits 63:52 are ignored by the processor so use 52 denoted
+ * Bits 63:52 are ignored by the processor so use denoted
  * an integrity protected page
  */ 
 #define OK_TEXT                           (1UL << 52)
 #define OK_MOD                            (1UL << 53)
+#define OK_DATA                           (1UL << 54)
+#define OK_FLAGS                         (OK_TEXT | OK_MOD | OK_DATA)
 /* Taken from the memory map description in Documentation/x86/x86_64/mm.txt */
 #define USER_HI_MEM                     0X00007FFFFFFFFFFFUL
 
