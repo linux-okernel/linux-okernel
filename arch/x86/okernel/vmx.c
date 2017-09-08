@@ -66,6 +66,8 @@
 #include <linux/compat.h>
 #include <linux/cred.h>
 #include <linux/gfp.h>
+#include <linux/jump_label.h>
+#include <linux/cpuset.h>
 
 #include <asm/mtrr.h>
 #include <asm/desc.h>
@@ -4417,6 +4419,33 @@ static void __init printk_constants(void)
 	       mod_end, guest_physical_address(mod_end, &l, &p));
 	printk(KERN_INFO "okernel FIXADDR_TOP %#lx\n", FIXADDR_TOP);
 	printk(KERN_INFO "okernel VSYSCALL_PAGE %#x\n", VSYSCALL_PAGE);
+	printk(KERN_INFO "okernel FIX_TEXT_POKE0 %#lx\n",
+	       fix_to_virt(FIX_TEXT_POKE0));
+}
+
+static __init struct static_key *entry_key(struct jump_entry *entry)
+{
+	return (struct static_key *)((unsigned long)entry->key & ~1UL);
+}
+
+static void __init patch_addr(void)
+{
+	struct static_key *key = &cpusets_enabled_key.key;
+	struct jump_entry *stop = __stop___jump_table;
+	struct jump_entry *entry = (struct jump_entry *)
+		(key->type & ~JUMP_TYPE_MASK);
+	printk("okernel patch_addr key %#lx entry %#lx stop %#lx\n",
+	       (unsigned long)key, (unsigned long)entry, (unsigned long)stop);
+	if (entry) {
+		for (; (entry < stop) && (entry_key(entry) == key); entry++) {
+			printk("okernel patch address found %#lx\n", (unsigned long)
+			       entry->code);
+			printk("okernel patch text poke va %#lx\n", (unsigned long)
+			       fix_to_virt(FIX_TEXT_POKE0)
+			       + (entry->code & (PAGE_SIZE -1)));
+		}
+	}
+		
 }
 
 int __init vmx_init(void)
@@ -4509,6 +4538,7 @@ int __init vmx_init(void)
 		goto failed2;
 	}
 	printk_constants();
+	patch_addr();
         return 0;
 
 
