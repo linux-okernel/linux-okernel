@@ -3546,9 +3546,9 @@ static int kro_userspace_eptv(struct vmx_vcpu *vcpu, unsigned long gpa,
 		n_eprot = set | eprot;
 		OKDEBUG("VDSO fix up for protected 4k page %#lx"
 			" OK_DATA %d kernel va %#lx, user space va "
-			"%#lx EPT exit qual %#lx\n",
+			"%#lx EPT exit qual %#lx, new EPT prot %#lx\n",
 			gpa & ~(PAGESIZE - 1), (*epte & OK_DATA)?1:0,
-			kva, gva, qual);
+			kva, gva, qual, n_eprot);
 		if(!set_clr_ept_page_flags(vcpu, gpa, n_eprot, 0, level)) {
 			OKERR("set_clr_ept_page_flags failed.\n");
 			BUG();
