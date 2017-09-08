@@ -39,13 +39,8 @@ void oktargets(unsigned long (*address)[])
 	(*address)[6] = (unsigned long)linux_proc_banner;
 	(*address)[7] = (unsigned long)text_poke;
 	(*address)[8] = (unsigned long)&text_mutex;
-	(*address)[9] = (unsigned long)flush_tlb_kernel_range;
-	(*address)[10] = (unsigned long)sys_unlinkat;
-	(*address)[11] = (unsigned long)modprobe_path;
-	(*address)[12] = (unsigned long)&__vsyscall_page;
-	(*address)[13] = (unsigned long)register_sysctl_table;
-	printk(KERN_INFO "oktest modprobe_path addr %#lx val %s\n",
-	       (unsigned long)modprobe_path, modprobe_path);
+	(*address)[9] = (unsigned long)sys_unlinkat;
+	(*address)[10] = (unsigned long)register_sysctl_table;
 }
 
 static int oktest_device_open(struct inode *inode, struct file *file)
