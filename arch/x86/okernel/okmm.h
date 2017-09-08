@@ -4,7 +4,7 @@
 /* Mininum initial number in per CPU cache */
 #define OKMM_N_PERCPU (1 << 5)
 
-/* Step by which to grow the cache if we go below GC_MIN*/
+/* Step by which to grow the cache if we go below minimum */
 #define GC_STEP OKMM_N_PERCPU
 
 /* CPU ids are positive, so use -1 to denote the global cache*/

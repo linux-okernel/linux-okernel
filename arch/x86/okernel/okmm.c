@@ -65,14 +65,14 @@ static atomic64_t nrefills_needed = ATOMIC64_INIT(0);
 static atomic64_t percpu_cache_fills = ATOMIC64_INIT(0);
 static atomic64_t gc_cache_fills = ATOMIC64_INIT(0);
 
-static inline void kern_mess(int n, int lw, int id)
+static inline void kern_mess(int n, int a, int lw, int id)
 {
 	long p = atomic64_read(&percpu_cache_fills);
 	long g = atomic64_read(&gc_cache_fills);
 	
-	printk(KERN_INFO "cpu(%d) pid(%d): okmm %d, entries:%d low water:%d, "
-	       "gc refills:%ld, percpu cache refills:%ld",
-	       raw_smp_processor_id(), current->pid, id, n, lw, g, p);
+	printk(KERN_INFO "cpu(%d) pid(%d): okmm %d, entries:%d available:%d "
+	       "low water:%d, gc refills:%ld, percpu cache refills:%ld",
+	       raw_smp_processor_id(), current->pid, id, n, a, lw, g, p);
 }
 
 static void do_metrics(struct ok_mm_cache *c)
@@ -85,7 +85,7 @@ static void do_metrics(struct ok_mm_cache *c)
 			c->ticks = 0;
 		if (c->navailable < c->low_water)
 			c->low_water = c->navailable;
-		kern_mess(c->nentries, c->low_water, c->cpu);
+		kern_mess(c->nentries, c->navailable, c->low_water, c->cpu);
 	}
 }
 
@@ -366,7 +366,7 @@ int __init okmm_init(void)
 		i++;
 	}
 
-	gc.min = OKMM_N_PERCPU * i;
+	gc.min = OKMM_N_PERCPU * i * 2;
 	n = gc.min * 3;
 	printk(KERN_INFO "okmm_init %d CPUs, percpu cache size %d, global %d\n",
 	       i, OKMM_N_PERCPU, n);

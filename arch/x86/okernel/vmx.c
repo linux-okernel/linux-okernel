@@ -78,6 +78,7 @@
 #include <asm/preempt.h>
 #include <asm/tlbflush.h>
 #include <asm/e820/api.h>
+#include <asm/fixmap.h>			/* VSYSCALL_ADDR		*/
 
 #include "constants2.h"
 #include "vmx.h"
@@ -680,7 +681,7 @@ void* replace_ept_page(struct vmx_vcpu *vcpu, u64 paddr, unsigned long perms)
 	HDEBUG("Replacement page pt virt (%llX) pt phys (%llX)\n",
 	       (unsigned long long)pt[0].virt, pt[0].phys);
 
-	orig_paddr = (*pml1_p & ~(OK_MOD + OK_TEXT + PAGESIZE-1));
+	orig_paddr = (*pml1_p & ~(OK_FLAGS + PAGESIZE-1));
 
 	HDEBUG("orig paddr (%#lx)\n", (unsigned long)orig_paddr);
 
@@ -732,7 +733,7 @@ int modify_ept_physaddr_perms(struct vmx_vcpu *vcpu, u64 paddr, unsigned long pe
 	HDEBUG("pte val for paddr (%#lx) is (%#lx)\n",
 		(unsigned long)paddr, (unsigned long)*pml1_p);
 
-	orig_paddr = (*pml1_p & ~(OK_MOD + OK_TEXT + PAGESIZE-1));
+	orig_paddr = (*pml1_p & ~(OK_FLAGS + PAGESIZE-1));
 
 	HDEBUG("orig paddr (%#lx)\n", (unsigned long)orig_paddr);
 
@@ -885,7 +886,7 @@ static int remap_ept_page(struct vmx_vcpu *vcpu, u64 paddr, u64 new_paddr)
 	HDEBUG("pte val for paddr (%#lx) is (%#lx)\n",
 		(unsigned long)paddr, (unsigned long)*pml1_p);
 
-	orig_paddr = (*pml1_p & ~(OK_MOD + OK_TEXT + PAGESIZE-1));
+	orig_paddr = (*pml1_p & ~(OK_FLAGS + PAGESIZE-1));
 
 	HDEBUG("orig paddr (%#lx)\n", (unsigned long)orig_paddr);
 
@@ -1028,6 +1029,12 @@ static unsigned long kdata_page(struct vmx_vcpu *vcpu, unsigned long paddr)
 	return find_pg_va(vcpu, paddr, data_start, data_end);
 }
 
+static unsigned long vsys_page(struct vmx_vcpu *vcpu, unsigned long paddr)
+{
+	unsigned long vsys_end = VSYSCALL_ADDR + PAGE_SIZE;
+	return find_pg_va(vcpu, paddr, VSYSCALL_ADDR, vsys_end);
+}
+
 static unsigned long kmapped_page(struct vmx_vcpu *vcpu, unsigned long pa)
 {
 	unsigned long addr;
@@ -1036,6 +1043,8 @@ static unsigned long kmapped_page(struct vmx_vcpu *vcpu, unsigned long pa)
 	if ((addr = kmod_page(vcpu, pa)))
 		return addr;
 	if ((addr = kdata_page(vcpu, pa)))
+		return addr;
+	if ((addr = vsys_page(vcpu, pa)))
 		return addr;
 	return 0;
 }
@@ -1057,6 +1066,14 @@ static void ept_flags_from_prot(pgprot_t prot, unsigned long *s_flags,
 		*c_flags |= EPT_W;
 	}
 }
+
+static void ept_flags_from_qual(unsigned long qual, unsigned long *s_flags,
+			unsigned long *c_flags)
+{
+	*c_flags = 0;
+	*s_flags = qual & (EPT_X | EPT_R | EPT_W);
+}
+
 
 static int x_or_ro(unsigned long flags)
 {
@@ -1181,10 +1198,12 @@ static void protect_kernel_integrity(struct vmx_vcpu *vcpu)
 	unsigned long text_end = PFN_ALIGN(&__stop___ex_table);
 	unsigned long data_start = PFN_ALIGN(&__start_rodata);
 	unsigned long data_end = PFN_ALIGN(&__end_rodata);
+	unsigned long vsys_end = VSYSCALL_ADDR + PAGE_SIZE;
 
 	/* Set execute remove write for kernel text*/
 	set_kmem_ept(vcpu, text_start, text_end, EPT_X | OK_TEXT, EPT_W);
-	set_kmem_ept(vcpu, data_start, data_end, OK_TEXT|OK_MOD, EPT_W);
+	set_kmem_ept(vcpu, data_start, data_end, OK_DATA, EPT_W);
+	set_kmem_ept(vcpu, VSYSCALL_ADDR, vsys_end, EPT_X | OK_TEXT, EPT_W);
 	do_fixups(vcpu);
 
 	/* Set protection for modules*/
@@ -2933,6 +2952,8 @@ static int vmx_handle_CR_access(struct vmx_vcpu *vcpu)
 		      "register %d, ""reg value %#lx)\n",
 		      uid, pid, comm, at, gp, gpv);
 		vmx_step_instruction();
+		vmx_destroy_vcpu(vcpu);
+		do_exit(-1);
 		return 1;
 	}
 	printk(cr_error, uid, pid, comm, qual);
@@ -3401,15 +3422,18 @@ static inline void set_clr_ok_tags(unsigned long gva, unsigned long *s_flags,
 	 * Tags a physical memory region Text or Module RO
 	 * if the current virtual address is in kernel text or module
 	 * space and marked RO.
+	 * ASSUMPTION: OK_DATA region is protected at initialization
+         * and never changes: no pages removed or added.
+         * So this will never tage anything as OK_DATA
 	 */
 	if ((is_text_space(gva)) && x_or_ro(*s_flags)) {
 		*s_flags |= OK_TEXT;
-		*c_flags |= OK_MOD;
+		*c_flags |= OK_MOD | OK_DATA;
 	} else if ((is_module_space(gva)) && x_or_ro(*s_flags)){
 		*s_flags |= OK_MOD;
-		*c_flags |= OK_TEXT;
+		*c_flags |= OK_TEXT | OK_DATA;
 	} else {
-		*c_flags |= (OK_MOD | OK_TEXT);
+		*c_flags |= (OK_FLAGS);
 	}
 
 }
@@ -3438,7 +3462,7 @@ static int grant_all(struct vmx_vcpu *vcpu, unsigned long gpa,
 	      unsigned long qual, int level)
 {
 	unsigned long s_flags, c_flags;
-	c_flags = OK_TEXT | OK_MOD;
+	c_flags = OK_FLAGS;
 	s_flags = EPT_W | EPT_R | EPT_X;
 	if(set_clr_ept_page_flags(vcpu, gpa, s_flags, c_flags, level)){
 		return 1;
@@ -3481,15 +3505,15 @@ int vmexit_protected_page(struct vmx_vcpu *vcpu)
  * Handler for ept violation that are a result of page walks or the
  * dirty bit being  set
  */
-static int page_walk_ept_viol(struct vmx_vcpu *vcpu, unsigned long gpa,
-		       unsigned long qual)
+static int page_walk_ept_violation(struct vmx_vcpu *vcpu, unsigned long gpa,
+				   unsigned long qual)
 {
 	unsigned long s_flags, c_flags;
-	if (is_set_ept_page_flag(vcpu, gpa, OK_TEXT | OK_MOD)) {
-		OKSEC("Clearing OK_TEXT & OK_MOD, allocated to page tables\n");
+	if (is_set_ept_page_flag(vcpu, gpa, OK_FLAGS)) {
+		OKSEC("Clearing OK_FLAGS, allocated to page tables\n");
 	}
 	flags_from_qual(qual, &s_flags, &c_flags);
-	c_flags |= OK_TEXT | OK_MOD;
+	c_flags |= OK_FLAGS;
 	if(set_clr_ept_page_flags(vcpu, gpa, s_flags, c_flags, PG_LEVEL_NONE)){
 		return 1;
 	} else {
@@ -3518,13 +3542,13 @@ static int kro_userspace_eptv(struct vmx_vcpu *vcpu, unsigned long gpa,
 	} else if (kdp) {
 		kva = kdp + (gpa - guest_physical_address(kdp, &l, &p));
 		eprot = *epte & (EPT_W | EPT_R | EPT_X);
-		ept_flags_from_prot(prot, &set, &clr);
+		ept_flags_from_qual(qual, &set, &clr);
 		n_eprot = set | eprot;
 		OKDEBUG("VDSO fix up for protected 4k page %#lx"
-			" OK_TEXT %d OK_MOD %d kernel va %#lx, user space va "
+			" OK_DATA %d kernel va %#lx, user space va "
 			"%#lx EPT exit qual %#lx\n",
-			gpa & ~(PAGESIZE - 1), (*epte & OK_TEXT)?1:0,
-			(*epte & OK_MOD)?1:0, kva, gva, qual);
+			gpa & ~(PAGESIZE - 1), (*epte & OK_DATA)?1:0,
+			kva, gva, qual);
 		if(!set_clr_ept_page_flags(vcpu, gpa, n_eprot, 0, level)) {
 			OKERR("set_clr_ept_page_flags failed.\n");
 			BUG();
@@ -3534,17 +3558,17 @@ static int kro_userspace_eptv(struct vmx_vcpu *vcpu, unsigned long gpa,
 		return 1;
 	} else {
 		OKDEBUG("Protected 4k block %#lx released to user space"
-			" OK_TEXT %d OK_MOD %d no longer mapped by "
+			" OK_TEXT %d OK_MOD %d OK_DATA %d no longer mapped by "
 			"kernel exit qual %#lx guest virtual %#lx\n",
 			gpa & ~(PAGESIZE - 1), (*epte & OK_TEXT)?1:0,
-			(*epte & OK_MOD)?1:0, qual, gva);
+			(*epte & OK_MOD)?1:0, (*epte & OK_DATA)?1:0, qual, gva);
 		return grant_all(vcpu, gpa, qual, level);
 	}
 }
 
 /*
  * Handler for EPT violations on kernel RO memory we've previously marked
- * for protection with OK_MOD or OK_TEXT.
+ * for protection with OK_FLAGS.
  * 
  * If the gva is kernel integrity memory, in an ideal world we
  * wouldn't need to change it. Unfortunately, sometimes aliases are
@@ -3566,7 +3590,7 @@ static int kernel_ro_ept_violation(struct vmx_vcpu *vcpu, unsigned long gpa,
 
 	epte = ept_page_entry(vcpu, gpa);
 	eprot = *epte & (EPT_W | EPT_R | EPT_X);
-	ept_flags_from_prot(prot, &set, &clr);
+	ept_flags_from_qual(qual, &set, &clr);
 
 	/* if already mapped, it's either a change or alias */
 	if ((mapped = kmapped_page(vcpu, gpa))) {
@@ -3595,11 +3619,12 @@ static int kernel_ro_ept_violation(struct vmx_vcpu *vcpu, unsigned long gpa,
 			      gpa, eprot, gva, set);
 		else
 			OKDEBUG("Physical address %#lx with EPT prot %#lx no "
-				"longer at original mapping. New mapping created "
-				"at guest virtual %#lx, new EPT prot %#lx"
-				" OK_TEXT %d OK_MOD %d new mapping level %d""\n",
-				gpa, eprot, gva, set, (*epte & OK_TEXT)?1:0,
-				(*epte & OK_MOD)?1:0, level);
+				"longer at original mapping. New mapping created"
+				" at guest virtual %#lx, new EPT prot %#lx"
+				" OK_TEXT %d OK_MOD %d OK_DATA %d"
+				" new mapping level %d""\n", gpa, eprot, gva,
+				set, (*epte & OK_TEXT)?1:0, (*epte & OK_MOD)?1:0,
+				(*epte & OK_DATA)?1:0, level);
 		if(!set_clr_ept_page_flags(vcpu, gpa, set, clr, level)) {
 			OKERR("set_clr_ept_page_flags failed.\n");
 			BUG();
@@ -3627,7 +3652,7 @@ int module_ept_violation(struct vmx_vcpu *vcpu, unsigned long gpa,
 
 	/* Get the protection flags to set on the EPT from
 	 * the upper level page tables */
-	ept_flags_from_prot(prot, &s_flags, &c_flags);
+	ept_flags_from_qual(qual, &s_flags, &c_flags);
 	set_clr_ok_tags(gva, &s_flags, &c_flags);
 	if (set_clr_ept_page_flags(vcpu, gpa, s_flags, c_flags, level)) {
 		if (s_flags & EPT_X) 
@@ -3642,7 +3667,7 @@ int module_ept_violation(struct vmx_vcpu *vcpu, unsigned long gpa,
 
 /*
  * Handler for kernel memory ept violations for which physical
- * memory is not tagged for protection by OK_MOD or OK_TEXT
+ * memory is not tagged for protection by OK_FLAGS
  * and is not in module memory range
  */
 int kernel_ept_violation(struct vmx_vcpu *vcpu, unsigned long gpa,
@@ -3653,7 +3678,7 @@ int kernel_ept_violation(struct vmx_vcpu *vcpu, unsigned long gpa,
 	pgprot_t prot;
 	
 	BUG_ON(!guest_physical_page_address(gva, &level, &prot));
-	ept_flags_from_prot(prot, &s_flags, &c_flags);
+	ept_flags_from_qual(qual, &s_flags, &c_flags);
 	set_clr_ok_tags(gva, &s_flags, &c_flags);
 	if (set_clr_ept_page_flags(vcpu, gpa, s_flags, c_flags, level)) {
 		if (s_flags & EPT_X) 
@@ -3693,9 +3718,9 @@ static int vmx_handle_EPT_violation(struct vmx_vcpu *vcpu)
 		 * of access or dirty bit
 		 */
 		if (!(qual & EPT_LT)){
-			return page_walk_ept_viol(vcpu, gpa, qual);
+			return page_walk_ept_violation(vcpu, gpa, qual);
 		}
-		if (is_set_ept_page_flag(vcpu, gpa, OK_TEXT | OK_MOD)){
+		if (is_set_ept_page_flag(vcpu, gpa, OK_FLAGS)){
 			return kernel_ro_ept_violation(vcpu, gpa, gva, qual);
 		} else if (is_module_space(gva)){
 			return module_ept_violation(vcpu, gpa, gva, qual);
@@ -4390,6 +4415,8 @@ static void __init printk_constants(void)
 	       mod_start, guest_physical_address(mod_start, &l, &p));
 	printk(KERN_INFO "okernel module space end va %#lx pa %#lx\n",
 	       mod_end, guest_physical_address(mod_end, &l, &p));
+	printk(KERN_INFO "okernel FIXADDR_TOP %#lx\n", FIXADDR_TOP);
+	printk(KERN_INFO "okernel VSYSCALL_PAGE %#x\n", VSYSCALL_PAGE);
 }
 
 int __init vmx_init(void)
