@@ -189,7 +189,7 @@ struct intr_info {
 #define PAGESIZE4M_MASK			(PAGESIZE4M - 1)
 
 /* 
- * Bits 63:52 are ignored by the processor so use denoted
+ * Bits 63:52 are ignored by the processor so use it to denote
  * an integrity protected page
  */ 
 #define OK_TEXT                           (1UL << 52)
