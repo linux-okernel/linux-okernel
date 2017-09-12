@@ -67,7 +67,15 @@
 #include <linux/cred.h>
 #include <linux/gfp.h>
 #include <linux/jump_label.h>
-#include <linux/cpuset.h>
+
+#include <linux/cpuset.h> /* for static_keys*/
+#include <linux/memcontrol.h> /* for static_keys */
+#include <linux/perf_event.h>
+#include <linux/page_owner.h>
+#include <linux/bpf-cgroup.h>
+#include <linux/frontswap.h>
+#include <linux/context_tracking_state.h>
+#include <linux/cgroup-defs.h>
 #include <linux/rbtree.h>
 
 #include <asm/mtrr.h>
@@ -148,10 +156,48 @@ static struct fixup_pages {
 	int index;
 } fixup_pages = {.index = 0};
 
+struct key_tag {
+	struct static_key *key;
+	char *tag;
+};
+
+extern struct static_key_false sched_smt_present;
+extern struct static_key_false sched_numa_balancing;
+extern struct static_key_false sched_schedstats;
+extern struct static_key_true *cgroup_subsys_enabled_key[];
+extern struct static_key_true *cgroup_subsys_on_dfl_key[];
+#ifdef CONFIG_NF_TABLES
+extern struct static_key_false nft_trace_enabled;
+#endif
+static struct key_tag static_key_tags[] = {
+	{&cpusets_pre_enable_key.key, "cpusets_pre_enable_key"},
+	{&cpusets_enabled_key.key, "cpusets_enabled_key"},
+	{&sched_smt_present.key, "sched_smt_present"},
+	{&sched_numa_balancing.key, "sched_numa_balancing"},
+	{&sched_schedstats.key, "sched_schedstats"},
+#ifdef CONFIG_NF_TABLES
+	{&nft_trace_enabled.key, "nft_trace_enabled"},
+#endif
+	{&memcg_sockets_enabled_key.key, "memcg_sockets_enabled_key"},
+	{&memcg_kmem_enabled_key.key, "memcg_kmem_enabled_key"},
+	{&perf_sched_events.key, "perf_sched_events"},
+#ifdef CONFIG_PAGE_OWNER
+	{&page_owner_inited.key, "page_owner_inited"},
+#endif
+#ifdef CONFIG_CGROUP_BPF
+	{&cgroup_bpf_enabled_key.key, "cgroup_bpf_enabled_key"},
+#endif
+	{&frontswap_enabled_key.key, "frontswap_enabled_key"},
+#ifdef CONFIG_CONTEXT_TRACKING
+	{&context_tracking_enabled.key, "context_tracking_enabled"},
+#endif
+	{NULL, NULL}
+};
+
 /* Container for addresses which might be patched. Currently we only
  * handle patches whic use the static_key mechanism, see:
  * ./Documentation/static-keys.txt */
-struct patch_addr{
+struct patch_addr {
 	struct rb_node node;
 	unsigned long pa;
 	char *tag;
@@ -4525,18 +4571,10 @@ static void __init add_patch_addr(struct static_key *key, char *tag)
 	struct jump_entry *stop = __stop___jump_table;
 	struct jump_entry *entry = (struct jump_entry *)
 		(key->type & ~JUMP_TYPE_MASK);
-	printk("okernel patch_addr key %#lx entry %#lx stop %#lx\n",
-	       (unsigned long)key, (unsigned long)entry, (unsigned long)stop);
 	if (!entry)
 		return;
 	for (; (entry < stop) && (entry_key(entry) == key); entry++) {
-		printk("okernel patch address found %#lx\n", (unsigned long)
-		       entry->code);
-		printk("okernel patch text poke va %#lx\n", (unsigned long)
-		       (fix_to_virt(FIX_TEXT_POKE0)
-			+ (entry->code & (PAGE_SIZE -1))));
 		pa = guest_physical_address(entry->code, &level, &prot);
-		printk("okernel patch text poke pa %#lx\n", pa);
 		if (!(p_addr = mk_patch_addr(pa, tag))) {
 			printk(KERN_CRIT "okernel add_patch_addr no memory?\n");
 			return;
@@ -4551,9 +4589,26 @@ static void __init add_patch_addr(struct static_key *key, char *tag)
 static void __init dump_patch_addr(void)
 {
 	struct rb_node *node;
+	struct patch_addr *p;
 	printk(KERN_INFO "Dumping okernel RB patch address tree\n");
-	for (node = rb_first(&patch_addresses); node; node = rb_next(node))
-		printk("pa=%#lx\n", rb_entry(node, struct patch_addr, node)->pa);
+	for (node = rb_first(&patch_addresses); node; node = rb_next(node)) {
+		p = rb_entry(node, struct patch_addr, node);
+		if (p)
+			printk("pa %#lx tag %s\n", p->pa, p->tag);
+	}
+}
+
+static void patch_addr_from_keys(void)
+{
+	int ssid;
+	struct key_tag *p = static_key_tags;
+	for(; p->key != NULL; p++)
+		add_patch_addr(p->key, p->tag);
+	for ((ssid) = 0; (ssid) < CGROUP_SUBSYS_COUNT; (ssid)++) {
+		add_patch_addr(&cgroup_subsys_enabled_key[ssid]->key, "cgroups");
+		add_patch_addr(&cgroup_subsys_on_dfl_key[ssid]->key,
+			       "cgroups_dfl");
+	}
 }
 
 int __init vmx_init(void)
@@ -4646,10 +4701,7 @@ int __init vmx_init(void)
 		goto failed2;
 	}
 	printk_constants();
-	printk(KERN_INFO "Dumping addresses for cpusets_pre_enabled_key.key");
-	add_patch_addr(&cpusets_pre_enable_key.key, "cpuset");
-	printk(KERN_INFO "Dumping addresses for cpusets_enabled_key.key");
-	add_patch_addr(&cpusets_enabled_key.key, "cpuset");
+	patch_addr_from_keys();
 	dump_patch_addr();
 	return 0;
 
