@@ -68,6 +68,7 @@
 #include <linux/gfp.h>
 #include <linux/jump_label.h>
 #include <linux/cpuset.h>
+#include <linux/rbtree.h>
 
 #include <asm/mtrr.h>
 #include <asm/desc.h>
@@ -146,6 +147,68 @@ static struct fixup_pages {
 	} pages[NR_FIXUP_PAGES];
 	int index;
 } fixup_pages = {.index = 0};
+
+/* Container for addresses which might be patched. Currently we only
+ * handle patches whic use the static_key mechanism, see:
+ * ./Documentation/static-keys.txt */
+struct patch_addr{
+	struct rb_node node;
+	unsigned long pa;
+	char *tag;
+};
+
+static struct rb_root patch_addresses = RB_ROOT;
+
+static struct patch_addr *mk_patch_addr(unsigned long pa, char *tag)
+{
+	struct patch_addr *p;
+	p = (struct patch_addr *)kmalloc(sizeof(*p), GFP_KERNEL);
+	if (!p)
+		return NULL;
+	p->pa = pa;
+	p->tag = tag;
+	return p;
+}
+static struct patch_addr *find_patch_addr(struct rb_root *root, unsigned long pa)
+{
+	struct rb_node *node = root->rb_node;
+
+	while (node) {
+		struct patch_addr *data = container_of(node, struct patch_addr,
+						       node);
+		if (pa < data->pa)
+			node = node->rb_left;
+		else if (pa > data->pa)
+			node = node->rb_right;
+		else
+			return data;
+	}
+	return NULL;
+}
+
+
+static int insert_patch_addr(struct rb_root *root, struct patch_addr *new)
+{
+	struct rb_node **data = &(root->rb_node), *parent = NULL;
+	/* Figure out where to put new node */
+	while (*data) {
+		struct patch_addr *this = container_of(*data, struct patch_addr,
+						       node);
+		parent = *data;
+		if (new->pa < this->pa)
+			data = &((*data)->rb_left);
+		else if (new->pa > this->pa)
+			data = &((*data)->rb_right);
+		else
+			return FALSE;
+	}
+
+	/* Add new node and rebalance tree. */
+	rb_link_node(&new->node, parent, data);
+	rb_insert_color(&new->node, root);
+
+	return TRUE;
+}
 
 
 // NJE BEGIN NEEDS TO GO
@@ -3527,7 +3590,7 @@ static int page_walk_ept_violation(struct vmx_vcpu *vcpu, unsigned long gpa,
 
 static int kro_userspace_eptv(struct vmx_vcpu *vcpu, unsigned long gpa,
 			      unsigned long gva, unsigned long qual,
-			      int level, pgprot_t prot)
+			      int level)
 {
 	unsigned long ktp, kmp, kdp, kva, set, clr, eprot, n_eprot, *epte;
 	int l;
@@ -3568,6 +3631,47 @@ static int kro_userspace_eptv(struct vmx_vcpu *vcpu, unsigned long gpa,
 	}
 }
 
+static int kro_mapped_eptv(struct vmx_vcpu *vcpu, unsigned long ma,
+				   unsigned long gpa, unsigned long gva,
+				   unsigned long qual, int level)
+{
+	/* if already mapped, it may be a legitimate patch, otherwise
+	 * it's either a change or analias */
+
+	unsigned long *epte, set, clr, eprot, n_eprot;
+	uid_t uid;
+	char *comm;
+	struct patch_addr *p;
+
+	epte = ept_page_entry(vcpu, gpa);
+	eprot = *epte & (EPT_W | EPT_R | EPT_X);
+	ept_flags_from_qual(qual, &set, &clr);
+	p = find_patch_addr(&patch_addresses, gpa);
+	uid = from_kuid(&init_user_ns, current_uid());
+	comm = current->comm;
+	/* New prots = guest prot + old prot */
+	n_eprot = set | eprot;
+	if (p)
+		OKDEBUG("Patch of pa %#lx with EPT prot %#lx for %s. Alias"
+			" for kernel protected code mapped at page %#lx being "
+			"created at page %#lx for virtual address %#lx, "
+			"new EPT prot %#lx, uid %d, command %s\n", gpa, eprot,
+			p->tag, ma, gva & ~(PAGESIZE2M - 1), gva, n_eprot,
+			uid, comm);
+	else
+		OKSEC("Physical address %#lx with EPT prot %#lx alias or change"
+		      " for kernel protected code mapped at page %#lx being "
+		      "created at page %#lx for virtual address %#lx, "
+		      "new EPT prot %#lx, uid %d, command %s\n", gpa, eprot,
+		      ma, gva & ~(PAGESIZE2M - 1), gva, n_eprot, uid, comm);
+	if(!set_clr_ept_page_flags(vcpu, gpa, n_eprot, 0, level)) {
+		OKERR("set_clr_ept_page_flags failed.\n");
+		BUG();
+		return 0;
+	}
+	return 1;
+}
+
 /*
  * Handler for EPT violations on kernel RO memory we've previously marked
  * for protection with OK_FLAGS.
@@ -3580,37 +3684,21 @@ static int kro_userspace_eptv(struct vmx_vcpu *vcpu, unsigned long gpa,
 static int kernel_ro_ept_violation(struct vmx_vcpu *vcpu, unsigned long gpa,
 				   unsigned long gva, unsigned long qual)
 {
-	unsigned long *epte, set, clr, eprot, n_eprot, mapped;
+	unsigned long *epte, set, clr, eprot, ma;
 	int level;
 	pgprot_t prot;
-	uid_t uid;
-	char *comm;
 
 	BUG_ON(!guest_physical_page_address(gva, &level, &prot));
 	if (is_user_space(gva))
-		return kro_userspace_eptv(vcpu, gpa, gva, qual, level, prot);
+		return kro_userspace_eptv(vcpu, gpa, gva, qual, level);
 
-	epte = ept_page_entry(vcpu, gpa);
-	eprot = *epte & (EPT_W | EPT_R | EPT_X);
-	ept_flags_from_qual(qual, &set, &clr);
-
-	/* if already mapped, it's either a change or alias */
-	if ((mapped = kmapped_page(vcpu, gpa))) {
-		uid = from_kuid(&init_user_ns, current_uid());
-		comm = current->comm;
-		/* New prots = guest prot + old prot */
-		n_eprot = set | eprot;
-		OKSEC("Physical address %#lx with EPT prot %#lx alias or change"
-		      " for kernel protected code mapped at page %#lx being "
-		      "created at page %#lx for virtual address %#lx, "
-		      "new EPT prot %#lx, uid %d, command %s\n", gpa, eprot,
-		      mapped, gva & ~(PAGESIZE2M - 1), gva, n_eprot, uid, comm);
-		if(!set_clr_ept_page_flags(vcpu, gpa, n_eprot, 0, level)) {
-			OKERR("set_clr_ept_page_flags failed.\n");
-			BUG();
-			return 0;
-		}
+	if ((ma = kmapped_page(vcpu, gpa))) {
+		return kro_mapped_eptv(vcpu, ma, gpa, gva, qual, level);
 	} else {
+		epte = ept_page_entry(vcpu, gpa);
+		eprot = *epte & (EPT_W | EPT_R | EPT_X);
+		ept_flags_from_qual(qual, &set, &clr);
+
 		set_clr_ok_tags(gva, &set, &clr);
 		/* We need to fix by tracking release */
 		if (set & EPT_X)
@@ -4428,24 +4516,44 @@ static __init struct static_key *entry_key(struct jump_entry *entry)
 	return (struct static_key *)((unsigned long)entry->key & ~1UL);
 }
 
-static void __init patch_addr(void)
+static void __init add_patch_addr(struct static_key *key, char *tag)
 {
-	struct static_key *key = &cpusets_enabled_key.key;
+	int level;
+	unsigned long pa;
+	pgprot_t prot;
+	struct patch_addr *p_addr;
 	struct jump_entry *stop = __stop___jump_table;
 	struct jump_entry *entry = (struct jump_entry *)
 		(key->type & ~JUMP_TYPE_MASK);
 	printk("okernel patch_addr key %#lx entry %#lx stop %#lx\n",
 	       (unsigned long)key, (unsigned long)entry, (unsigned long)stop);
-	if (entry) {
-		for (; (entry < stop) && (entry_key(entry) == key); entry++) {
-			printk("okernel patch address found %#lx\n", (unsigned long)
-			       entry->code);
-			printk("okernel patch text poke va %#lx\n", (unsigned long)
-			       fix_to_virt(FIX_TEXT_POKE0)
-			       + (entry->code & (PAGE_SIZE -1)));
+	if (!entry)
+		return;
+	for (; (entry < stop) && (entry_key(entry) == key); entry++) {
+		printk("okernel patch address found %#lx\n", (unsigned long)
+		       entry->code);
+		printk("okernel patch text poke va %#lx\n", (unsigned long)
+		       (fix_to_virt(FIX_TEXT_POKE0)
+			+ (entry->code & (PAGE_SIZE -1))));
+		pa = guest_physical_address(entry->code, &level, &prot);
+		printk("okernel patch text poke pa %#lx\n", pa);
+		if (!(p_addr = mk_patch_addr(pa, tag))) {
+			printk(KERN_CRIT "okernel add_patch_addr no memory?\n");
+			return;
 		}
+		if (!insert_patch_addr(&patch_addresses, p_addr))
+			printk(KERN_INFO "okernel duplicate patch addr %#lx\n",
+			       pa);
 	}
 		
+}
+
+static void __init dump_patch_addr(void)
+{
+	struct rb_node *node;
+	printk(KERN_INFO "Dumping okernel RB patch address tree\n");
+	for (node = rb_first(&patch_addresses); node; node = rb_next(node))
+		printk("pa=%#lx\n", rb_entry(node, struct patch_addr, node)->pa);
 }
 
 int __init vmx_init(void)
@@ -4538,8 +4646,12 @@ int __init vmx_init(void)
 		goto failed2;
 	}
 	printk_constants();
-	patch_addr();
-        return 0;
+	printk(KERN_INFO "Dumping addresses for cpusets_pre_enabled_key.key");
+	add_patch_addr(&cpusets_pre_enable_key.key, "cpuset");
+	printk(KERN_INFO "Dumping addresses for cpusets_enabled_key.key");
+	add_patch_addr(&cpusets_enabled_key.key, "cpuset");
+	dump_patch_addr();
+	return 0;
 
 
 failed2:
