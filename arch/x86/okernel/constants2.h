@@ -205,7 +205,9 @@ struct intr_info {
 #define EPT_R_BIT       (0)
 #define EPT_W_BIT       (1)
 #define EPT_X_BIT       (2)
+/* Could fold these 2 together based on current SDM */
 #define EPT_2M_PAGE_BIT (7)
+#define EPT_PAGE_BIT (7)
 
 #define EPT_CACHE_BIT1  (3)
 #define EPT_CACHE_BIT2  (4)
@@ -215,6 +217,7 @@ struct intr_info {
 #define EPT_W       (1UL << EPT_W_BIT)
 #define EPT_X       (1UL << EPT_X_BIT)
 #define EPT_2M_PAGE (1UL << EPT_2M_PAGE_BIT)
+#define EPT_PAGE (1UL << EPT_PAGE_BIT)
 #define EPT_CACHE_1 (1UL << EPT_CACHE_BIT1)
 #define EPT_CACHE_2 (1UL << EPT_CACHE_BIT2)
 #define EPT_CACHE_3 (1UL << EPT_CACHE_BIT3)

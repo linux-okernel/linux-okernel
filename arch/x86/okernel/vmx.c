@@ -743,7 +743,7 @@ unsigned long* find_pt_entry(epte_t* root, u64 paddr)
 	epte_t *pml4 =  root;
 
 	pml3 = (epte_t *)epte_page_vaddr(*pml4);
-
+	
 	pml3_index = (paddr & (~(GIGABYTE -1))) >> GIGABYTE_SHIFT;
 
 	HDEBUG("addr (%#lx) pml3 index (%i)\n", (unsigned long)paddr, pml3_index);
@@ -1469,7 +1469,7 @@ epte_t* vt_ept_setup_master(void)
 		return 0;
 	}
 
-	/* Only need 1 pdpt to map upto 512G */
+	/* cid: Should document this artifical limit: Only need 1 pdpt to map upto 512G */
 	n_pdpt = 1;
 	/* Need 1 PD per gigabyte of physical mem */
 	n_pd = rounded_mappingsize >> GIGABYTE_SHIFT;
@@ -2064,6 +2064,130 @@ static void ept_invalidate_global(struct vmx_vcpu *vcpu)
 	
 	on_each_cpu(ept_sync_helper, vcpu, 1);
 }
+
+static void destroy_eptp(unsigned long root_hpa)
+{
+	// Do nothing yet
+	return;
+}
+
+static u64 copy_eptp(epte_t* root)
+{
+	// First alloc physical pages for the PML4 table and a single
+	// PML3/PDPT table (gives enough to map 512GB of physical memory
+	// for now).
+	u64 eptp;
+	struct page *pml4_pg;
+	struct page *pml3_pg;
+
+	void *pml4_v = NULL;
+	void *pml3_v = NULL;
+	u64   pml4_p;
+	u64   pml3_p;
+
+	u64 *pml4_table = NULL;
+	u64 *pml3_table = NULL;
+	u64 *orig_pml3_table = NULL;
+	struct page *new_pml2_pg;
+	u64 *new_pml2_table = NULL;
+	u64 *orig_pml2_table = NULL;
+	struct page *new_pml1_pg;
+	u64 *new_pml1_table = NULL;
+	u64 *orig_pml1_table = NULL;
+
+        // How many entries in a page table
+	unsigned long n_entries = PAGESIZE / 8; 
+	unsigned long pml3_entry;
+	unsigned long pml2_entry;
+	
+	int i, j, k;
+	
+	pml4_pg = alloc_page(GFP_ATOMIC);
+	pml3_pg = alloc_page(GFP_ATOMIC);
+
+	pml4_v = page_address(pml4_pg);
+	pml3_v = page_address(pml3_pg);
+
+	if(!pml4_v || !pml3_v){
+		HDEBUG("failed to alloc page.\n");
+		return 0;
+	}
+	
+	// Need to check if zero already
+	memset(pml4_v, 0, PAGESIZE);
+	memset(pml3_v, 0, PAGESIZE);
+
+	pml4_table = (u64 *)pml4_v;
+	
+	// Link PML3 to PML4
+	pml3_p = page_to_phys(pml3_pg);
+	pml4_table[0] = (u64)(pml3_p + EPT_R + EPT_W + EPT_X);
+
+	// Get original PML4E entry (points to our single PML3 table)
+	pml3_table = (u64 *)pml3_v;
+	orig_pml3_table = (u64 *)epte_page_vaddr(*root);
+	
+	// Copy page table entries over allocating where necessary
+	// (Don't recurse here to save blowing the stack)
+	for(i = 0; i < n_entries; i++){
+		// Check bit 7 of an entry: 1 if maps a page, 0 if
+		// points to a lower table.
+		// These are PML3 / PDPT entries
+		pml3_entry = orig_pml3_table[i];
+		if(pml3_entry == 0){
+			continue;
+		}
+		if(pml3_entry & EPT_PAGE){
+			// Can just copy the entry over
+			pml3_table[i] = pml3_entry;
+			continue;
+		}
+		// Alloc a page otherwise and link back 
+		new_pml2_pg = alloc_page(GFP_ATOMIC);
+		if(!(new_pml2_table = page_address(new_pml2_pg))){
+			// Should tidy up
+			HDEBUG("Failed to alloc page.\n");
+			return 0;
+		}
+		// Check if we need zero
+		memset(new_pml2_table, 0, PAGESIZE);
+		orig_pml2_table = (u64 *)epte_page_vaddr(pml3_entry);
+		pml3_table[i] = (u64)(page_to_phys(new_pml2_pg) + EPT_R + EPT_W + EPT_X);
+		for(j = 0; j < n_entries; j++){
+			// These are PML2 / PD entries
+			pml2_entry = orig_pml2_table[j];
+			if(pml2_entry == 0){
+				continue;
+			}
+			if(pml2_entry & EPT_PAGE){
+				new_pml2_table[j] = pml2_entry;
+				continue;
+			}
+			// Alloc a page otherwise and link back 
+			new_pml1_pg = alloc_page(GFP_ATOMIC);
+			if(!(new_pml1_table = page_address(new_pml1_pg))){
+				// Should tidy up1
+				HDEBUG("Failed to alloc page.\n");
+				return 0;
+			}
+			// Check if we need zero
+			memset(new_pml1_table, 0, PAGESIZE);
+			orig_pml1_table = (u64 *)epte_page_vaddr(pml2_entry);
+			new_pml2_table[j] = (u64)(page_to_phys(new_pml1_pg) + EPT_R + EPT_W + EPT_X);
+			for(k = 0; k < n_entries; k++){
+				// These are PML1 / PT entries
+				new_pml1_table[k] = orig_pml1_table[k];
+			}
+		}
+	}
+		
+	// Create eptp top-level pointer (should be same args as in construct_eptp
+	pml4_p = page_to_phys(pml4_pg);
+	eptp = VMX_EPT_DEFAULT_MT | VMX_EPT_DEFAULT_GAW << VMX_EPT_GAW_EPTP_SHIFT;
+	eptp |= (pml4_p & PAGE_MASK);
+	return eptp;
+}
+
 
 
 static u64 construct_eptp(unsigned long root_hpa)
@@ -4114,6 +4238,7 @@ void ok_init_protected_pages(void)
 #endif
 	spin_unlock(&ok_protected_pg_lock);
 }
+
 
 unsigned long ok_get_protected_dummy_paddr(void)
 {
