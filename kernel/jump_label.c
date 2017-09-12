@@ -310,18 +310,14 @@ static void __jump_label_update(struct static_key *key,
 				struct jump_entry *entry,
 				struct jump_entry *stop)
 {
-	printk("okernel __jump_label_update key %#lx entry %#lx stop %#lx\n",
-	       (unsigned long)key, (unsigned long)entry, (unsigned long)stop);
 	for (; (entry < stop) && (jump_entry_key(entry) == key); entry++) {
 		/*
 		 * entry->code set to 0 invalidates module init text sections
 		 * kernel_text_address() verifies we are not in core kernel
 		 * init code, see jump_label_invalidate_module_init().
 		 */
-		if (entry->code && kernel_text_address(entry->code)){
+		if (entry->code && kernel_text_address(entry->code))
 			arch_jump_label_transform(entry, jump_label_type(entry));
-			printk("okernel __jump_label_update address %#lx\n", (unsigned long) entry->code);
-		}
 	}
 }
 
