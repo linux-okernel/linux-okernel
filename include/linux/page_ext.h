@@ -34,7 +34,7 @@ enum page_ext_flags {
 	PAGE_EXT_IDLE,
 #endif
 #ifdef CONFIG_OKERNEL
-       PAGE_EXT_OK_PROTECTED,          /* Shouldn't map into NR-mode EPT tables by default */
+       PAGE_EXT_OK_PRIVATE,          /* Shouldn't map into NR-mode EPT tables by default */
 #endif
 	
 };

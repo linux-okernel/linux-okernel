@@ -94,30 +94,24 @@ static DECLARE_BITMAP(vmx_vpid_bitmap, VMX_NR_VPIDS);
 static DEFINE_SPINLOCK(vmx_vpid_lock);
 
 
-#if 0
-/* Rudimentary 'protected' memory allocator */
-#define OK_NR_PROTECTED_PAGES 8
-static DECLARE_BITMAP(ok_protected_pg_bitmap, OK_NR_PROTECTED_PAGES);
-static DEFINE_SPINLOCK(ok_protected_pg_lock);
-static struct page *ok_protected_page;
-static struct page *ok_protected_dummy_page;
+#if 1
+/* Rudimentary 'private' memory allocator */
+#define OK_NR_PRIVATE_PAGES 8
+static DECLARE_BITMAP(ok_private_pg_bitmap, OK_NR_PRIVATE_PAGES);
+static DEFINE_SPINLOCK(ok_private_pg_lock);
+static struct page *ok_private_page;
+static struct page *ok_private_dummy_page;
 
-unsigned long ok_protected_pfn_start;
-unsigned long ok_protected_pfn_end;
+unsigned long ok_private_pfn_start;
+unsigned long ok_private_pfn_end;
 
-void ok_free_protected_page_by_id(pid_t pid);
-bool ok_allow_protected_access(unsigned long phys_addr);
-unsigned long ok_get_protected_dummy_paddr(void);
+void ok_free_private_page_by_id(pid_t pid);
+bool ok_allow_private_access(unsigned long phys_addr);
+unsigned long ok_get_private_dummy_paddr(void);
 #endif
 
 static void ept_invalidate_global(struct vmx_vcpu *vcpu);
 int modify_ept_physaddr_perms(epte_t *root, u64 paddr, unsigned long perms);
-
-/* For Demo Hack Only */
-//#define OK_DEMO_HACK_MESSAGE
-#ifdef OK_DEMO_HACK_MESSAGE
-#define OK_DUMMY_TEXT "No secrets here, move along please."
-#endif
 
 static unsigned long *msr_bitmap;
 
@@ -2694,13 +2688,7 @@ static struct vmx_vcpu * vmx_create_vcpu(struct nr_cloned_state* cloned_thread)
 	}
 #endif
 
-#if defined (OKERNEL_PROTECTED_MEMORY)
-	/* Example of the kind of memory protection we can provide: unmap 'protected pages' from any EPT tables */
-	if(!(modify_ept_page_range_perms(init_ept_root, ok_protected_page, OK_NR_PROTECTED_PAGES, 0))){
-		printk("ok: failed to remove protected pages from EPT...\n");
-		BUG();
-	}
-#endif
+
 	vcpu->lp = 0;
 
 	return vcpu;
@@ -3470,9 +3458,9 @@ static int grant_all(epte_t *root, unsigned long gpa,
 
 #if 0
 /*
- * Handler for ept violations that are a result of access to protected pages
+ * Handler for ept violations that are a result of access to private pages
  */
-int vmexit_protected_page(struct vmx_vcpu *vcpu)
+int vmexit_private_page(struct vmx_vcpu *vcpu)
 {
 	uid_t uid;
 	pid_t pid;
@@ -3480,19 +3468,21 @@ int vmexit_protected_page(struct vmx_vcpu *vcpu)
 	unsigned long gp_addr = vmcs_readl(GUEST_PHYSICAL_ADDRESS);
 	get_upc(&uid, &pid, &comm);
 
-	if(ok_allow_protected_access(gp_addr)){
-		(void)add_ept_page_perms(vcpu, gp_addr);
-		OKDEBUG("Allow protected access for uid %d pid %d command %s\n",
-			uid, pid, comm);
+	if(ok_allow_private_access(gp_addr)){
+		HDEBUG("Would allow access to private page.\n");
+		//(void)add_ept_page_perms(vcpu, gp_addr);
+		//OKDEBUG("Allow private access for uid %d pid %d command %s\n",
+		//	uid, pid, comm);
 	} else {
-		OKSEC("Deny protected access for uid %d pid %d command %s\n",
+		HDEBUG("Deny access to private page.\n");
+		//OKSEC("Deny private access for uid %d pid %d command %s\n",
 		      uid, pid, comm);
 		/*
 		 * Map in 'dummy' page for now  - need to be careful
 		 * not to create another vulnerability.
 		 */
-		(void)remap_ept_page(vcpu, gp_addr,
-				     ok_get_protected_dummy_paddr());
+		//(void)remap_ept_page(vcpu, gp_addr,
+		//		     ok_get_private_dummy_paddr());
 	}
 	return 1;
 }
@@ -3707,10 +3697,11 @@ static int vmx_handle_EPT_violation(struct vmx_vcpu *vcpu)
 
 	spin_lock(&init_ept_root_lock);
 	
-#if 0 // Replace later
-	/* Grant access to protected pages lazily */
-	if(__ok_protected_phys_addr(gpa)){
-		ret = vmexit_protected_page(vcpu);
+#if 1
+	/* Grant access to private pages lazily */
+	if(__ok_private_phys_addr(gpa)){
+		HDEBUG("Private page access.\n");
+                //ret = vmexit_private_page(vcpu);
 		goto done;
 	}
 #endif
@@ -4192,119 +4183,116 @@ struct page_ext_operations page_okernel_ops = {
 	.init = init_okernel,
 };
 
-#if 0
-/* Rudimentry 'protected' memory allocator  - use PG_protected flag for consistency checks */
-void ok_init_protected_pages(void)
+#if 1
+/* Rudimentry 'private' memory allocator  - use PG_private flag for consistency checks */
+void ok_init_private_pages(void)
 {
 	int i;
 	struct page *pg;
 	struct page_ext *pg_ext;
 
 	if(!static_branch_unlikely(&okernel_inited)){
-		printk("ok: ext page info not available - can't init protected pages.\n");
+		printk("ok: ext page info not available - can't init private pages.\n");
 		return;
 	}
 
-	spin_lock(&ok_protected_pg_lock);
-	pg = alloc_pages(GFP_KERNEL, order_base_2(OK_NR_PROTECTED_PAGES));
+	spin_lock(&ok_private_pg_lock);
+	pg = alloc_pages(GFP_KERNEL, order_base_2(OK_NR_PRIVATE_PAGES));
 	if(!pg){
-		printk(KERN_ERR "ok: failed to allocate protected memory page array.\n");
+		printk(KERN_ERR "ok: failed to allocate private memory page array.\n");
 		BUG();
 	}
-	/* Set PG_protected attribute on the pages */
-	for(i = 0; i < OK_NR_PROTECTED_PAGES; i++){
-		printk(KERN_ERR "ok: protected page (%#lx) pfn (%#lx) vaddr (%#lx)\n",
+	/* Set PG_private attribute on the pages */
+	for(i = 0; i < OK_NR_PRIVATE_PAGES; i++){
+		printk(KERN_ERR "ok: private page (%#lx) pfn (%#lx) vaddr (%#lx)\n",
 		       (unsigned long)(pg + i), page_to_pfn(pg + i), (unsigned long)page_address(pg+i));
 		pg_ext = lookup_page_ext(pg + i);
 		if(!pg_ext){
 			printk("ok: pg_ext NULL\n");
 			continue;
 		}
-		set_bit(PAGE_EXT_OK_PROTECTED, &pg_ext->flags);
+		set_bit(PAGE_EXT_OK_PRIVATE, &pg_ext->flags);
 		pg_ext->pid = 0;
 	}
-	ok_protected_pfn_start = page_to_pfn(pg);
-	ok_protected_pfn_end = page_to_pfn(pg+OK_NR_PROTECTED_PAGES);
-	ok_protected_page = pg;
+	ok_private_pfn_start = page_to_pfn(pg);
+	ok_private_pfn_end = page_to_pfn(pg+OK_NR_PRIVATE_PAGES);
+	ok_private_page = pg;
 	/* And the dummy page to redirect invalid access requests to */
 	if(!(pg = alloc_page(GFP_KERNEL))){
-		printk("ok: failed to alloc dummy protected page.\n");
+		printk("ok: failed to alloc dummy private page.\n");
 		BUG();
 	}
-	ok_protected_dummy_page = pg;
-	memset(page_address(ok_protected_dummy_page), 0, PAGESIZE);
-#ifdef OK_DEMO_HACK_MESSAGE
-	memcpy(page_address(ok_protected_dummy_page), OK_DUMMY_TEXT, strlen(OK_DUMMY_TEXT)+1);
-#endif
-	spin_unlock(&ok_protected_pg_lock);
+	ok_private_dummy_page = pg;
+	memset(page_address(ok_private_dummy_page), 0, PAGESIZE);
+	spin_unlock(&ok_private_pg_lock);
 }
 
 
-unsigned long ok_get_protected_dummy_paddr(void)
+unsigned long ok_get_private_dummy_paddr(void)
 {
 
-	return (page_to_phys(ok_protected_dummy_page));
+	return (page_to_phys(ok_private_dummy_page));
 }
 
-void ok_release_protected_pages(void)
+void ok_release_private_pages(void)
 {
 	struct page *pg;
 	struct page_ext *pg_ext;
 	int i;
 
-	spin_lock(&ok_protected_pg_lock);
-	pg = ok_protected_page;
+	spin_lock(&ok_private_pg_lock);
+	pg = ok_private_page;
 
-	for(i = 0; i < OK_NR_PROTECTED_PAGES; i++){
+	for(i = 0; i < OK_NR_PRIVATE_PAGES; i++){
 		pg_ext = lookup_page_ext(pg + i);
-		clear_bit(PAGE_EXT_OK_PROTECTED, &pg_ext->flags);
+		clear_bit(PAGE_EXT_OK_PRIVATE, &pg_ext->flags);
 		pg_ext->pid = 0;
 		__free_page(pg + i);
 	}
-	free_pages((unsigned long)page_address(ok_protected_page), order_base_2(OK_NR_PROTECTED_PAGES));
-	ok_protected_page = NULL;
-	ok_protected_pfn_start = 0;
-	ok_protected_pfn_end   = 0;
-	free_pages((unsigned long)page_address(ok_protected_dummy_page), 0);
-	ok_protected_dummy_page = NULL;
-	spin_unlock(&ok_protected_pg_lock);
+	free_pages((unsigned long)page_address(ok_private_page), order_base_2(OK_NR_PRIVATE_PAGES));
+	ok_private_page = NULL;
+	ok_private_pfn_start = 0;
+	ok_private_pfn_end   = 0;
+	free_pages((unsigned long)page_address(ok_private_dummy_page), 0);
+	ok_private_dummy_page = NULL;
+	spin_unlock(&ok_private_pg_lock);
 	return;
 }
 
-struct page *ok_alloc_protected_page(void)
+struct page *ok_alloc_private_page(void)
 {
 	int i;
 	struct page *pg;
 	struct page_ext *pg_ext;
 
-	spin_lock(&ok_protected_pg_lock);
-	i = find_first_zero_bit(ok_protected_pg_bitmap, OK_NR_PROTECTED_PAGES);
-	if(i < OK_NR_PROTECTED_PAGES){
-		pg = ok_protected_page+i;
-		__set_bit(i, ok_protected_pg_bitmap);
+	spin_lock(&ok_private_pg_lock);
+	i = find_first_zero_bit(ok_private_pg_bitmap, OK_NR_PRIVATE_PAGES);
+	if(i < OK_NR_PRIVATE_PAGES){
+		pg = ok_private_page+i;
+		__set_bit(i, ok_private_pg_bitmap);
 		pg_ext = lookup_page_ext(pg);
 		pg_ext->pid = current->pid;
 	} else {
-		printk("ok: out of protected memory pages.\n");
+		printk("ok: out of private memory pages.\n");
 		pg = NULL;
 	}
-	spin_unlock(&ok_protected_pg_lock);
+	spin_unlock(&ok_private_pg_lock);
 	return pg;
 }
 
-bool __ok_protected_phys_addr(unsigned long paddr)
+bool __ok_private_phys_addr(unsigned long paddr)
 {
 	unsigned long pfn;
 
 	pfn = (paddr >> PAGE_SHIFT);
 
-	if((pfn < ok_protected_pfn_start) || (pfn > ok_protected_pfn_end)){
+	if((pfn < ok_private_pfn_start) || (pfn > ok_private_pfn_end)){
 		return false;
 	}
 	return true;
 }
 
-int __ok_free_protected_page(struct page *pg)
+int __ok_free_private_page(struct page *pg)
 {
 	int i;
 	unsigned long pfn;
@@ -4314,17 +4302,17 @@ int __ok_free_protected_page(struct page *pg)
 
 	pfn = page_to_pfn(pg);
 
-	if((pfn < ok_protected_pfn_start) || (pfn > ok_protected_pfn_end)){
-		printk("OK: tried to free invalid protected page (%#lx) pfn (%#lx) vaddr (%#lx)\n",
+	if((pfn < ok_private_pfn_start) || (pfn > ok_private_pfn_end)){
+		printk("OK: tried to free invalid private page (%#lx) pfn (%#lx) vaddr (%#lx)\n",
 		       (unsigned long)(pg), page_to_pfn(pg), (unsigned long)page_address(pg));
 		ret = 1;
 		goto fail;
 	}
 
-	i = (pfn - ok_protected_pfn_start);
+	i = (pfn - ok_private_pfn_start);
 	memset(page_address(pg), 0, PAGE_SIZE);
-	__clear_bit(i, ok_protected_pg_bitmap);
-	printk(KERN_ERR "ok: free protected page (%#lx) pfn (%#lx) vaddr (%#lx) index:=(%d)\n",
+	__clear_bit(i, ok_private_pg_bitmap);
+	printk(KERN_ERR "ok: free private page (%#lx) pfn (%#lx) vaddr (%#lx) index:=(%d)\n",
 	       (unsigned long)(pg), page_to_pfn(pg),
 	       (unsigned long)page_address(pg), i);
 	pg_ext = lookup_page_ext(pg);
@@ -4333,22 +4321,22 @@ fail:
 	return ret;
 }
 
-int ok_free_protected_page(struct page *pg)
+int ok_free_private_page(struct page *pg)
 {
 	int ret;
 
-	spin_lock(&ok_protected_pg_lock);
+	spin_lock(&ok_private_pg_lock);
 
-	ret = __ok_free_protected_page(pg);
+	ret = __ok_free_private_page(pg);
 
-	spin_unlock(&ok_protected_pg_lock);
+	spin_unlock(&ok_private_pg_lock);
 	return ret;
 }
 
-void ok_free_protected_page_by_id(pid_t pid)
+void ok_free_private_page_by_id(pid_t pid)
 {
 	/*
-	   (in-efficiently) scan protected pages and free ones allocated to the given (p)id
+	   (in-efficiently) scan private pages and free ones allocated to the given (p)id
 	   Will likely use container id + refcnt in future for container wide
 	   allocations. Probably better to maintain a per-id hash-map / list of allocations.
 	*/
@@ -4361,22 +4349,22 @@ void ok_free_protected_page_by_id(pid_t pid)
 		return;
 	}
 
-	spin_lock(&ok_protected_pg_lock);
-	pg = ok_protected_page;
+	spin_lock(&ok_private_pg_lock);
+	pg = ok_private_page;
 
-	for(i = 0; i < OK_NR_PROTECTED_PAGES; i++){
+	for(i = 0; i < OK_NR_PRIVATE_PAGES; i++){
 		if((pg_ext = lookup_page_ext(pg + i))){
 			if(pg_ext->pid == pid){
-				__ok_free_protected_page(pg+i);
+				__ok_free_private_page(pg+i);
 			}
 		} else {
 			continue;
 		}
 	}
-	spin_unlock(&ok_protected_pg_lock);
+	spin_unlock(&ok_private_pg_lock);
 }
 
-bool ok_allow_protected_access(unsigned long phys_addr)
+bool ok_allow_private_access(unsigned long phys_addr)
 {
 	/* Just do pid check for now - expand into container id check, etc. later */
 	struct page *pg;
@@ -4424,7 +4412,9 @@ static void __init printk_constants(void)
 int __init vmx_init(void)
 {
 	int r, cpu;
-
+	int i;
+	struct page *pg;
+	
         if (!cpu_has_vmx()) {
 		printk(KERN_ERR "vmx: CPU does not support VT-x\n");
 		return -EIO;
@@ -4533,9 +4523,22 @@ int __init vmx_init(void)
 	 * text regions, etc. */
 	protect_kernel_integrity(init_ept_root);
 
-#if 0
-       (void)ok_init_protected_pages();
+#if defined (OKERNEL_PRIVATE_MEMORY)
+
+       (void)ok_init_private_pages();
+
+	/* Example of the kind of memory protection we can provide:
+	 * unmap 'private pages' from the master EPT tables 
+	 */
+	spin_lock(&ok_private_pg_lock);
+	pg = ok_private_page;
+
+	for(i = 0; i < OK_NR_PRIVATE_PAGES; i++){
+		(void)modify_ept_physaddr_perms(init_ept_root, page_to_phys(pg + i), 0);
+	}
+	spin_unlock(&ok_private_pg_lock);
 #endif
+       
 #if 0
 	if ((r = okmm_init())) {
 		r = -ENOMEM;

@@ -68,11 +68,11 @@ int vmcall6(unsigned int cmd, unsigned long arg1, unsigned long arg2, unsigned l
 void do_page_fault_r(struct pt_regs *regs, unsigned long error_code, unsigned long address);
 
 
-/* Enforce rudimentary protected interface */
-//#define OKERNEL_PROTECTED_MEMORY
+/* Enforce rudimentary private interface */
+#define OKERNEL_PRIVATE_MEMORY
 extern struct page_ext_operations page_okernel_ops;
 
-struct protected_data {
+struct private_data {
         /* This is a physical address we will ask the kernel vuln module to
            access.
         */
@@ -84,10 +84,10 @@ struct protected_data {
         */
         char *p_data;
 };
-extern unsigned long ok_protected_pfn_start;
-extern unsigned long ok_protected_pfn_end;
-struct page *ok_alloc_protected_page(void);
-int ok_free_protected_page(struct page *pg);
+extern unsigned long ok_private_pfn_start;
+extern unsigned long ok_private_pfn_end;
+struct page *ok_alloc_private_page(void);
+int ok_free_private_page(struct page *pg);
 
 
 /* Use trace_printk instead of printk */
@@ -198,7 +198,7 @@ void okernel_enter_test(unsigned long flags);
 
 void okernel_schedule_helper(void);
 void okernel_dump_stack_info(void);
-bool __ok_protected_phys_addr(unsigned long paddr);
-void ok_free_protected_page_by_id(pid_t pid);
+bool __ok_private_phys_addr(unsigned long paddr);
+void ok_free_private_page_by_id(pid_t pid);
 #endif
 #endif /* _LINUX_OKERNEL_H */

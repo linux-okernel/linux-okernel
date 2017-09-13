@@ -58,11 +58,11 @@ MODULE_DESCRIPTION("Okernel intra-kernel protection");
 
 #define OKERNEL_ON_CMD _IOW(MAGIC_NO, 0, unsigned int)
 
-/* Rudimentary protected memory user space ioctl interface */
-#define OKERNEL_ALLOCATE_PROTECTED_PAGE _IOR(MAGIC_NO, 1, unsigned long)
-#define OKERNEL_FREE_PROTECTED_PAGE     _IOW(MAGIC_NO, 2, unsigned long)
-#define OKERNEL_PROTECTED_PAGE_READ     _IOW(MAGIC_NO, 3, char *)
-#define OKERNEL_PROTECTED_PAGE_WRITE    _IOW(MAGIC_NO, 4, char *)
+/* Rudimentary private memory user space ioctl interface */
+#define OKERNEL_ALLOCATE_PRIVATE_PAGE _IOR(MAGIC_NO, 1, unsigned long)
+#define OKERNEL_FREE_PRIVATE_PAGE     _IOW(MAGIC_NO, 2, unsigned long)
+#define OKERNEL_PRIVATE_PAGE_READ     _IOW(MAGIC_NO, 3, char *)
+#define OKERNEL_PRIVATE_PAGE_WRITE    _IOW(MAGIC_NO, 4, char *)
 
 static struct class *okernel_dev_class;
 static int major_no;
@@ -312,10 +312,10 @@ long ok_device_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 	unsigned long val;
 	int ret;
 	struct thread_info *ti;
-#if 0
+#if 1
 	struct page *pg;
 	unsigned long phys_addr = 0;
-	struct protected_data pd;
+	struct private_data pd;
 	unsigned long pfn;
 	unsigned long p_addr;
 	char *p;
@@ -325,31 +325,31 @@ long ok_device_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 	HDEBUG("called.\n");
 	switch(cmd)
 	{
-#if 0
-		/* Really we should do an mmap interface above protected pages - this will suffice for now */
-	case OKERNEL_ALLOCATE_PROTECTED_PAGE:
-		if(!(pg = ok_alloc_protected_page())){
-			printk("ok: failed to alloc protected page.\n");
+#if 1
+		/* Really we should do an mmap interface above private pages - this will suffice for now */
+	case OKERNEL_ALLOCATE_PRIVATE_PAGE:
+		if(!(pg = ok_alloc_private_page())){
+			printk("ok: failed to alloc private page.\n");
 			return -EINVAL;
 		}
 
 		phys_addr = page_to_phys(pg);
 
-		printk("ok: allocated protected page at phys addr (%#lx)\n", phys_addr);
+		printk("ok: allocated private page at phys addr (%#lx)\n", phys_addr);
 
 		if(copy_to_user((void*)arg, &phys_addr, sizeof(unsigned long))){
 			return -EFAULT;
 		}
 		return 0;
 		break;
-	case OKERNEL_FREE_PROTECTED_PAGE:
+	case OKERNEL_FREE_PRIVATE_PAGE:
 		phys_addr = arg;
 		printk("ok: Passed physical Address for permission removal:=(%#lx)\n", phys_addr);
-		(void)ok_free_protected_page(pfn_to_page(__phys_to_pfn(phys_addr)));
+		(void)ok_free_private_page(pfn_to_page(__phys_to_pfn(phys_addr)));
 		return 0;
 		break;
-	case OKERNEL_PROTECTED_PAGE_READ:
-		copy_from_user(&pd, (void*)arg, sizeof(struct protected_data));
+	case OKERNEL_PRIVATE_PAGE_READ:
+		copy_from_user(&pd, (void*)arg, sizeof(struct private_data));
 		p_addr = pd.p_addr;
 
 		printk("OK page reaad: Passed physical Address <%#lx>\n", p_addr);
@@ -357,7 +357,7 @@ long ok_device_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 		/* In range? */
 		pfn = __phys_to_pfn(p_addr);
 
-		if((pfn < ok_protected_pfn_start) || (pfn > ok_protected_pfn_end)){
+		if((pfn < ok_private_pfn_start) || (pfn > ok_private_pfn_end)){
 			return -EINVAL;
 		}
 
@@ -370,8 +370,8 @@ long ok_device_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 		       p_addr, (unsigned long)v_addr, p);
 		copy_to_user(pd.p_data, p, PAGE_SIZE);
 		break;
-	case OKERNEL_PROTECTED_PAGE_WRITE:
-		copy_from_user(&pd, (void*)arg, sizeof(struct protected_data));
+	case OKERNEL_PRIVATE_PAGE_WRITE:
+		copy_from_user(&pd, (void*)arg, sizeof(struct private_data));
 		p_addr = pd.p_addr;
 
 		printk("OK page write: Passed physical Address <%#lx>\n", p_addr);
@@ -379,7 +379,7 @@ long ok_device_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 		/* In range? */
 		pfn = __phys_to_pfn(p_addr);
 
-		if((pfn < ok_protected_pfn_start) || (pfn > ok_protected_pfn_end)){
+		if((pfn < ok_private_pfn_start) || (pfn > ok_private_pfn_end)){
 			return -EINVAL;
 		}
 
