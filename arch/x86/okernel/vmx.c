@@ -818,7 +818,7 @@ int do_split_2M_mapping(epte_t* root, u64 paddr, int cache)
 
         phys = page_to_phys(pg);
 	memset(v, 0, PAGESIZE);
-	HDEBUG("PML1 virt (%llX) phys (%llX)\n", (unsigned long)v, (unsigned long)phys);
+	HDEBUG("PML1 virt (%lX) phys (%lX)\n", (unsigned long)v, (unsigned long)phys);
 
 	q = v;
 	for(i = 0; i < n_entries; i++){
@@ -1058,9 +1058,8 @@ int set_clr_ept_page_flags(epte_t *root, u64 paddr,
 }
 
 
-#if 0
 /* Need to sort out code duplication amongst replace/modify/rmap ept pages */
-int remap_ept_page(struct vmx_vcpu *vcpu, u64 paddr, u64 new_paddr)
+int remap_ept_page(epte_t *root, u64 paddr, u64 new_paddr)
 {
 
 	unsigned long *pml1_p;
@@ -1072,7 +1071,7 @@ int remap_ept_page(struct vmx_vcpu *vcpu, u64 paddr, u64 new_paddr)
 
 	HDEBUG("Check or split 2M mapping at (%#lx)\n", (unsigned long)split_addr);
 
-	if(!(split_2M_mapping(vcpu, split_addr))){
+	if(!(split_2M_mapping(root, split_addr))){
 		printk(KERN_ERR "okernel %s: couldn't split 2MB mapping for (%#lx)\n",
 		       __func__, (unsigned long)paddr);
 		return 0;
@@ -1081,7 +1080,7 @@ int remap_ept_page(struct vmx_vcpu *vcpu, u64 paddr, u64 new_paddr)
 	HDEBUG("Split or check ok: looking for pte for paddr (%#lx)\n",
 		(unsigned long)paddr);
 
-	if(!(pml1_p = find_pt_entry(vcpu, paddr))){
+	if(!(pml1_p = find_pt_entry(root, paddr))){
 		printk(KERN_ERR "okernel: failed to find pte for (%#lx)\n",
 		       (unsigned long)paddr);
 		return 0;
@@ -1110,7 +1109,6 @@ int remap_ept_page(struct vmx_vcpu *vcpu, u64 paddr, u64 new_paddr)
 	HDEBUG("Done for pa (%#lx)\n", (unsigned long)paddr);
 	return 1;
 }
-#endif
 
 
 static unsigned long  guest_physical_page_address(unsigned long addr,
@@ -2065,18 +2063,16 @@ static void destroy_eptp(unsigned long root_hpa)
 	return;
 }
 
-static u64 copy_eptp(epte_t* root)
+epte_t *copy_eptp(epte_t* root)
 {
 	// First alloc physical pages for the PML4 table and a single
 	// PML3/PDPT table (gives enough to map 512GB of physical memory
 	// for now).
-	u64 eptp;
 	struct page *pml4_pg;
 	struct page *pml3_pg;
 
 	void *pml4_v = NULL;
 	void *pml3_v = NULL;
-	u64   pml4_p;
 	u64   pml3_p;
 
 	u64 *pml4_table = NULL;
@@ -2174,13 +2170,16 @@ static u64 copy_eptp(epte_t* root)
 			}
 		}
 	}
-		
+	return pml4_v;
+}
+
+	/*
 	// Create eptp top-level pointer (should be same args as in construct_eptp
 	pml4_p = page_to_phys(pml4_pg);
 	eptp = VMX_EPT_DEFAULT_MT | VMX_EPT_DEFAULT_GAW << VMX_EPT_GAW_EPTP_SHIFT;
 	eptp |= (pml4_p & PAGE_MASK);
 	return eptp;
-}
+	*/
 
 
 
@@ -3456,37 +3455,51 @@ static int grant_all(epte_t *root, unsigned long gpa,
 	return 0;
 }
 
-#if 0
+
 /*
  * Handler for ept violations that are a result of access to private pages
  */
-int vmexit_private_page(struct vmx_vcpu *vcpu)
+int vmexit_private_page(struct vmx_vcpu *vcpu, unsigned long gp_addr)
 {
 	uid_t uid;
 	pid_t pid;
 	char *comm;
-	unsigned long gp_addr = vmcs_readl(GUEST_PHYSICAL_ADDRESS);
-	get_upc(&uid, &pid, &comm);
+	epte_t *root = __va(vcpu->eptp & PAGE_MASK);
+
+        get_upc(&uid, &pid, &comm);
 
 	if(ok_allow_private_access(gp_addr)){
 		HDEBUG("Would allow access to private page.\n");
-		//(void)add_ept_page_perms(vcpu, gp_addr);
-		//OKDEBUG("Allow private access for uid %d pid %d command %s\n",
-		//	uid, pid, comm);
+		// Check if already using non-master EPT: if not start using one
+		if(root == init_ept_root){
+			if(!(root = copy_eptp(init_ept_root))){
+				HDEBUG("Failed to copy eptp.\n");
+				BUG();
+			}
+			HDEBUG("Created new root ept from master.\n");
+			vcpu->eptp = construct_eptp(__pa(root));
+			vmx_get_cpu(vcpu);
+			vmcs_write64(EPT_POINTER, vcpu->eptp);
+			vmx_put_cpu(vcpu);
+		}
+		if(!modify_ept_physaddr_perms(root, gp_addr, EPT_R | EPT_W)){
+			HDEBUG("Failed to modify private page perms.\n");
+			BUG();
+		}
+		HDEBUG("Allow private access for uid %d pid %d command %s\n", uid, pid, comm);
 	} else {
-		HDEBUG("Deny access to private page.\n");
-		//OKSEC("Deny private access for uid %d pid %d command %s\n",
-		      uid, pid, comm);
+		HDEBUG("Deny private access for uid %d pid %d command %s\n", uid, pid, comm);
 		/*
 		 * Map in 'dummy' page for now  - need to be careful
 		 * not to create another vulnerability.
 		 */
-		//(void)remap_ept_page(vcpu, gp_addr,
-		//		     ok_get_private_dummy_paddr());
+		if(!remap_ept_page(root, gp_addr, ok_get_private_dummy_paddr())){
+			HDEBUG("Failed to remap dummy page.\n");
+			BUG();
+		}
 	}
 	return 1;
 }
-#endif
 
 /* 
  * Handler for ept violation that are a result of page walks or the
@@ -3697,14 +3710,13 @@ static int vmx_handle_EPT_violation(struct vmx_vcpu *vcpu)
 
 	spin_lock(&init_ept_root_lock);
 	
-#if 1
 	/* Grant access to private pages lazily */
 	if(__ok_private_phys_addr(gpa)){
 		HDEBUG("Private page access.\n");
-                //ret = vmexit_private_page(vcpu);
+		ret = vmexit_private_page(vcpu, gpa);
 		goto done;
 	}
-#endif
+	
 	/* Guest linear (virtual address) is valid */
 	if(qual & EPT_GLV){
 		/* 
@@ -4183,7 +4195,6 @@ struct page_ext_operations page_okernel_ops = {
 	.init = init_okernel,
 };
 
-#if 1
 /* Rudimentry 'private' memory allocator  - use PG_private flag for consistency checks */
 void ok_init_private_pages(void)
 {
@@ -4377,7 +4388,6 @@ bool ok_allow_private_access(unsigned long phys_addr)
 	}
 	return false;
 }
-#endif
 
 static void __init printk_constants(void)
 {
