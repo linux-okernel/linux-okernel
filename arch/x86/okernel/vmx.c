@@ -3494,6 +3494,7 @@ int vmexit_private_page(struct vmx_vcpu *vcpu, unsigned long gp_addr)
 		 * Map in 'dummy' page for now  - need to be careful
 		 * not to create another vulnerability.
 		 */
+		/*
 		list_for_each(q, root_list){
 			root_entry = list_entry(q, struct ept_root_list, list);
 			if(root_entry->root != vcpu->ept_root){
@@ -3503,6 +3504,13 @@ int vmexit_private_page(struct vmx_vcpu *vcpu, unsigned long gp_addr)
 					BUG();
 				}
 			}
+		}
+		*/
+		if(!remap_ept_page(init_ept_root, gp_addr,
+				   ok_get_private_dummy_paddr())){
+			HDEBUG("Failed to remap dummy page.\n");
+			printk("Failed to remap dummy page.\n");
+			BUG();
 		}
 	}
 	return 1;
