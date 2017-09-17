@@ -2029,6 +2029,11 @@ static void destroy_eptp(epte_t *root)
 	return;
 }
 
+/*
+ * Todo: Need to make sure pages allocated here are removed from any 
+ * EPT mappings. Need to do this in general for pages that should
+ * only accesible to R-mode.
+ */
 epte_t *copy_eptp(epte_t *root)
 {
 	/*
