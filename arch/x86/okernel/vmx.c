@@ -1981,7 +1981,51 @@ static void ept_invalidate_global(struct vmx_vcpu *vcpu)
 
 static void destroy_eptp(epte_t *root)
 {
-	// Do nothing yet
+	int i, j, k;
+	u64 *pml4  = NULL;
+	u64 *pml3  = NULL;
+	u64 *pml2  = NULL;
+	u64 *pml1  = NULL;
+	unsigned long n_entries = PAGESIZE / 8;
+	
+	pml4 = (u64 *)root;
+
+	/* Do a depth-first freeing of the tree page_table pages */
+	for(i = 0; i < n_entries; i++){
+		/* This points us at a PML3 table */
+		if(pml4[i] == 0){
+			continue;
+		}
+			      
+		pml3 = (u64 *)epte_page_vaddr(pml4[i]);
+
+		for(j = 0; j < n_entries; j++){
+			/* This points us at either a PML2 table or a 1GB page */
+			if(pml3[j] == 0){
+				continue;
+			}
+			if(pml3[j] & EPT_PAGE){
+				continue;
+			}
+
+			pml2 = (u64 *)epte_page_vaddr(pml3[j]);
+
+			for(k = 0; k < n_entries; k++){
+				/* This points us at either a PML1 table or a 2Mb page */
+				if(pml2[k] == 0){
+					continue;
+				}
+				if(pml2[k] & EPT_PAGE){
+					continue;
+				}
+				pml1 = (u64 *)epte_page_vaddr(pml2[k]);
+				(void)free_pages((unsigned long)pml1, 0);
+			}
+			(void)free_pages((unsigned long)pml2, 0);
+		}
+		(void)free_pages((unsigned long)pml3, 0);
+	}
+	(void)free_pages((unsigned long)pml4, 0);
 	return;
 }
 
@@ -2015,7 +2059,7 @@ epte_t *copy_eptp(epte_t *root)
 	unsigned long pml2_entry;
 	
 	int i, j, k;
-	
+
 	pml4_pg = alloc_page(GFP_ATOMIC);
 	pml3_pg = alloc_page(GFP_ATOMIC);
 
