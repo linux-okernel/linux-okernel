@@ -170,8 +170,10 @@ struct vmx_vcpu {
 
 	//struct mmu_notifier mmu_notifier;
 	struct ept_root_list *ept_root_entry;
-	spinlock_t ept_lock;
+	spinlock_t *ept_root_lock;
+	epte_t *ept_root;
 	unsigned long eptp;
+
 	bool ept_ad_enabled;
 	u64 stack_clone_paddr;
 	u64 stack_clone_vaddr;

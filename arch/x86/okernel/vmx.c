@@ -1405,11 +1405,11 @@ int clone_kstack2(struct vmx_vcpu *vcpu, unsigned long perms)
         /* Remove ept write perm on the stack page, don't actuall
 	 * clone anymore. */
 	//spin_lock_irqsave(&init_ept_root_lock,flags);
-	spin_lock(&init_ept_root_lock);
-	modify_ept_physaddr_perms(init_ept_root, paddr, perms);
+	spin_lock(vcpu->ept_root_lock);
+	modify_ept_physaddr_perms(vcpu->ept_root, paddr, perms);
 	ept_sync_global();
 	ept_invalidate_global(vcpu);
-	spin_unlock(&init_ept_root_lock);
+	spin_unlock(vcpu->ept_root_lock);
 	//spin_unlock_irqrestore(&init_ept_root_lock,flags);
 	return 1;
 }
@@ -2660,14 +2660,17 @@ static struct vmx_vcpu * vmx_create_vcpu(struct nr_cloned_state* cloned_thread)
 	 * imply a full flush).
 	 */
 	vcpu->vpid = 0;
-
 	vcpu->cpu = -1;
-
-	spin_lock_init(&vcpu->ept_lock);
-
-	// Just use the master table for all nr_mode processes for now
-	vcpu->eptp = construct_eptp(__pa(init_ept_root));
-
+	
+	/*
+	 * Just use the master table for all nr_mode processes for now.
+	 * Need to define the behaviour we want on fork().
+	 *
+	 */
+	vcpu->ept_root = init_ept_root;
+	vcpu->eptp = construct_eptp(__pa(vcpu->ept_root));
+	vcpu->ept_root_lock = &init_ept_root_lock;
+	
 	vmx_get_cpu(vcpu);
 
 	vmx_setup_vmcs(vcpu);
@@ -2725,12 +2728,13 @@ static void vmx_destroy_vcpu(struct vmx_vcpu *vcpu)
 	spin_unlock(&init_ept_root_lock);
 	//spin_unlock_irqrestore(&init_ept_root_lock, flags);
 
+	/*
 	if(root != init_ept_root){
 		destroy_eptp(root);
 		list_del(&vcpu->ept_root_entry->list);
-		kfree(vcpu->ept_root_entry);
+		//kfree(vcpu->ept_root_entry);
 	}
-	
+	*/
 	vmcs_clear(vcpu->vmcs);
 	__this_cpu_write(local_vcpu, NULL);
 	vmx_put_cpu(vcpu);
@@ -2967,13 +2971,13 @@ static int vmx_handle_EPT_misconfig(struct vmx_vcpu *vcpu)
 	vmx_put_cpu(vcpu);
 
 	//spin_lock_irqsave(&init_ept_root_lock,flags);
-	spin_lock(&init_ept_root_lock);	
-	if((pml2_e =  find_pd_entry(init_ept_root, gp_addr))){
-		epte = ept_page_entry(init_ept_root, gp_addr);
+	spin_lock(vcpu->ept_root_lock);	
+	if((pml2_e =  find_pd_entry(vcpu->ept_root, gp_addr))){
+		epte = ept_page_entry(vcpu->ept_root, gp_addr);
 	} else {
 		epte = 0;
 	}
-	spin_unlock(&init_ept_root_lock);
+	spin_unlock(vcpu->ept_root_lock);
 	//spin_unlock_irqrestore(&init_ept_root_lock, flags);
 	printk(warning, gp_addr, (pml2_e) ? *pml2_e : 0, (epte) ? *epte : 0);
 	return 0;
@@ -3497,9 +3501,11 @@ int vmexit_private_page(struct vmx_vcpu *vcpu, unsigned long gp_addr)
 			list_add(&vcpu->ept_root_entry->list, &ept_roots.list);
 
 			HDEBUG("Created new root ept from master.\n");
+			vcpu->ept_root = root;
 			vcpu->eptp = construct_eptp(__pa(root));
 			vmx_get_cpu(vcpu);
 			vmcs_write64(EPT_POINTER, vcpu->eptp);
+			ept_sync_global();
 			vmx_put_cpu(vcpu);
 		}
 		if(!modify_ept_physaddr_perms(root, gp_addr, EPT_R | EPT_W)){
@@ -3720,7 +3726,7 @@ static int vmx_handle_EPT_violation(struct vmx_vcpu *vcpu)
 	
 	//root =  (epte_t*) __va((vcpu->eptp & PAGE_MASK));
 
-	root = init_ept_root;
+	root = vcpu->ept_root;
 	
 	vmx_get_cpu(vcpu);
 	qual = vmcs_readl(EXIT_QUALIFICATION);
@@ -3728,7 +3734,7 @@ static int vmx_handle_EPT_violation(struct vmx_vcpu *vcpu)
 	gva = (u64)vmcs_readl(GUEST_LINEAR_ADDRESS);
         vmx_put_cpu(vcpu);
 
-	spin_lock(&init_ept_root_lock);
+	spin_lock(vcpu->ept_root_lock);
 	
 	/* Grant access to private pages lazily */
 	if(__ok_private_phys_addr(gpa)){
@@ -3761,7 +3767,7 @@ static int vmx_handle_EPT_violation(struct vmx_vcpu *vcpu)
 		}
 	}
 done:
-	spin_unlock(&init_ept_root_lock);
+	spin_unlock(vcpu->ept_root_lock);
 	return ret;
 }
 
