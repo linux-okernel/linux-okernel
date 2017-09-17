@@ -74,7 +74,7 @@ struct nr_cloned_state {
 #define HPL_DEBUG
 #ifdef HPL_DEBUG
 #define HDEBUG(args) (printk(KERN_ERR "%s: cpu(%d) %s: ", vmx_nr_mode()?"NR":"R", raw_smp_processor_id(), __func__), printk args)
-#else
+xs#else
 #define HDEBUG(args)
 #endif
 //#define HPL_DEBUG2
@@ -146,6 +146,14 @@ enum vmx_reg {
 	NR_VCPU_REGS
 };
 
+typedef unsigned long epte_t;
+
+struct ept_root_list {
+	struct list_head list;
+	epte_t *root;
+};
+
+
 struct ept_pt_list {
 	struct list_head list;
 	pt_page* page;
@@ -161,7 +169,7 @@ struct vmx_vcpu {
 	int launched;
 
 	//struct mmu_notifier mmu_notifier;
-	struct ept_pt_list ept_table_pages;
+	struct ept_root_list *ept_root_entry;
 	spinlock_t ept_lock;
 	unsigned long eptp;
 	bool ept_ad_enabled;
@@ -225,7 +233,7 @@ static __always_inline unsigned long vmcs_readl(unsigned long field)
 #define VMX_EPT_FAULT_WRITE	0x02
 #define VMX_EPT_FAULT_INS	0x04
 
-typedef unsigned long epte_t;
+
 
 #define __EPTE_READ	0x01
 #define __EPTE_WRITE	0x02

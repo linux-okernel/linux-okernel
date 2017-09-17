@@ -84,9 +84,15 @@
 #include "okmm.h"
 
 
+/* Master ept root page table */
 epte_t *init_ept_root;
 //unsigned long flags;
 static DEFINE_SPINLOCK(init_ept_root_lock);
+
+/* Keep track of all the ept roots we have in flight*/
+struct ept_root_list ept_roots;
+/* Include the master on that list */
+struct ept_root_list init_ept_root_entry;
 
 static atomic_t vmx_enable_failed;
 
@@ -94,7 +100,7 @@ static DECLARE_BITMAP(vmx_vpid_bitmap, VMX_NR_VPIDS);
 static DEFINE_SPINLOCK(vmx_vpid_lock);
 
 
-#if 1
+
 /* Rudimentary 'private' memory allocator */
 #define OK_NR_PRIVATE_PAGES 8
 static DECLARE_BITMAP(ok_private_pg_bitmap, OK_NR_PRIVATE_PAGES);
@@ -108,7 +114,6 @@ unsigned long ok_private_pfn_end;
 void ok_free_private_page_by_id(pid_t pid);
 bool ok_allow_private_access(unsigned long phys_addr);
 unsigned long ok_get_private_dummy_paddr(void);
-#endif
 
 static void ept_invalidate_global(struct vmx_vcpu *vcpu);
 int modify_ept_physaddr_perms(epte_t *root, u64 paddr, unsigned long perms);
@@ -2057,17 +2062,19 @@ static void ept_invalidate_global(struct vmx_vcpu *vcpu)
 	on_each_cpu(ept_sync_helper, vcpu, 1);
 }
 
-static void destroy_eptp(unsigned long root_hpa)
+static void destroy_eptp(epte_t *root)
 {
 	// Do nothing yet
 	return;
 }
 
-epte_t *copy_eptp(epte_t* root)
+epte_t *copy_eptp(epte_t *root)
 {
-	// First alloc physical pages for the PML4 table and a single
-	// PML3/PDPT table (gives enough to map 512GB of physical memory
-	// for now).
+	/*
+	 * First alloc physical pages for the PML4 table and a single
+	 * PML3/PDPT table (gives enough to map 512GB of physical memory
+	 * for now).
+	 */
 	struct page *pml4_pg;
 	struct page *pml3_pg;
 
@@ -2172,16 +2179,6 @@ epte_t *copy_eptp(epte_t* root)
 	}
 	return pml4_v;
 }
-
-	/*
-	// Create eptp top-level pointer (should be same args as in construct_eptp
-	pml4_p = page_to_phys(pml4_pg);
-	eptp = VMX_EPT_DEFAULT_MT | VMX_EPT_DEFAULT_GAW << VMX_EPT_GAW_EPTP_SHIFT;
-	eptp |= (pml4_p & PAGE_MASK);
-	return eptp;
-	*/
-
-
 
 static u64 construct_eptp(unsigned long root_hpa)
 {
@@ -2655,7 +2652,8 @@ static struct vmx_vcpu * vmx_create_vcpu(struct nr_cloned_state* cloned_thread)
 	if (!vcpu->vmcs)
 		goto fail_vmcs;
 
-	/* Don't use unique VPIDs when sharing master table. According
+	/* 
+	 * Don't use unique VPIDs when sharing master table. According
 	 * to the Intel SDM, invvpid on an individual address should
 	 * remove all mappings for that vpid/address across all EP4TA
 	 * (PML4 pointers). (And may remove more than that...which may
@@ -2702,16 +2700,21 @@ fail_vmcs:
  */
 static void vmx_destroy_vcpu(struct vmx_vcpu *vcpu)
 {
+	/* 
+	 * Need to make this properly root ept list aware:
+	 * we may have other root epts in flight that need updating.
+	 */
 	epte_t *root;
 	
 	HDEBUG("called.\n");
-	//root =  (epte_t*)__va(vcpu->eptp);
-	root = init_ept_root;
-	
+	root =  (epte_t*)__va(vcpu->eptp);
+		
 	vmx_get_cpu(vcpu);
 	//spin_lock_irqsave(&init_ept_root_lock,flags);
 	spin_lock(&init_ept_root_lock);
-	if(!reset_ept_page(root,
+
+
+	if(!reset_ept_page(init_ept_root,
 			   vcpu->stack_clone_paddr,
 			   EPT_R | EPT_W | EPT_CACHE_2 | EPT_CACHE_3)){
 		HDEBUG("Failed to reset 1:1 mapping at (%#lx)\n",
@@ -2721,6 +2724,13 @@ static void vmx_destroy_vcpu(struct vmx_vcpu *vcpu)
 	ept_invalidate_global(vcpu);
 	spin_unlock(&init_ept_root_lock);
 	//spin_unlock_irqrestore(&init_ept_root_lock, flags);
+
+	if(root != init_ept_root){
+		destroy_eptp(root);
+		list_del(&vcpu->ept_root_entry->list);
+		kfree(vcpu->ept_root_entry);
+	}
+	
 	vmcs_clear(vcpu->vmcs);
 	__this_cpu_write(local_vcpu, NULL);
 	vmx_put_cpu(vcpu);
@@ -3457,7 +3467,8 @@ static int grant_all(epte_t *root, unsigned long gpa,
 
 
 /*
- * Handler for ept violations that are a result of access to private pages
+ * Handler for ept violations that are a result of access to private pages.
+ * Currently BUG() on most issues so we can debug - need to be more graceful.
  */
 int vmexit_private_page(struct vmx_vcpu *vcpu, unsigned long gp_addr)
 {
@@ -3476,6 +3487,15 @@ int vmexit_private_page(struct vmx_vcpu *vcpu, unsigned long gp_addr)
 				HDEBUG("Failed to copy eptp.\n");
 				BUG();
 			}
+			vcpu->ept_root_entry = (struct ept_root_list *)kmalloc(sizeof(struct ept_root_list),
+									       GFP_KERNEL);
+			if(!vcpu->ept_root_entry){
+				HDEBUG("Failed to alloc list entry.\n");
+				BUG();
+			}
+			vcpu->ept_root_entry->root = root;
+			list_add(&vcpu->ept_root_entry->list, &ept_roots.list);
+
 			HDEBUG("Created new root ept from master.\n");
 			vcpu->eptp = construct_eptp(__pa(root));
 			vmx_get_cpu(vcpu);
@@ -4389,6 +4409,13 @@ bool ok_allow_private_access(unsigned long phys_addr)
 	return false;
 }
 
+
+// ept root list handling routines
+void ept_root_remove(struct ept_root_list *root)
+{
+	// Do nothing yet
+}
+
 static void __init printk_constants(void)
 {
 	int l;
@@ -4418,6 +4445,8 @@ static void __init printk_constants(void)
 	printk(KERN_INFO "okernel module space end va %#lx pa %#lx\n",
 	       mod_end, guest_physical_address(mod_end, &l, &p));
 }
+
+
 
 int __init vmx_init(void)
 {
@@ -4529,15 +4558,26 @@ int __init vmx_init(void)
 		goto failed2;
 	}
 
-	/* This splits up the tables to match the perms of the kernel
-	 * text regions, etc. */
+	/* 
+	 * Maintain list of all the ept root pointers we have in flight:
+	 * Master + any copies/cloans that we create.
+	 */
+        INIT_LIST_HEAD(&ept_roots.list);
+	init_ept_root_entry.root = init_ept_root;
+	list_add(&init_ept_root_entry.list, &ept_roots.list);
+
+	/* 
+	 * This splits up the tables to match the perms of the kernel
+	 * text regions, etc. 
+	 */
 	protect_kernel_integrity(init_ept_root);
 
 #if defined (OKERNEL_PRIVATE_MEMORY)
 
        (void)ok_init_private_pages();
 
-	/* Example of the kind of memory protection we can provide:
+	/* 
+	 * Example of the kind of memory protection we can provide:
 	 * unmap 'private pages' from the master EPT tables 
 	 */
 	spin_lock(&ok_private_pg_lock);
@@ -4548,7 +4588,7 @@ int __init vmx_init(void)
 	}
 	spin_unlock(&ok_private_pg_lock);
 #endif
-       
+
 #if 0
 	if ((r = okmm_init())) {
 		r = -ENOMEM;
