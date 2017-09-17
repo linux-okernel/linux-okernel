@@ -2710,8 +2710,8 @@ static void vmx_destroy_vcpu(struct vmx_vcpu *vcpu)
 	epte_t *root;
 	
 	HDEBUG("called.\n");
-	root =  (epte_t*)__va(vcpu->eptp);
-		
+	root = vcpu->ept_root;
+	
 	vmx_get_cpu(vcpu);
 	//spin_lock_irqsave(&init_ept_root_lock,flags);
 	spin_lock(&init_ept_root_lock);
@@ -2728,13 +2728,14 @@ static void vmx_destroy_vcpu(struct vmx_vcpu *vcpu)
 	spin_unlock(&init_ept_root_lock);
 	//spin_unlock_irqrestore(&init_ept_root_lock, flags);
 
-	/*
+	
 	if(root != init_ept_root){
+		printk("Removing entry from ept_roots list...\n");
 		destroy_eptp(root);
 		list_del(&vcpu->ept_root_entry->list);
-		//kfree(vcpu->ept_root_entry);
+		kfree(vcpu->ept_root_entry);
 	}
-	*/
+       
 	vmcs_clear(vcpu->vmcs);
 	__this_cpu_write(local_vcpu, NULL);
 	vmx_put_cpu(vcpu);
