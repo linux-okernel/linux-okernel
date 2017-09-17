@@ -854,89 +854,6 @@ int reset_ept_page(epte_t* root, u64 paddr, unsigned long perms)
 	return 1;
 }
 
-#if 0
-/* Returns virtual mapping of the new page */
-u64 replace_ept_page(epte_t* root, u64 paddr, unsigned long perms)
-{
-	unsigned long *pml1_p;
-	pt_page *pt;
-	u64 orig_paddr;
-	u64 split_addr;
-	u64 ret;
-	
-	split_addr = (paddr & ~(PAGESIZE2M-1));
-
-	HDEBUG("Check or split 2M mapping at (%#lx)\n", (unsigned long)split_addr);
-
-	if(!(split_2M_mapping(root, split_addr))){
-		printk(KERN_ERR "okernel: %s couldn't split 2MB mapping for (%#lx)\n",
-		       __func__, (unsigned long)paddr);
-s		return 0;
-	}
-
-	HDEBUG("Split or check ok: looking for pte for paddr (%#lx)\n",
-		(unsigned long)paddr);
-
-	if(!(pml1_p = find_pt_entry(root, paddr))){
-		printk(KERN_ERR "okernel: failed to find pte for (%#lx)\n",
-		       (unsigned long)paddr);
-		return 0;
-	}
-
-	HDEBUG("pte val for paddr (%#lx) is (%#lx)\n",
-		(unsigned long)paddr, (unsigned long)*pml1_p);
-
-	orig_paddr = (*pml1_p & ~(OK_MOD + OK_TEXT + PAGESIZE-1));
-
-	HDEBUG("orig paddr (%#lx)\n", (unsigned long)orig_paddr);
-
-	// cid: where we use a master table, an address may already be remapped.
-	if(orig_paddr != paddr){
-		//printk(KERN_ERR "address mis-match in EPT tables.\n");
-		HDEBUG("paddr (%#lx) already re-mapped to (%#lx)\n",
-		       (unsigned long)paddr, (unsigned long)orig_paddr);
-		memset(__va(orig_paddr), 0, PAGESIZE);
-		HDEBUG("copying data from va (%#lx) to va of replacement physical (%#lx)\n",
-		       (unsigned long)__va(paddr), (unsigned long)__va(orig_paddr));
-		memcpy(__va(orig_paddr), __va(paddr), PAGESIZE);
-		HDEBUG("Done for pa (%#lx)\n", (unsigned long)paddr);
-		return (u64)__va(orig_paddr);
-	}
-	
-	pt   = (pt_page*)kmalloc(sizeof(pt_page), GFP_KERNEL);
-
-	if(!pt){
-		printk(KERN_ERR "okernel: failed to allocate PT table in replace ept page.\n");
-		return 0;
-	}
-
-	if(!(vt_alloc_page((void**)&pt[0].virt, &pt[0].phys))){
-		printk(KERN_ERR "okernel: failed to allocate PML1 table.\n");
-		kfree(pt);
-		return 0;
-	}
-
-	memset(pt[0].virt, 0, PAGESIZE);
-
-	HDEBUG("Replacement page pt virt (%llX) pt phys (%llX)\n",
-	       (unsigned long long)pt[0].virt, pt[0].phys);
-
-	HDEBUG("Replacing (%#lx) as pte entry with (%#lx)\n",
-	       (unsigned long)(*pml1_p), (unsigned long)(pt[0].phys | perms));
-
-	*pml1_p = pt[0].phys | perms;
-
-	HDEBUG("copying data from va (%#lx) to va of replacement physical (%#lx)\n",
-		(unsigned long)__va(orig_paddr), (unsigned long)pt[0].virt);
-
-	memcpy(pt[0].virt, __va(orig_paddr), PAGESIZE);
-	HDEBUG("Done for pa (%#lx)\n", (unsigned long)paddr);
-	ret = (u64)pt[0].virt;
-	kfree(pt);
-	return ret;
-}
-#endif
-
 /* Modify access permissions on an EPT mapping (W,R,X)  */
 /* To do: should also pay attemtion to eth EPT MT / PAT bits */
 int modify_ept_physaddr_perms(epte_t *root, u64 paddr, unsigned long perms)
@@ -2704,11 +2621,14 @@ fail_vmcs:
 static void vmx_destroy_vcpu(struct vmx_vcpu *vcpu)
 {
 	/* 
-	 * Need to make this properly root ept list aware:
+	 * Need to make this root ept list aware:
 	 * we may have other root epts in flight that need updating.
 	 */
 	epte_t *root;
-	
+	struct ept_root_list *root_entry;
+	struct list_head *q;
+	struct list_head *root_list = &ept_roots.list;
+
 	HDEBUG("called.\n");
 	root = vcpu->ept_root;
 	
@@ -2716,18 +2636,20 @@ static void vmx_destroy_vcpu(struct vmx_vcpu *vcpu)
 	//spin_lock_irqsave(&init_ept_root_lock,flags);
 	spin_lock(&init_ept_root_lock);
 
-
-	if(!reset_ept_page(init_ept_root,
-			   vcpu->stack_clone_paddr,
-			   EPT_R | EPT_W | EPT_CACHE_2 | EPT_CACHE_3)){
-		HDEBUG("Failed to reset 1:1 mapping at (%#lx)\n",
-		       (unsigned long) vcpu->stack_clone_paddr);
+	list_for_each(q, root_list){
+		root_entry = list_entry(q, struct ept_root_list, list);
+		if(!reset_ept_page(root_entry->root,
+				   vcpu->stack_clone_paddr,
+				   EPT_R | EPT_W | EPT_CACHE_2 | EPT_CACHE_3)){
+			HDEBUG("Failed to reset 1:1 mapping at (%#lx)\n",
+			       (unsigned long) vcpu->stack_clone_paddr);
+			BUG();
+		}
 	}
 	ept_sync_global();
 	ept_invalidate_global(vcpu);
 	spin_unlock(&init_ept_root_lock);
 	//spin_unlock_irqrestore(&init_ept_root_lock, flags);
-
 	
 	if(root != init_ept_root){
 		printk("Removing entry from ept_roots list...\n");
@@ -3481,6 +3403,9 @@ int vmexit_private_page(struct vmx_vcpu *vcpu, unsigned long gp_addr)
 	pid_t pid;
 	char *comm;
 	epte_t *root = __va(vcpu->eptp & PAGE_MASK);
+	struct ept_root_list *root_entry;
+	struct list_head *q;
+	struct list_head *root_list = &ept_roots.list;
 
         get_upc(&uid, &pid, &comm);
 
@@ -3520,9 +3445,15 @@ int vmexit_private_page(struct vmx_vcpu *vcpu, unsigned long gp_addr)
 		 * Map in 'dummy' page for now  - need to be careful
 		 * not to create another vulnerability.
 		 */
-		if(!remap_ept_page(root, gp_addr, ok_get_private_dummy_paddr())){
-			HDEBUG("Failed to remap dummy page.\n");
-			BUG();
+		list_for_each(q, root_list){
+			root_entry = list_entry(q, struct ept_root_list, list);
+			if(root_entry->root != vcpu->ept_root){
+				if(!remap_ept_page(root_entry->root, gp_addr,
+						   ok_get_private_dummy_paddr())){
+					HDEBUG("Failed to remap dummy page.\n");
+					BUG();
+				}
+			}
 		}
 	}
 	return 1;
