@@ -1933,7 +1933,7 @@ static void vmx_setup_constant_host_state(void)
 	vmcs_write16(HOST_SS_SELECTOR, __KERNEL_DS);  /* 22.2.4 */
 	vmcs_write16(HOST_TR_SELECTOR, GDT_ENTRY_TSS*8);  /* 22.2.4 */
 
-	native_store_idt(&dt);
+	store_idt(&dt);
 	vmcs_writel(HOST_IDTR_BASE, dt.address);   /* 22.2.4 */
 
 	asm("mov $.Lokernel_vmx_return, %0" : "=r"(tmpl));
@@ -1995,7 +1995,7 @@ static unsigned long segment_base(u16 selector)
 	v = get_desc_base(d);
 #ifdef CONFIG_X86_64
        if (d->s == 0 && (d->type == 2 || d->type == 9 || d->type == 11))
-               v |= ((unsigned long)((struct ldttss_desc64 *)d)->base3) << 32;
+               v |= ((unsigned long)((struct ldttss_desc *)d)->base3) << 32;
 #endif
 	return v;
 }
@@ -2059,7 +2059,7 @@ void vmx_update_nr_cpu_state(void)
 	rdmsrl(MSR_IA32_SYSENTER_EIP, tmpl);
 	vmcs_writel(GUEST_SYSENTER_EIP, tmpl);
 
-	native_store_idt(&idt);
+	store_idt(&idt);
 	vmcs_writel(GUEST_IDTR_BASE, idt.address);
 	vmcs_writel(GUEST_IDTR_LIMIT, idt.size);
 
@@ -2182,13 +2182,11 @@ void vmx_ept_sync_individual_addr(struct vmx_vcpu *vcpu, gpa_t gpa)
 
 static u64 construct_eptp(unsigned long root_hpa)
 {
-	u64 eptp;
+	u64 eptp = VMX_EPTP_MT_WB | VMX_EPTP_PWL_4;
 
 	/* TODO write the value reading from MSR */
-	eptp = VMX_EPT_DEFAULT_MT |
-		VMX_EPT_DEFAULT_GAW << VMX_EPT_GAW_EPTP_SHIFT;
 	if (cpu_has_vmx_ept_ad_bits())
-		eptp |= VMX_EPT_AD_ENABLE_BIT;
+		eptp |= VMX_EPTP_AD_ENABLE_BIT;
 	eptp |= (root_hpa & PAGE_MASK);
 
 	return eptp;
@@ -2343,7 +2341,7 @@ void get_cpu_state(struct vmx_vcpu *vcpu, struct vmcs_cpu_state* cpu_state)
 	cpu_state->idt_base = cloned_thread->idt_base;
 	cpu_state->idt_limit = cloned_thread->idt_limit;
 #else
-	native_store_idt(&idt);
+	store_idt(&idt);
 	cpu_state->idt_base = idt.address;
 	cpu_state->idt_limit = idt.size;
 #endif
