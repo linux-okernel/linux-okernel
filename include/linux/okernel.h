@@ -99,29 +99,38 @@ extern int do_ok_trace(unsigned long, const char *, const char *, ...);
 
 #define ok_trace(label, fmt, ...) do_ok_trace(_THIS_IP_, label, fmt, ## __VA_ARGS__)
 
-//#define ok_trace(fmt, ...) __ok_trace(_THIS_IP_, fmt, ## __VA_ARGS__)
 /*
-#define __ok_trace(ip, fmt, ...)			\
+#define ok_trace(label, fmt, ...) __ok_trace(fmt, ## __VA_ARGS__)
+
+#define __ok_trace(fmt, ...)			\
 	do {									\
 		trace_printk("[%s - cpu(%d) pid(%d)] : " fmt, vmx_nr_mode()?"NR":"R", raw_smp_processor_id(), current->pid, ## __VA_ARGS__);	\
-		do_ok_trace(ip, fmt, ## __VA_ARGS__);			\
 } while (0)
 */
 
+//#define HPE_LOOP_DETECT
 #define TDEBUG(p, fmt, args...)  if (p) snprintf(p, VCPUBUFLEN, \
 						 "pid(%d) %s: " fmt , \
 						 current->pid,__func__, ## args)
-//#define HPE_LOOP_DETECT
+
 #define OKERR(fmt, ...) ok_trace("OK_ERR", ok_pr_fmt(fmt), ## __VA_ARGS__)
-#define OKWARN(fmt, ...) ok_trace("OK_WARNING", ok_pr_fmt(fmt), ## __VA_ARGS__)
+#define OKWARN(fmt, ...) ok_trace("OK_WARN", ok_pr_fmt(fmt), ## __VA_ARGS__)
+#define OKINFO(fmt, ...) ok_trace("OK_INFO", ok_pr_fmt(fmt), ## __VA_ARGS__)
 #define OKLOG(fmt, ...) ok_trace("OK_LOG", ok_pr_fmt(fmt), ## __VA_ARGS__)
-#define OKDEBUG(fmt, ...) ok_trace("OK_DEBUG", ok_pr_fmt(fmt), ## __VA_ARGS__)
 #define OKSEC(fmt, ...) ok_trace("OK_SEC", ok_pr_fmt(fmt), ## __VA_ARGS__)
+
+//#define OKERNEL_DEBUG_FULL
+#ifdef OKERNEL_DEBUG_FULL
+#define OKDEBUG(fmt, ...) ok_trace("OK_DEBUG", ok_pr_fmt(fmt), ## __VA_ARGS__)
+#else
+#define OKDEBUG(fmt, ...)
+#endif
 
 #else /* !OKERNEL_DEBUG */
 #define TDEBUG(p, fmt, args...)
 #define OKERR(fmt, ...)
 #define OKWARN(fmt, ...)
+#define OKINFO(fmt, ...)
 #define OKLOG(fmt, ...)
 #define OKDEBUG(fmt, ...)
 #define OKSEC(fmt, ...)
