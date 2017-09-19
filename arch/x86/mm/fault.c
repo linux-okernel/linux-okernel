@@ -236,7 +236,7 @@ force_sig_info_fault(int si_signo, int si_code, unsigned long address,
 	info.si_code	= si_code;
 	info.si_addr	= (void __user *)address;
 	if (fault & VM_FAULT_HWPOISON_LARGE)
-		lsb = hstate_index_to_shift(VM_FAULT_GET_HINDEX(fault));
+		lsb = hstate_index_to_shift(VM_FAULT_GET_HINDEX(fault)); 
 	if (fault & VM_FAULT_HWPOISON)
 		lsb = PAGE_SHIFT;
 	info.si_addr_lsb = lsb;
@@ -397,14 +397,18 @@ static void dump_pagetable(unsigned long address)
 	pte_t *pte;
 
 #ifdef CONFIG_X86_PAE
-	printk("*pdpt = %016Lx ", pgd_val(*pgd));
+	pr_info("*pdpt = %016Lx ", pgd_val(*pgd));
 	if (!low_pfn(pgd_val(*pgd) >> PAGE_SHIFT) || !pgd_present(*pgd))
 		goto out;
+#define pr_pde pr_cont
+#else
+#define pr_pde pr_info
 #endif
 	p4d = p4d_offset(pgd, address);
 	pud = pud_offset(p4d, address);
 	pmd = pmd_offset(pud, address);
-	printk(KERN_CONT "*pde = %0*Lx ", sizeof(*pmd) * 2, (u64)pmd_val(*pmd));
+	pr_pde("*pde = %0*Lx ", sizeof(*pmd) * 2, (u64)pmd_val(*pmd));
+#undef pr_pde
 
 	/*
 	 * We must not directly access the pte in the highpte
@@ -416,9 +420,9 @@ static void dump_pagetable(unsigned long address)
 		goto out;
 
 	pte = pte_offset_kernel(pmd, address);
-	printk("*pte = %0*Lx ", sizeof(*pte) * 2, (u64)pte_val(*pte));
+	pr_cont("*pte = %0*Lx ", sizeof(*pte) * 2, (u64)pte_val(*pte));
 out:
-	printk("\n");
+	pr_cont("\n");
 }
 
 #else /* CONFIG_X86_64: */
@@ -531,7 +535,7 @@ NOKPROBE_SYMBOL(vmalloc_fault);
 
 #ifdef CONFIG_CPU_SUP_AMD
 static const char errata93_warning[] =
-KERN_ERR
+KERN_ERR 
 "******* Your BIOS seems to not contain a fix for K8 errata #93\n"
 "******* Working around it, but it may cause SEGVs or burn power.\n"
 "******* Please consider a BIOS update.\n"
@@ -566,7 +570,7 @@ static void dump_pagetable(unsigned long address)
 	if (bad_address(pgd))
 		goto bad;
 
-	printk("PGD %lx ", pgd_val(*pgd));
+	pr_info("PGD %lx ", pgd_val(*pgd));
 
 	if (!pgd_present(*pgd))
 		goto out;
@@ -575,7 +579,7 @@ static void dump_pagetable(unsigned long address)
 	if (bad_address(p4d))
 		goto bad;
 
-	printk("P4D %lx ", p4d_val(*p4d));
+	pr_cont("P4D %lx ", p4d_val(*p4d));
 	if (!p4d_present(*p4d) || p4d_large(*p4d))
 		goto out;
 
@@ -583,7 +587,7 @@ static void dump_pagetable(unsigned long address)
 	if (bad_address(pud))
 		goto bad;
 
-	printk("PUD %lx ", pud_val(*pud));
+	pr_cont("PUD %lx ", pud_val(*pud));
 	if (!pud_present(*pud) || pud_large(*pud))
 		goto out;
 
@@ -591,7 +595,7 @@ static void dump_pagetable(unsigned long address)
 	if (bad_address(pmd))
 		goto bad;
 
-	printk("PMD %lx ", pmd_val(*pmd));
+	pr_cont("PMD %lx ", pmd_val(*pmd));
 	if (!pmd_present(*pmd) || pmd_large(*pmd))
 		goto out;
 
@@ -599,12 +603,12 @@ static void dump_pagetable(unsigned long address)
 	if (bad_address(pte))
 		goto bad;
 
-	printk("PTE %lx", pte_val(*pte));
+	pr_cont("PTE %lx", pte_val(*pte));
 out:
-	printk("\n");
+	pr_cont("\n");
 	return;
 bad:
-	printk("BAD\n");
+	pr_info("BAD\n");
 }
 
 #endif /* CONFIG_X86_64 */
@@ -1271,10 +1275,6 @@ static inline bool smap_violation(int error_code, struct pt_regs *regs)
  * This routine handles page faults.  It determines the address,
  * and the problem, and then passes it off to one of the appropriate
  * routines.
- *
- * This function must have noinline because both callers
- * {,trace_}do_page_fault() have notrace on. Having this an actual function
- * guarantees there's a function trace entry.
  */
 static noinline void
 __do_page_fault(struct pt_regs *regs, unsigned long error_code,
@@ -1549,35 +1549,6 @@ good_area:
 }
 NOKPROBE_SYMBOL(__do_page_fault);
 
-dotraplinkage void notrace
-do_page_fault(struct pt_regs *regs, unsigned long error_code)
-{
-	unsigned long address = read_cr2(); /* Get the faulting address */
-	enum ctx_state prev_state;
-
-	/*
-	 * We must have this function tagged with __kprobes, notrace and call
-	 * read_cr2() before calling anything else. To avoid calling any kind
-	 * of tracing machinery before we've observed the CR2 value.
-	 *
-	 * exception_{enter,exit}() contain all sorts of tracepoints.
-	 */
-
-	prev_state = exception_enter();
-#if defined(CONFIG_OKERNEL)
-#ifdef HPE_DEBUG
-       if(is_in_vmx_nr_mode()){
-               HDEBUG("address=%#lx error_code=%#lx\n", address, error_code);
-               //BXMAGICBREAK;
-       }
-#endif
-#endif
-	__do_page_fault(regs, error_code, address);
-	exception_exit(prev_state);
-}
-NOKPROBE_SYMBOL(do_page_fault);
-
-#ifdef CONFIG_TRACING
 static nokprobe_inline void
 trace_page_fault_entries(unsigned long address, struct pt_regs *regs,
 			 unsigned long error_code)
@@ -1588,22 +1559,32 @@ trace_page_fault_entries(unsigned long address, struct pt_regs *regs,
 		trace_page_fault_kernel(address, regs, error_code);
 }
 
+/*
+ * We must have this function blacklisted from kprobes, tagged with notrace
+ * and call read_cr2() before calling anything else. To avoid calling any
+ * kind of tracing machinery before we've observed the CR2 value.
+ *
+ * exception_{enter,exit}() contains all sorts of tracepoints.
+ */
 dotraplinkage void notrace
-trace_do_page_fault(struct pt_regs *regs, unsigned long error_code)
+do_page_fault(struct pt_regs *regs, unsigned long error_code)
 {
-	/*
-	 * The exception_enter and tracepoint processing could
-	 * trigger another page faults (user space callchain
-	 * reading) and destroy the original cr2 value, so read
-	 * the faulting address now.
-	 */
-	unsigned long address = read_cr2();
+	unsigned long address = read_cr2(); /* Get the faulting address */
 	enum ctx_state prev_state;
 
 	prev_state = exception_enter();
-	trace_page_fault_entries(address, regs, error_code);
+#if defined(CONFIG_OKERNEL)
+#ifdef HPE_DEBUG
+       if(is_in_vmx_nr_mode()){
+               HDEBUG("address=%#lx error_code=%#lx\n", address, error_code);
+               //BXMAGICBREAK;
+       }
+#endif
+#endif
+	if (trace_pagefault_enabled())
+		trace_page_fault_entries(address, regs, error_code);
+
 	__do_page_fault(regs, error_code, address);
 	exception_exit(prev_state);
 }
-NOKPROBE_SYMBOL(trace_do_page_fault);
-#endif /* CONFIG_TRACING */
+NOKPROBE_SYMBOL(do_page_fault);
