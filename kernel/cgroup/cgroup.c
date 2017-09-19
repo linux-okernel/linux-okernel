@@ -131,16 +131,22 @@ static const char *cgroup_subsys_name[] = {
 #undef SUBSYS
 
 #define SUBSYS(_x) [_x ## _cgrp_id] = &_x ## _cgrp_subsys_enabled_key,
-/*static*/ struct static_key_true *cgroup_subsys_enabled_key[] = {
+static struct static_key_true *cgroup_subsys_enabled_key[] = {
 #include <linux/cgroup_subsys.h>
 };
 #undef SUBSYS
 
 #define SUBSYS(_x) [_x ## _cgrp_id] = &_x ## _cgrp_subsys_on_dfl_key,
-/*static*/ struct static_key_true *cgroup_subsys_on_dfl_key[] = {
+static struct static_key_true *cgroup_subsys_on_dfl_key[] = {
 #include <linux/cgroup_subsys.h>
 };
 #undef SUBSYS
+
+#if defined(CONFIG_OKERNEL)
+/* Allow okernel integrity measurement of the static_key targets */
+struct static_key_true **ok_cgrp_subsys_enabled_key = cgroup_subsys_enabled_key;
+struct static_key_true **ok_cgrp_subsys_on_dfl_key = cgroup_subsys_on_dfl_key;
+#endif
 
 /*
  * The default hierarchy, reserved for the subsystems that are otherwise

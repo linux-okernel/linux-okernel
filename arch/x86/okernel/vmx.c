@@ -164,8 +164,8 @@ struct key_tag {
 extern struct static_key_false sched_smt_present;
 extern struct static_key_false sched_numa_balancing;
 extern struct static_key_false sched_schedstats;
-extern struct static_key_true *cgroup_subsys_enabled_key[];
-extern struct static_key_true *cgroup_subsys_on_dfl_key[];
+extern struct static_key_true **ok_cgrp_subsys_enabled_key;
+extern struct static_key_true **ok_cgrp_subsys_on_dfl_key;
 #ifdef CONFIG_NF_TABLES
 extern struct static_key_false nft_trace_enabled;
 #endif
@@ -4605,8 +4605,9 @@ static void patch_addr_from_keys(void)
 	for(; p->key != NULL; p++)
 		add_patch_addr(p->key, p->tag);
 	for ((ssid) = 0; (ssid) < CGROUP_SUBSYS_COUNT; (ssid)++) {
-		add_patch_addr(&cgroup_subsys_enabled_key[ssid]->key, "cgroups");
-		add_patch_addr(&cgroup_subsys_on_dfl_key[ssid]->key,
+		add_patch_addr(&(ok_cgrp_subsys_enabled_key[ssid]->key),
+			       "cgroups");
+		add_patch_addr(&(ok_cgrp_subsys_on_dfl_key[ssid]->key),
 			       "cgroups_dfl");
 	}
 }
