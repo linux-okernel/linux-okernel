@@ -66,6 +66,19 @@
 #include <linux/compat.h>
 #include <linux/cred.h>
 #include <linux/gfp.h>
+#include <linux/jump_label.h>
+#include <linux/rbtree.h>
+
+/* The following #includes are for tracking of static_key patching*/
+#include <linux/cpuset.h>
+#include <linux/memcontrol.h>
+#include <linux/perf_event.h>
+#include <linux/page_owner.h>
+#include <linux/bpf-cgroup.h>
+#include <linux/frontswap.h>
+#include <linux/context_tracking_state.h>
+#include <linux/cgroup-defs.h>
+/* End of #includes for static_key patching*/
 
 #include <asm/mtrr.h>
 #include <asm/desc.h>
@@ -78,7 +91,7 @@
 #include <asm/preempt.h>
 #include <asm/tlbflush.h>
 #include <asm/e820/api.h>
-#include <asm/fixmap.h>			/* VSYSCALL_ADDR		*/
+#include <asm/fixmap.h>			/* VSYSCALL_ADDR */
 
 #include "constants2.h"
 #include "vmx.h"
@@ -136,6 +149,14 @@ static struct vmcs_config {
 
 struct vmx_capability vmx_capability;
 
+/* EPT violation context*/
+struct eptvc {
+	struct vmx_vcpu *vcpu;
+	unsigned long gpa; /* guest or non root physical address */
+	unsigned long gva; /* guest or non root virtual address */
+	unsigned long qual; /* The qualification from VMEXIT */
+};
+
 #define NR_FIXUP_PAGES 3
 static struct fixup_pages {
 	struct {
@@ -144,6 +165,106 @@ static struct fixup_pages {
 	} pages[NR_FIXUP_PAGES];
 	int index;
 } fixup_pages = {.index = 0};
+
+struct key_tag {
+	struct static_key *key;
+	char *tag;
+};
+
+extern struct static_key_false sched_smt_present;
+extern struct static_key_false sched_numa_balancing;
+extern struct static_key_false sched_schedstats;
+extern struct static_key_true **ok_cgrp_subsys_enabled_key;
+extern struct static_key_true **ok_cgrp_subsys_on_dfl_key;
+#ifdef CONFIG_NF_TABLES
+extern struct static_key_false nft_trace_enabled;
+#endif
+static struct key_tag static_key_tags[] = {
+	{&cpusets_pre_enable_key.key, "cpusets_pre_enable_key"},
+	{&cpusets_enabled_key.key, "cpusets_enabled_key"},
+	{&sched_smt_present.key, "sched_smt_present"},
+	{&sched_numa_balancing.key, "sched_numa_balancing"},
+	{&sched_schedstats.key, "sched_schedstats"},
+#ifdef CONFIG_NF_TABLES
+	{&nft_trace_enabled.key, "nft_trace_enabled"},
+#endif
+	{&memcg_sockets_enabled_key.key, "memcg_sockets_enabled_key"},
+	{&memcg_kmem_enabled_key.key, "memcg_kmem_enabled_key"},
+	{&perf_sched_events.key, "perf_sched_events"},
+#ifdef CONFIG_PAGE_OWNER
+	{&page_owner_inited.key, "page_owner_inited"},
+#endif
+#ifdef CONFIG_CGROUP_BPF
+	{&cgroup_bpf_enabled_key.key, "cgroup_bpf_enabled_key"},
+#endif
+	{&frontswap_enabled_key.key, "frontswap_enabled_key"},
+#ifdef CONFIG_CONTEXT_TRACKING
+	{&context_tracking_enabled.key, "context_tracking_enabled"},
+#endif
+	{NULL, NULL}
+};
+
+/* Container for addresses which might be patched. Currently we only
+ * handle patches which use the static_key mechanism, see:
+ * ./Documentation/static-keys.txt */
+struct patch_addr {
+	struct rb_node node;
+	unsigned long pa;
+	char *tag;
+};
+
+static struct rb_root patch_addresses = RB_ROOT;
+
+static struct patch_addr *mk_patch_addr(unsigned long pa, char *tag)
+{
+	struct patch_addr *p;
+	p = (struct patch_addr *)kmalloc(sizeof(*p), GFP_KERNEL);
+	if (!p)
+		return NULL;
+	p->pa = pa;
+	p->tag = tag;
+	return p;
+}
+
+static struct patch_addr *find_patch_addr(struct rb_root *root, unsigned long pa)
+{
+	struct rb_node *node = root->rb_node;
+
+	while (node) {
+		struct patch_addr *data = container_of(node, struct patch_addr,
+						       node);
+		if (pa < data->pa)
+			node = node->rb_left;
+		else if (pa > data->pa)
+			node = node->rb_right;
+		else
+			return data;
+	}
+	return NULL;
+}
+
+
+static int insert_patch_addr(struct rb_root *root, struct patch_addr *new)
+{
+	struct rb_node **data = &(root->rb_node), *parent = NULL;
+	/* Figure out where to put new node */
+	while (*data) {
+		struct patch_addr *this = container_of(*data, struct patch_addr,
+						       node);
+		parent = *data;
+		if (new->pa < this->pa)
+			data = &((*data)->rb_left);
+		else if (new->pa > this->pa)
+			data = &((*data)->rb_right);
+		else
+			return FALSE;
+	}
+	/* Add new node and rebalance tree. */
+	rb_link_node(&new->node, parent, data);
+	rb_insert_color(&new->node, root);
+
+	return TRUE;
+}
 
 
 // NJE BEGIN NEEDS TO GO
@@ -3456,13 +3577,12 @@ static void flags_from_qual(unsigned long qual, unsigned long *s,
 	*c = ((~*s) & EPT_PERM_MASK);
 }
 
-static int grant_all(struct vmx_vcpu *vcpu, unsigned long gpa,
-	      unsigned long qual, int level)
+static int grant_all(struct eptvc *e, int level)
 {
 	unsigned long s_flags, c_flags;
 	c_flags = OK_FLAGS;
 	s_flags = EPT_W | EPT_R | EPT_X;
-	if(set_clr_ept_page_flags(vcpu, gpa, s_flags, c_flags, level)){
+	if(set_clr_ept_page_flags(e->vcpu, e->gpa, s_flags, c_flags, level)){
 		return 1;
 	} else {
 		OKERR("set_clr_ept_page_flags failed.\n");
@@ -3503,16 +3623,16 @@ int vmexit_protected_page(struct vmx_vcpu *vcpu)
  * Handler for ept violation that are a result of page walks or the
  * dirty bit being  set
  */
-static int page_walk_ept_violation(struct vmx_vcpu *vcpu, unsigned long gpa,
-				   unsigned long qual)
+static int page_walk_ept_violation(struct eptvc *e)
 {
 	unsigned long s_flags, c_flags;
-	if (is_set_ept_page_flag(vcpu, gpa, OK_FLAGS)) {
+	if (is_set_ept_page_flag(e->vcpu, e->gpa, OK_FLAGS)) {
 		OKSEC("Clearing OK_FLAGS, allocated to page tables\n");
 	}
-	flags_from_qual(qual, &s_flags, &c_flags);
+	flags_from_qual(e->qual, &s_flags, &c_flags);
 	c_flags |= OK_FLAGS;
-	if(set_clr_ept_page_flags(vcpu, gpa, s_flags, c_flags, PG_LEVEL_NONE)){
+	if(set_clr_ept_page_flags(e->vcpu, e->gpa, s_flags, c_flags,
+				  PG_LEVEL_NONE)){
 		return 1;
 	} else {
 		OKERR("set_clr_ept_page_flags failed.\n");
@@ -3521,47 +3641,86 @@ static int page_walk_ept_violation(struct vmx_vcpu *vcpu, unsigned long gpa,
 	return 0;
 }
 
-static int kro_userspace_eptv(struct vmx_vcpu *vcpu, unsigned long gpa,
-			      unsigned long gva, unsigned long qual,
-			      int level, pgprot_t prot)
+static int kro_userspace_eptv(struct eptvc *e, int level)
 {
 	unsigned long ktp, kmp, kdp, kva, set, clr, eprot, n_eprot, *epte;
 	int l;
 	pgprot_t p;
-	ktp = ktext_page(vcpu, gpa);
-	kmp = kmod_page(vcpu, gpa);
-	kdp = kdata_page(vcpu, gpa);
-	epte = ept_page_entry(vcpu, gpa);
+	ktp = ktext_page(e->vcpu, e->gpa);
+	kmp = kmod_page(e->vcpu, e->gpa);
+	kdp = kdata_page(e->vcpu, e->gpa);
+	epte = ept_page_entry(e->vcpu, e->gpa);
 
 	if (ktp || kmp) {
 		OKERR("User space alias for kernel RO memory\n");
 		BUG();
 		return 0;
 	} else if (kdp) {
-		kva = kdp + (gpa - guest_physical_address(kdp, &l, &p));
+		kva = kdp + (e->gpa - guest_physical_address(kdp, &l, &p));
 		eprot = *epte & (EPT_W | EPT_R | EPT_X);
-		ept_flags_from_qual(qual, &set, &clr);
+		ept_flags_from_qual(e->qual, &set, &clr);
 		n_eprot = set | eprot;
 		OKDEBUG("VDSO fix up for protected 4k page %#lx"
 			" OK_DATA %d kernel va %#lx, user space va "
 			"%#lx EPT exit qual %#lx, new EPT prot %#lx\n",
-			gpa & ~(PAGESIZE - 1), (*epte & OK_DATA)?1:0,
-			kva, gva, qual, n_eprot);
-		if(!set_clr_ept_page_flags(vcpu, gpa, n_eprot, 0, level)) {
+			e->gpa & ~(PAGESIZE - 1), (*epte & OK_DATA)?1:0,
+			kva, e->gva, e->qual, n_eprot);
+		if(!set_clr_ept_page_flags(e->vcpu, e->gpa, n_eprot, 0, level)) {
 			OKERR("set_clr_ept_page_flags failed.\n");
 			BUG();
 			return 0;
 		}
-		add_fixup(gpa, n_eprot);
+		add_fixup(e->gpa, n_eprot);
 		return 1;
 	} else {
 		OKDEBUG("Protected 4k block %#lx released to user space"
 			" OK_TEXT %d OK_MOD %d OK_DATA %d no longer mapped by "
 			"kernel exit qual %#lx guest virtual %#lx\n",
-			gpa & ~(PAGESIZE - 1), (*epte & OK_TEXT)?1:0,
-			(*epte & OK_MOD)?1:0, (*epte & OK_DATA)?1:0, qual, gva);
-		return grant_all(vcpu, gpa, qual, level);
+			e->gpa & ~(PAGESIZE - 1), (*epte & OK_TEXT)?1:0,
+			(*epte & OK_MOD)?1:0, (*epte & OK_DATA)?1:0, e->qual,
+			e->gva);
+		return grant_all(e, level);
 	}
+}
+
+static int kro_mapped_eptv(struct eptvc *e, unsigned long ma, int level)
+{
+	/* if already mapped, it may be a legitimate patch, otherwise
+	 * it's a security issue */
+
+	unsigned long *epte, set, clr, eprot, n_eprot;
+	uid_t uid;
+	char *comm;
+	struct patch_addr *p;
+
+	epte = ept_page_entry(e->vcpu, e->gpa);
+	eprot = *epte & (EPT_W | EPT_R | EPT_X);
+	ept_flags_from_qual(e->qual, &set, &clr);
+	p = find_patch_addr(&patch_addresses, e->gpa);
+	uid = from_kuid(&init_user_ns, current_uid());
+	comm = current->comm;
+	/* New prots = guest prot + old prot */
+	n_eprot = set | eprot;
+	if (p)
+		OKDEBUG("Patch of pa %#lx with EPT prot %#lx for %s. Alias"
+			" for kernel protected code mapped at page %#lx being "
+			"created at page %#lx for virtual address %#lx, "
+			"new EPT prot %#lx, uid %d, command %s\n", e->gpa, eprot,
+			p->tag, ma, e->gva & ~(PAGESIZE2M - 1), e->gva, n_eprot,
+			uid, comm);
+	else
+		OKSEC("Physical address %#lx with EPT prot %#lx alias or change"
+		      " for kernel protected code mapped at page %#lx being "
+		      "created at page %#lx for virtual address %#lx, "
+		      "new EPT prot %#lx, uid %d, command %s\n", e->gpa, eprot,
+		      ma, e->gva & ~(PAGESIZE2M - 1), e->gva, n_eprot,
+		      uid, comm);
+	if(!set_clr_ept_page_flags(e->vcpu, e->gpa, n_eprot, 0, level)) {
+		OKERR("set_clr_ept_page_flags failed.\n");
+		BUG();
+		return 0;
+	}
+	return 1;
 }
 
 /*
@@ -3573,57 +3732,41 @@ static int kro_userspace_eptv(struct vmx_vcpu *vcpu, unsigned long gpa,
  * created. So we have to allow changes and log them.
  *
  */
-static int kernel_ro_ept_violation(struct vmx_vcpu *vcpu, unsigned long gpa,
-				   unsigned long gva, unsigned long qual)
+static int kernel_ro_ept_violation(struct eptvc *e)
 {
-	unsigned long *epte, set, clr, eprot, n_eprot, mapped;
+	unsigned long *epte, set, clr, eprot, ma;
 	int level;
 	pgprot_t prot;
-	uid_t uid;
-	char *comm;
 
-	BUG_ON(!guest_physical_page_address(gva, &level, &prot));
-	if (is_user_space(gva))
-		return kro_userspace_eptv(vcpu, gpa, gva, qual, level, prot);
+	BUG_ON(!guest_physical_page_address(e->gva, &level, &prot));
+	if (is_user_space(e->gva))
+		return kro_userspace_eptv(e, level);
 
-	epte = ept_page_entry(vcpu, gpa);
-	eprot = *epte & (EPT_W | EPT_R | EPT_X);
-	ept_flags_from_qual(qual, &set, &clr);
-
-	/* if already mapped, it's either a change or alias */
-	if ((mapped = kmapped_page(vcpu, gpa))) {
-		uid = from_kuid(&init_user_ns, current_uid());
-		comm = current->comm;
-		/* New prots = guest prot + old prot */
-		n_eprot = set | eprot;
-		OKSEC("Physical address %#lx with EPT prot %#lx alias or change"
-		      " for kernel protected code mapped at page %#lx being "
-		      "created at page %#lx for virtual address %#lx, "
-		      "new EPT prot %#lx, uid %d, command %s\n", gpa, eprot,
-		      mapped, gva & ~(PAGESIZE2M - 1), gva, n_eprot, uid, comm);
-		if(!set_clr_ept_page_flags(vcpu, gpa, n_eprot, 0, level)) {
-			OKERR("set_clr_ept_page_flags failed.\n");
-			BUG();
-			return 0;
-		}
+	if ((ma = kmapped_page(e->vcpu, e->gpa))) {
+		return kro_mapped_eptv(e, ma, level);
 	} else {
-		set_clr_ok_tags(gva, &set, &clr);
+		epte = ept_page_entry(e->vcpu, e->gpa);
+		eprot = *epte & (EPT_W | EPT_R | EPT_X);
+		ept_flags_from_qual(e->qual, &set, &clr);
+
+		set_clr_ok_tags(e->gva, &set, &clr);
 		/* We need to fix by tracking release */
 		if (set & EPT_X)
 			OKSEC("New executable code added to kernel "
 			      "Physical address %#lx with EPT prot %#lx no "
 			      "longer at original mapping. New mapping created "
 			      "at guest virtual %#lx, new EPT prot %#lx\n",
-			      gpa, eprot, gva, set);
+			      e->gpa, eprot, e->gva, set);
 		else
 			OKDEBUG("Physical address %#lx with EPT prot %#lx no "
 				"longer at original mapping. New mapping created"
 				" at guest virtual %#lx, new EPT prot %#lx"
 				" OK_TEXT %d OK_MOD %d OK_DATA %d"
-				" new mapping level %d""\n", gpa, eprot, gva,
-				set, (*epte & OK_TEXT)?1:0, (*epte & OK_MOD)?1:0,
-				(*epte & OK_DATA)?1:0, level);
-		if(!set_clr_ept_page_flags(vcpu, gpa, set, clr, level)) {
+				" new mapping level %d""\n", e->gpa, eprot,
+				e->gva, set, (*epte & OK_TEXT)?1:0,
+				(*epte & OK_MOD)?1:0, (*epte & OK_DATA)?1:0,
+				level);
+		if(!set_clr_ept_page_flags(e->vcpu, e->gpa, set, clr, level)) {
 			OKERR("set_clr_ept_page_flags failed.\n");
 			BUG();
 			return 0;
@@ -3639,22 +3782,22 @@ static int kernel_ro_ept_violation(struct vmx_vcpu *vcpu, unsigned long gpa,
  * already installed before the process is started will be
  * protected by OK_MOD tags
  */
-int module_ept_violation(struct vmx_vcpu *vcpu, unsigned long gpa,
-			 unsigned long gva, unsigned long qual)
+int module_ept_violation(struct eptvc *e)
 {
 	int level;
 	unsigned long s_flags, c_flags;
 	pgprot_t prot;
 
-	BUG_ON(!guest_physical_page_address(gva, &level, &prot));
+	BUG_ON(!guest_physical_page_address(e->gva, &level, &prot));
 
 	/* Get the protection flags to set on the EPT from
 	 * the upper level page tables */
-	ept_flags_from_qual(qual, &s_flags, &c_flags);
-	set_clr_ok_tags(gva, &s_flags, &c_flags);
-	if (set_clr_ept_page_flags(vcpu, gpa, s_flags, c_flags, level)) {
+	ept_flags_from_qual(e->qual, &s_flags, &c_flags);
+	set_clr_ok_tags(e->gva, &s_flags, &c_flags);
+	if (set_clr_ept_page_flags(e->vcpu, e->gpa, s_flags, c_flags, level)) {
 		if (s_flags & EPT_X) 
-			OKSEC("New module code at pa %#lx va %#lx\n", gpa, gva);
+			OKSEC("New module code at pa %#lx va %#lx\n",
+			      e->gpa, e->gva);
 		return 1;
 	} else {
 		OKERR("set_clr_ept_page_flags failed.\n");
@@ -3668,19 +3811,19 @@ int module_ept_violation(struct vmx_vcpu *vcpu, unsigned long gpa,
  * memory is not tagged for protection by OK_FLAGS
  * and is not in module memory range
  */
-int kernel_ept_violation(struct vmx_vcpu *vcpu, unsigned long gpa,
-			 unsigned long gva, unsigned long qual)
+int kernel_ept_violation(struct eptvc *e)
 {
 	int level;
 	unsigned long s_flags, c_flags;
 	pgprot_t prot;
 	
-	BUG_ON(!guest_physical_page_address(gva, &level, &prot));
-	ept_flags_from_qual(qual, &s_flags, &c_flags);
-	set_clr_ok_tags(gva, &s_flags, &c_flags);
-	if (set_clr_ept_page_flags(vcpu, gpa, s_flags, c_flags, level)) {
+	BUG_ON(!guest_physical_page_address(e->gva, &level, &prot));
+	ept_flags_from_qual(e->qual, &s_flags, &c_flags);
+	set_clr_ok_tags(e->gva, &s_flags, &c_flags);
+	if (set_clr_ept_page_flags(e->vcpu, e->gpa, s_flags, c_flags, level)) {
 		if (s_flags & EPT_X) 
-			OKSEC("New kernel code at pa %#lx va %#lx\n", gpa, gva);
+			OKSEC("New kernel code at pa %#lx va %#lx\n", e->gpa,
+			      e->gva);
 		return 1;
 	} else {
 		OKERR("set_clr_ept_page_flags failed.\n");
@@ -3692,42 +3835,44 @@ int kernel_ept_violation(struct vmx_vcpu *vcpu, unsigned long gpa,
 static int vmx_handle_EPT_violation(struct vmx_vcpu *vcpu)
 {
 	/* Returns 1 if handled, 0 if not */
-	unsigned long qual, gpa, gva;
+	struct eptvc e;
 	int level;
 	pgprot_t prot;
 
 	vmx_get_cpu(vcpu);
-	qual = vmcs_readl(EXIT_QUALIFICATION);
-	gpa = vmcs_readl(GUEST_PHYSICAL_ADDRESS);
-	gva = (u64)vmcs_readl(GUEST_LINEAR_ADDRESS);
+	e.vcpu = vcpu;
+	e.qual = vmcs_readl(EXIT_QUALIFICATION);
+	e.gpa = vmcs_readl(GUEST_PHYSICAL_ADDRESS);
+	e.gva = (u64)vmcs_readl(GUEST_LINEAR_ADDRESS);
 	vmx_put_cpu(vcpu);
 
 	/* Grant access to protected pages lazily */
-	if(__ok_protected_phys_addr(gpa)){
+	if(__ok_protected_phys_addr(e.gpa)){
 		return vmexit_protected_page(vcpu);
 	}
 
 	/* Guest linear (virtual address) is valid */
-	if(qual & EPT_GLV){
+	if(e.qual & EPT_GLV){
 		/* 
 		 * If EPT_LT is set, the violation was a result of a
 		 * result of a translation of a linear address,
 		 * otherwise it was a result of a page walk or update
 		 * of access or dirty bit
 		 */
-		if (!(qual & EPT_LT)){
-			return page_walk_ept_violation(vcpu, gpa, qual);
+		if (!(e.qual & EPT_LT)){
+			return page_walk_ept_violation(&e);
 		}
-		if (is_set_ept_page_flag(vcpu, gpa, OK_FLAGS)){
-			return kernel_ro_ept_violation(vcpu, gpa, gva, qual);
-		} else if (is_module_space(gva)){
-			return module_ept_violation(vcpu, gpa, gva, qual);
-		} else if (is_user_space(gva)){
-			BUG_ON(!guest_physical_page_address(gva, &level, &prot));
-			return grant_all(vcpu, gpa, qual, level);
+		if (is_set_ept_page_flag(e.vcpu, e.gpa, OK_FLAGS)){
+			return kernel_ro_ept_violation(&e);
+		} else if (is_module_space(e.gva)){
+			return module_ept_violation(&e);
+		} else if (is_user_space(e.gva)){
+			BUG_ON(!guest_physical_page_address(e.gva, &level,
+							    &prot));
+			return grant_all(&e, level);
 
 		} else {
-			return kernel_ept_violation(vcpu, gpa, gva, qual);
+			return kernel_ept_violation(&e);
 		}
 	}
 	return 0;
@@ -4415,6 +4560,62 @@ static void __init printk_constants(void)
 	       mod_end, guest_physical_address(mod_end, &l, &p));
 	printk(KERN_INFO "okernel FIXADDR_TOP %#lx\n", FIXADDR_TOP);
 	printk(KERN_INFO "okernel VSYSCALL_PAGE %#x\n", VSYSCALL_PAGE);
+	printk(KERN_INFO "okernel FIX_TEXT_POKE0 %#lx\n",
+	       fix_to_virt(FIX_TEXT_POKE0));
+}
+
+static __init struct static_key *entry_key(struct jump_entry *entry)
+{
+	return (struct static_key *)((unsigned long)entry->key & ~1UL);
+}
+
+static void __init add_patch_addr(struct static_key *key, char *tag)
+{
+	int level;
+	unsigned long pa;
+	pgprot_t prot;
+	struct patch_addr *p_addr;
+	struct jump_entry *stop = __stop___jump_table;
+	struct jump_entry *entry = (struct jump_entry *)
+		(key->type & ~JUMP_TYPE_MASK);
+	if (!entry)
+		return;
+	for (; (entry < stop) && (entry_key(entry) == key); entry++) {
+		pa = guest_physical_address(entry->code, &level, &prot);
+		if (!(p_addr = mk_patch_addr(pa, tag))) {
+			printk(KERN_CRIT "okernel add_patch_addr no memory?\n");
+			return;
+		}
+		if (!insert_patch_addr(&patch_addresses, p_addr))
+			printk(KERN_INFO "okernel duplicate patch addr %#lx\n",
+			       pa);
+	}
+}
+
+static void __init dump_patch_addr(void)
+{
+	struct rb_node *node;
+	struct patch_addr *p;
+	printk(KERN_INFO "Dumping okernel RB patch address tree\n");
+	for (node = rb_first(&patch_addresses); node; node = rb_next(node)) {
+		p = rb_entry(node, struct patch_addr, node);
+		if (p)
+			printk("pa %#lx tag %s\n", p->pa, p->tag);
+	}
+}
+
+static void patch_addr_from_keys(void)
+{
+	int ssid;
+	struct key_tag *p = static_key_tags;
+	for(; p->key != NULL; p++)
+		add_patch_addr(p->key, p->tag);
+	for ((ssid) = 0; (ssid) < CGROUP_SUBSYS_COUNT; (ssid)++) {
+		add_patch_addr(&(ok_cgrp_subsys_enabled_key[ssid]->key),
+			       "cgroups");
+		add_patch_addr(&(ok_cgrp_subsys_on_dfl_key[ssid]->key),
+			       "cgroups_dfl");
+	}
 }
 
 int __init vmx_init(void)
@@ -4507,7 +4708,9 @@ int __init vmx_init(void)
 		goto failed2;
 	}
 	printk_constants();
-        return 0;
+	patch_addr_from_keys();
+	dump_patch_addr();
+	return 0;
 
 
 failed2:
