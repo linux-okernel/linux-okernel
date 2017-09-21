@@ -3,41 +3,10 @@
  *      Author: Theo Koulouris
  */
 
-//#include <linux/string.h>
 #include <linux/okernel.h>
 #include "vmx.h"
 
 
-
-// NJE BEGIN NEEDS TO GO
-/*
- * We can use trace_printk or printk safely when we have a process running
- * in NR mode. So this is a quick and dirty circular buffer until we
- * build something better (it is in hand).
- */
-//static
-char *log_ptr(struct vmx_vcpu *vcpu)
-{
-	char *p;
-	if (vcpu->lp < NVCPUBUF) {
-		p = &(vcpu->log[vcpu->lp][0]);
-		vcpu->lp++;
-		return p;
-	} else {
-		p = &(vcpu->log[0][0]);
-		vcpu->lp = 1;
-		return p;
-	}
-}
-
-//static
-void dump_log(struct vmx_vcpu *vcpu)
-{
-	int i;
-	for (i = 0; i < vcpu->lp; i++) {
-		trace_printk(&(vcpu->log[i][0]));
-	}
-}
 
 int do_ok_trace(unsigned long ip, const char *label, const char *fmt, ...)
 {
