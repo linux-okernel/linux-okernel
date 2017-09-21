@@ -142,6 +142,12 @@ static struct static_key_true *cgroup_subsys_on_dfl_key[] = {
 };
 #undef SUBSYS
 
+#if defined(CONFIG_OKERNEL)
+/* Allow okernel integrity measurement of the static_key targets */
+struct static_key_true **ok_cgrp_subsys_enabled_key = cgroup_subsys_enabled_key;
+struct static_key_true **ok_cgrp_subsys_on_dfl_key = cgroup_subsys_on_dfl_key;
+#endif
+
 /*
  * The default hierarchy, reserved for the subsystems that are otherwise
  * unattached - it never has more than a single cgroup, and all tasks are
