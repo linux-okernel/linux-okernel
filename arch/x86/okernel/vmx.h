@@ -141,12 +141,6 @@ struct ept_pt_list {
 	int n_pages;
 };
 
-#define VCPUBUFLEN 300
-#define NVCPUBUF 100
-#ifdef OKERNEL_DEBUG
-extern char *log_ptr(struct vmx_vcpu *);
-extern void dump_log(struct vmx_vcpu *);
-#endif
 
 struct vmx_vcpu {
 	int cpu;
@@ -181,11 +175,6 @@ struct vmx_vcpu {
 	struct nr_cloned_state *cloned_thread;
 	unsigned int *nr_stack_canary;
 	void *syscall_tbl;
-
-	/* Circular log pending NR-mode lock-safe logging*/
-	char log[NVCPUBUF][VCPUBUFLEN];
-	/* Pointer to next entry in circular log*/
-	int lp;
 };
 
 extern __init int vmx_init(void);

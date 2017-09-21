@@ -933,9 +933,6 @@ static int set_clr_ept_page_flags(struct vmx_vcpu *vcpu, u64 paddr,
 	}
 	*epte |= s_flags;
 	*epte &= ~(c_flags);
-	TDEBUG(log_ptr(vcpu), "set_clr_ept_page_flags ept %#lx "
-	       "set %#lx clr %#lx 2M %#lx", (unsigned long) epte, s_flags,
-	       c_flags, page2m);
 	return 1;
 }
 
@@ -3156,12 +3153,6 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu, int nr_irqs_enabled)
 
 	cmd = vcpu->regs[VCPU_REGS_RAX];
 
-	TDEBUG(log_ptr(vcpu), "cmd (%lu)\n", cmd);
-	TDEBUG(log_ptr(vcpu), "in_atomic(): %d, irqs_disabled(): %d, pid: %d, name: %s\n",
-		 in_atomic(), irqs_disabled(), current->pid, current->comm);
-	TDEBUG(log_ptr(vcpu), "preempt_count (%d) rcu_preempt_depth (%d)\n",
-		preempt_count(), rcu_preempt_depth());
-
 #if defined(OKERNEL_DEBUG)
 	OKDEBUG("cmd (%lu)\n", cmd);
 	OKDEBUG("in_atomic(): %d, irqs_disabled(): %d, pid: %d, name: %s\n",
@@ -3998,8 +3989,7 @@ int vmx_launch(unsigned int mode, unsigned int flags, struct nr_cloned_state *cl
 			current_time = rdtsc();
 			/* Did we see more exits than we were expecting over a given time period? */
 			if((current_time - last_time) < COUNTER_THRESHOLD){
-				TDEBUG(log_ptr(vcpu), "vmexit threshold count exceed calling BUG()\n");
-				dump_log(vcpu);
+				printk(KERN_ERR "vmexit threshold count exceeded - calling BUG()\n");
 				BUG();
 			}
 			vmexit_counter = 0;
