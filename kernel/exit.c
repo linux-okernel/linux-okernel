@@ -765,7 +765,6 @@ void __noreturn do_exit(long code)
 {
 	struct task_struct *tsk = current;
 	int group_dead;
-	TASKS_RCU(int tasks_rcu_i);
 
 #ifdef CONFIG_OKERNEL
        if(is_in_vmx_nr_mode()){
@@ -830,7 +829,8 @@ void __noreturn do_exit(long code)
 	 * Ensure that we must observe the pi_state in exit_mm() ->
 	 * mm_release() -> exit_pi_state_list().
 	 */
-	raw_spin_unlock_wait(&tsk->pi_lock);
+	raw_spin_lock_irq(&tsk->pi_lock);
+	raw_spin_unlock_irq(&tsk->pi_lock);
 
 	if (unlikely(in_atomic())) {
 		pr_info("note: %s[%d] exited with preempt_count %d\n",
@@ -892,9 +892,7 @@ void __noreturn do_exit(long code)
 	 */
 	flush_ptrace_hw_breakpoint(tsk);
 
-	TASKS_RCU(preempt_disable());
-	TASKS_RCU(tasks_rcu_i = __srcu_read_lock(&tasks_rcu_exit_srcu));
-	TASKS_RCU(preempt_enable());
+	exit_tasks_rcu_start();
 	exit_notify(tsk, group_dead);
 	proc_exit_connector(tsk);
 	mpol_put_task_policy(tsk);
@@ -929,8 +927,9 @@ void __noreturn do_exit(long code)
 	if (tsk->nr_dirtied)
 		__this_cpu_add(dirty_throttle_leaks, tsk->nr_dirtied);
 	exit_rcu();
-	TASKS_RCU(__srcu_read_unlock(&tasks_rcu_exit_srcu, tasks_rcu_i));
+	exit_tasks_rcu_finish();
 
+	lockdep_free_task(tsk);
 	do_task_dead();
 }
 EXPORT_SYMBOL_GPL(do_exit);
@@ -1627,7 +1626,7 @@ SYSCALL_DEFINE5(waitid, int, which, pid_t, upid, struct siginfo __user *,
 	user_access_begin();
 	unsafe_put_user(signo, &infop->si_signo, Efault);
 	unsafe_put_user(0, &infop->si_errno, Efault);
-	unsafe_put_user((short)info.cause, &infop->si_code, Efault);
+	unsafe_put_user(info.cause, &infop->si_code, Efault);
 	unsafe_put_user(info.pid, &infop->si_pid, Efault);
 	unsafe_put_user(info.uid, &infop->si_uid, Efault);
 	unsafe_put_user(info.status, &infop->si_status, Efault);
@@ -1753,7 +1752,7 @@ COMPAT_SYSCALL_DEFINE5(waitid,
 	user_access_begin();
 	unsafe_put_user(signo, &infop->si_signo, Efault);
 	unsafe_put_user(0, &infop->si_errno, Efault);
-	unsafe_put_user((short)info.cause, &infop->si_code, Efault);
+	unsafe_put_user(info.cause, &infop->si_code, Efault);
 	unsafe_put_user(info.pid, &infop->si_pid, Efault);
 	unsafe_put_user(info.uid, &infop->si_uid, Efault);
 	unsafe_put_user(info.status, &infop->si_status, Efault);
