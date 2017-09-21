@@ -3497,6 +3497,64 @@ asmlinkage __visible void __sched schedule(void)
        int new_cpu = 0;
 #endif
 
+       if(is_in_vmx_nr_mode()){
+               /* Return control to the original process running in root-mode VMX */
+               /* shouldn't be holding locks at this point? */
+#ifdef HPE_DEBUG
+               ti = current_thread_info();
+               rdmsrl(MSR_FS_BASE, fs);
+               HDEBUG("called (pid=%d)  cpu_cur_tos (%#lx) flgs(%#lx) MSR_FS_BASE=%#lx\n",
+                      current->pid, (unsigned long)tss->x86_tss.sp0, ti->flags, fs);
+               BXMAGICBREAK;
+               HDEBUG("in_atomic(): %d, irqs_disabled(): %d, pid: %d, name: %s\n",
+                      in_atomic(), irqs_disabled(), current->pid, current->comm);
+               HDEBUG("preempt_count (%#x) rcu_preempt_depth (%#x)\n",
+                      preempt_count(), rcu_preempt_depth());
+#if defined(CONFIG_TRACE_IRQFLAGS) && defined(CONFIG_PROVE_LOCKING)
+               HDEBUG("current->h_irqs_en (%d)\n",
+                      current->hardirqs_enabled);
+#endif /* CONFIG_TRACE_IRQFLAGS */
+#endif /* HPE_DEBUG */
+               sched_submit_work(tsk);
+               (void)vmcall2(VMCALL_SCHED, OK_SCHED);
+       } else {
+               sched_submit_work(tsk);
+               do {
+                       preempt_disable();
+                       okernel_schedule(false);
+                       sched_preempt_enable_no_resched();
+               } while (need_resched());
+       }
+#ifdef HPE_DEBUG
+       if(is_in_vmx_nr_mode()){
+               new_cpu = smp_processor_id();
+
+               if(new_cpu != orig_cpu){
+                       HDEBUG("CPUs swapped after schedule()\n");
+               }
+               ti = current_thread_info();
+               rdmsrl(MSR_FS_BASE, fs);
+               cpu = smp_processor_id();
+               tss = &per_cpu(cpu_tss, cpu);
+
+               HDEBUG("returned from VMCALL schedule (pid=%d)  cpu_cur_tos (%#lx) flgs (%#lx)\n",
+                      current->pid, (unsigned long)tss->x86_tss.sp0, ti->flags);
+               HDEBUG("returned from VMCALL schedule (pid=%d) MSR_FS_BASE=%#lx\n",
+                      current->pid, fs);
+               BXMAGICBREAK;
+
+               HDEBUG("return in_atomic(): %d, irqs_disabled(): %d, pid: %d, name: %s\n",
+                       in_atomic(), irqs_disabled(), current->pid, current->comm);
+               HDEBUG("return preempt_count (%#x) rcu_preempt_depth (%#x)\n",
+                      preempt_count(), rcu_preempt_depth());
+#if defined(CONFIG_TRACE_IRQFLAGS) && defined(CONFIG_PROVE_LOCKING)
+               HDEBUG("return current->h_irqs_en (%d)\n", current->hardirqs_enabled);
+#endif /* CONFIG_TRACE_IRQFLAGS */
+               BXMAGICBREAK;
+
+       }
+#endif /* HPE_DEBUG */
+#else
 	sched_submit_work(tsk);
 	do {
 		preempt_disable();
@@ -6106,6 +6164,7 @@ void ___might_sleep(const char *file, int line, int preempt_offset)
 
 	/* WARN_ON_ONCE() by default, no rate limit required: */
 	rcu_sleep_check();
+
 
 	if ((preempt_count_equals(preempt_offset) && !irqs_disabled() &&
 	     !is_idle_task(current)) ||

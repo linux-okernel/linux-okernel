@@ -2456,7 +2456,7 @@ void get_cpu_state(struct vmx_vcpu *vcpu, struct vmcs_cpu_state* cpu_state)
 	cpu_state->idt_base = idt.address;
 	cpu_state->idt_limit = idt.size;
 #endif
-	HDEBUG("setting IDT values from native_store_idt: vaddr=%#lx, paddr=%#lx, size=%#x\n",
+	HDEBUG("setting IDT values from store_idt: vaddr=%#lx, paddr=%#lx, size=%#x\n",
 		cpu_state->idt_base, __pa(cpu_state->idt_base), cpu_state->idt_limit);
         //cpu_state->idt_limit = 0xFFFF;
 
