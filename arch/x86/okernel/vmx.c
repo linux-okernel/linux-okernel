@@ -2764,9 +2764,9 @@ static struct vmx_vcpu * vmx_create_vcpu(struct nr_cloned_state* cloned_thread)
 		BUG();
 	}
 #endif
-	vcpu->lp = 0;
 
 	return vcpu;
+
 fail_ept:
 	vmx_free_vpid(vcpu);
 
