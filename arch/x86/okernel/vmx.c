@@ -1,7 +1,7 @@
 /*
  * vmx.c - The Intel VT-x driver for intra-kernel protection using
  * vt-x features. The vmx setup code of this file is derived from the
- * dune code base which itself is dervied from the kvm code base (with
+ * dune code base which itself is derived from the kvm code base (with
  * the hope that we can possibly at some point share code).  The EPT
  * code is not dune/kvm based and was developed originally for
  * microvisor use.
@@ -61,7 +61,6 @@
 #include <linux/smp.h>
 #include <linux/percpu.h>
 #include <linux/syscalls.h>
-#include <linux/version.h>
 #include <linux/console.h>
 #include <linux/compat.h>
 #include <linux/cred.h>
@@ -267,42 +266,6 @@ static int insert_patch_addr(struct rb_root *root, struct patch_addr *new)
 }
 
 
-// NJE BEGIN NEEDS TO GO
-/*
- * We can't use trace_printk or printk safely when we have a process running
- * in NR mode. So this is a quick and dirty circular buffer until we
- * build something better (it is in hand).
- */
-static char *log_ptr(struct vmx_vcpu *vcpu)
-{
-	char *p;
-	if (vcpu->lp < NVCPUBUF){
-		p = &(vcpu->log[vcpu->lp][0]);
-		vcpu->lp++;
-		return p;
-	}
-	else{
-		p = &(vcpu->log[0][0]);
-		vcpu->lp = 1;
-		return p;
-	}
-}
-
-static void dump_log(struct vmx_vcpu *vcpu)
-{
-	int i;
-	for (i=0; i< vcpu->lp; i++){
-		trace_printk(&(vcpu->log[i][0]));
-	}
-}
-
-
-#define TDEBUG(p, fmt, args...)  if (p) snprintf(p, VCPUBUFLEN, \
-						 "pid(%d) %s: " fmt , \
-						 current->pid,__func__, ## args)
-
-//NJE END NEEDS to GO
-
 static inline int dummy_in_vmx_nr_mode(void)
 {
 	return 0;
@@ -489,7 +452,7 @@ static unsigned long e820_end_paddr(unsigned long limit_pfn)
 	if (last_pfn > max_arch_pfn)
 		last_pfn = max_arch_pfn;
 
-	HDEBUG("last_pfn = %#lx max_arch_pfn = %#lx\n", last_pfn, max_arch_pfn);
+	OKDEBUG("last_pfn = %#lx max_arch_pfn = %#lx\n", last_pfn, max_arch_pfn);
 	return last_pfn << PAGE_SHIFT;
 }
 
@@ -521,7 +484,7 @@ int vt_alloc_pages(struct pt_page *pt, int order)
 	int i;
 
 	if(!pt){
-		printk(KERN_ERR "Null pt passed.\n");
+		printk(KERN_ERR "okernel: Null pt passed.\n");
 		return 0;
 	}
 
@@ -585,19 +548,19 @@ unsigned long* find_pd_entry(struct vmx_vcpu *vcpu, u64 paddr)
 
 	pml3_index = (paddr & (~(GIGABYTE -1))) >> GIGABYTE_SHIFT;
 
-	HDEBUG("addr (%#lx) pml3 (%#lx) pml3_index (%i)\n",
+	OKDEBUG("addr (%#lx) pml3 (%#lx) pml3_index (%i)\n",
 		(unsigned long)paddr, (unsigned long)pml3, pml3_index);
 
 	pml2 = (epte_t *)epte_page_vaddr(pml3[pml3_index]);
 
 	pml2_index = ((paddr & (GIGABYTE -1)) >> PAGESIZE2M_SHIFT);
 
-	HDEBUG("addr (%#lx) pml2 index (%i)\n", (unsigned long)paddr, pml2_index);
+	OKDEBUG("addr (%#lx) pml2 index (%i)\n", (unsigned long)paddr, pml2_index);
 
 	pde = (epte_t *)epte_page_vaddr(pml2[pml2_index]);
 
 	pml2_p = &pml2[pml2_index];
-	HDEBUG("addr (%#lx) pde (%#lx) pml2 entry (%#lx)\n",
+	OKDEBUG("addr (%#lx) pde (%#lx) pml2 entry (%#lx)\n",
 	       (unsigned long)paddr, (unsigned long)pde, (unsigned long)(*pml2_p));
 	return pml2_p;
 }
@@ -621,25 +584,25 @@ unsigned long* find_pt_entry(struct vmx_vcpu *vcpu, u64 paddr)
 
 	pml3_index = (paddr & (~(GIGABYTE -1))) >> GIGABYTE_SHIFT;
 
-	HDEBUG("addr (%#lx) pml3 index (%i)\n", (unsigned long)paddr, pml3_index);
+	OKDEBUG("addr (%#lx) pml3 index (%i)\n", (unsigned long)paddr, pml3_index);
 
 	pml2 = (epte_t *)epte_page_vaddr(pml3[pml3_index]);
 
 
 	pml2_index = ((paddr & (GIGABYTE -1)) >> PAGESIZE2M_SHIFT);
 
-	HDEBUG("addr (%#lx) pml2 index (%i)\n", (unsigned long)paddr, pml2_index);
+	OKDEBUG("addr (%#lx) pml2 index (%i)\n", (unsigned long)paddr, pml2_index);
 
 	pml1 = (epte_t *)epte_page_vaddr(pml2[pml2_index]);
 
-	HDEBUG("check for 4k page mapping.\n");
+	OKDEBUG("check for 4k page mapping.\n");
 	BUG_ON(*pml1 & EPT_2M_PAGE);
 
 	pml1_index = ((paddr & (PAGESIZE2M-1)) >> PAGESIZE_SHIFT);
 
 	pml1_p = &pml1[pml1_index];
 
-	HDEBUG("addr (%#lx) pte (%#lx)\n", (unsigned long)paddr, (unsigned long)pml1);
+	OKDEBUG("addr (%#lx) pte (%#lx)\n", (unsigned long)paddr, (unsigned long)pml1);
 	return pml1_p;
 }
 
@@ -670,7 +633,7 @@ int do_split_2M_mapping(struct vmx_vcpu* vcpu, u64 paddr, int cache)
 
 	/* check if 2M mapping or slpit already */
 	if(!(*pml2_e & EPT_2M_PAGE)){
-		HDEBUG("paddr ept entry for 2MB region starting at phys addr (%#lx) already split.\n",
+		OKDEBUG("paddr ept entry for 2MB region starting at phys addr (%#lx) already split.\n",
 			(unsigned long)paddr);
 		return 1;
 	}
@@ -685,7 +648,7 @@ int do_split_2M_mapping(struct vmx_vcpu* vcpu, u64 paddr, int cache)
 	 * But we are using it for sanity checking
 	 */
 
-	HDEBUG("base EPT physical addr for table 2M split (%#lx) paddr (%#lx)\n",
+	OKDEBUG("base EPT physical addr for table 2M split (%#lx) paddr (%#lx)\n",
 		(unsigned long)p_base_addr, (unsigned long)paddr);
 
 	/* split the plm2_e into 4k ptes,i.e. have it point to a PML1 table */
@@ -723,7 +686,7 @@ int do_split_2M_mapping(struct vmx_vcpu* vcpu, u64 paddr, int cache)
 		}
 	}
 	memset(pt[0].virt, 0, PAGESIZE);
-	HDEBUG("PML1 pt virt (%llX) pt phys (%llX)\n", (unsigned long long)pt[0].virt, pt[0].phys);
+	OKDEBUG("PML1 pt virt (%llX) pt phys (%llX)\n", (unsigned long long)pt[0].virt, pt[0].phys);
 
 	/* Fill in eack of the 4k ptes for the PML1 */
 	q = pt[0].virt;
@@ -758,7 +721,7 @@ void* replace_ept_page(struct vmx_vcpu *vcpu, u64 paddr, unsigned long perms)
 
 	split_addr = (paddr & ~(PAGESIZE2M-1));
 
-	HDEBUG("Check or split 2M mapping at (%#lx)\n", (unsigned long)split_addr);
+	OKDEBUG("Check or split 2M mapping at (%#lx)\n", (unsigned long)split_addr);
 
 	if(!(split_2M_mapping(vcpu, split_addr))){
 		printk(KERN_ERR "okernel: %s couldn't split 2MB mapping for (%#lx)\n",
@@ -766,7 +729,7 @@ void* replace_ept_page(struct vmx_vcpu *vcpu, u64 paddr, unsigned long perms)
 		return NULL;
 	}
 
-	HDEBUG("Split or check ok: looking for pte for paddr (%#lx)\n",
+	OKDEBUG("Split or check ok: looking for pte for paddr (%#lx)\n",
 		(unsigned long)paddr);
 
 	if(!(pml1_p = find_pt_entry(vcpu, paddr))){
@@ -775,7 +738,7 @@ void* replace_ept_page(struct vmx_vcpu *vcpu, u64 paddr, unsigned long perms)
 		return NULL;
 	}
 
-	HDEBUG("pte val for paddr (%#lx) is (%#lx)\n",
+	OKDEBUG("pte val for paddr (%#lx) is (%#lx)\n",
 		(unsigned long)paddr, (unsigned long)*pml1_p);
 
 	e_pt =(struct ept_pt_list*) kmalloc(sizeof(struct ept_pt_list), GFP_KERNEL);
@@ -799,28 +762,28 @@ void* replace_ept_page(struct vmx_vcpu *vcpu, u64 paddr, unsigned long perms)
 
 	memset(pt[0].virt, 0, PAGESIZE);
 
-	HDEBUG("Replacement page pt virt (%llX) pt phys (%llX)\n",
+	OKDEBUG("Replacement page pt virt (%llX) pt phys (%llX)\n",
 	       (unsigned long long)pt[0].virt, pt[0].phys);
 
 	orig_paddr = (*pml1_p & ~(OK_FLAGS + PAGESIZE-1));
 
-	HDEBUG("orig paddr (%#lx)\n", (unsigned long)orig_paddr);
+	OKDEBUG("orig paddr (%#lx)\n", (unsigned long)orig_paddr);
 
 	if(orig_paddr != paddr){
-		printk(KERN_ERR "address mis-match in EPT tables.\n");
+		printk(KERN_ERR "okernel: address mis-match in EPT tables.\n");
 		return NULL;
 	}
 
-	HDEBUG("Replacing (%#lx) as pte entry with (%#lx)\n",
+	OKDEBUG("Replacing (%#lx) as pte entry with (%#lx)\n",
 	       (unsigned long)(*pml1_p), (unsigned long)(pt[0].phys | perms));
 
 	*pml1_p = pt[0].phys | perms;
 
-	HDEBUG("copying data from va (%#lx) to va of replacement physical (%#lx)\n",
+	OKDEBUG("copying data from va (%#lx) to va of replacement physical (%#lx)\n",
 		(unsigned long)__va(orig_paddr), (unsigned long)pt[0].virt);
 
 	memcpy(pt[0].virt, __va(orig_paddr), PAGESIZE);
-	HDEBUG("Done for pa (%#lx)\n", (unsigned long)paddr);
+	OKDEBUG("Done for pa (%#lx)\n", (unsigned long)paddr);
 	return pt[0].virt;
 }
 
@@ -834,15 +797,15 @@ int modify_ept_physaddr_perms(struct vmx_vcpu *vcpu, u64 paddr, unsigned long pe
 
 	split_addr = (paddr & ~(PAGESIZE2M-1));
 
-	HDEBUG("Check or split 2M mapping at (%#lx)\n", (unsigned long)split_addr);
+	OKDEBUG("Check or split 2M mapping at (%#lx)\n", (unsigned long)split_addr);
 
 	if(!(split_2M_mapping(vcpu, split_addr))){
-		printk(KERN_ERR "okernel %s: couldn't split 2MB mapping for (%#lx)\n",
+		printk(KERN_ERR "okernel: %s: couldn't split 2MB mapping for (%#lx)\n",
 		       __func__, (unsigned long)paddr);
 		return 0;
 	}
 
-	HDEBUG("Split or check ok: looking for pte for paddr (%#lx)\n",
+	OKDEBUG("Split or check ok: looking for pte for paddr (%#lx)\n",
 		(unsigned long)paddr);
 
 	if(!(pml1_p = find_pt_entry(vcpu, paddr))){
@@ -851,24 +814,24 @@ int modify_ept_physaddr_perms(struct vmx_vcpu *vcpu, u64 paddr, unsigned long pe
 		return 0;
 	}
 
-	HDEBUG("pte val for paddr (%#lx) is (%#lx)\n",
+	OKDEBUG("pte val for paddr (%#lx) is (%#lx)\n",
 		(unsigned long)paddr, (unsigned long)*pml1_p);
 
 	orig_paddr = (*pml1_p & ~(OK_FLAGS + PAGESIZE-1));
 
-	HDEBUG("orig paddr (%#lx)\n", (unsigned long)orig_paddr);
+	OKDEBUG("orig paddr (%#lx)\n", (unsigned long)orig_paddr);
 
 	if(orig_paddr != paddr){
-		printk(KERN_ERR "address mis-match in EPT tables.\n");
+		printk(KERN_ERR "okernel: address mis-match in EPT tables.\n");
 		return 0;
 	}
 
-	HDEBUG("Replacing  pte (%#lx) as pte entry with (%#lx)\n",
+	OKDEBUG("Replacing  pte (%#lx) as pte entry with (%#lx)\n",
 	       (unsigned long)(*pml1_p), (unsigned long)(paddr | perms));
 
 	*pml1_p = paddr | perms;
 
-	HDEBUG("Done for pa (%#lx)\n", (unsigned long)paddr);
+	OKDEBUG("Done for pa (%#lx)\n", (unsigned long)paddr);
 	return 1;
 }
 
@@ -881,10 +844,10 @@ int modify_ept_page_range_perms(struct vmx_vcpu *vcpu, struct page *pg, int page
 	for(i = 0; i < pages; i++){
 		p_addr = page_to_phys(pg + i);
 		if(!(modify_ept_physaddr_perms(vcpu, p_addr, perms))){
-			printk("ok: couldn't modify perms on:=%#lx\n", p_addr);
+			printk("okernel: couldn't modify perms on:=%#lx\n", p_addr);
 			return 0;
 		}
-		HDEBUG("ok: modified perms on:=%#lx\n", p_addr);
+		OKDEBUG("modified perms on:=%#lx\n", p_addr);
 	}
 	return 1;
 }
@@ -898,7 +861,7 @@ int add_ept_page_perms(struct vmx_vcpu *vcpu, u64 paddr)
 	perms = EPT_R | EPT_W | EPT_CACHE_2 | EPT_CACHE_3;
 
 	if(!(modify_ept_physaddr_perms(vcpu, paddr, perms))){
-		printk("Failed to modify EPT page permissions.\n");
+		printk("okernel: Failed to modify EPT page permissions.\n");
 		BUG();
 	}
 	return 0;
@@ -911,26 +874,26 @@ static unsigned long *ept_page_entry(struct vmx_vcpu *vcpu, u64 paddr)
 	unsigned long *ept_page_entry;
 
 	if(!(pml2_e =  find_pd_entry(vcpu, paddr))){
-		HDEBUG("NULL pml2 entry for paddr (%#lx)\n",
+		OKDEBUG("NULL pml2 entry for paddr (%#lx)\n",
 		       (unsigned long)paddr);
 		return 0;
 	}
 
 	/* check if 2M or 4K mapping entry */
 	if((*pml2_e & EPT_2M_PAGE)){
-		HDEBUG("2MB mapping ept entry for paddr (%#lx).\n",
+		OKDEBUG("2MB mapping ept entry for paddr (%#lx).\n",
 			(unsigned long)paddr);
 		ept_page_entry = pml2_e;
 	} else {
 		/* Need to find the 4k page entry */
 
 		if(!(pml1_e = find_pt_entry(vcpu, paddr))){
-			HDEBUG("failed to find pte for (%#lx)\n",
+			OKDEBUG("failed to find pte for (%#lx)\n",
 			       (unsigned long)paddr);
 			return 0;
 		}
 		/*
-		HDEBUG("4KB mapping ept entry for paddr (%#lx).\n",
+		OKDEBUG("4KB mapping ept entry for paddr (%#lx).\n",
 		       (unsigned long)paddr);
 		*/
 		ept_page_entry = pml1_e;
@@ -970,9 +933,6 @@ static int set_clr_ept_page_flags(struct vmx_vcpu *vcpu, u64 paddr,
 	}
 	*epte |= s_flags;
 	*epte &= ~(c_flags);
-	TDEBUG(log_ptr(vcpu), "set_clr_ept_page_flags ept %#lx "
-	       "set %#lx clr %#lx 2M %#lx", (unsigned long) epte, s_flags,
-	       c_flags, page2m);
 	return 1;
 }
 
@@ -987,15 +947,15 @@ static int remap_ept_page(struct vmx_vcpu *vcpu, u64 paddr, u64 new_paddr)
 
 	split_addr = (paddr & ~(PAGESIZE2M-1));
 
-	HDEBUG("Check or split 2M mapping at (%#lx)\n", (unsigned long)split_addr);
+	OKDEBUG("Check or split 2M mapping at (%#lx)\n", (unsigned long)split_addr);
 
 	if(!(split_2M_mapping(vcpu, split_addr))){
-		printk(KERN_ERR "okernel %s: couldn't split 2MB mapping for (%#lx)\n",
+		printk(KERN_ERR "okernel: %s: couldn't split 2MB mapping for (%#lx)\n",
 		       __func__, (unsigned long)paddr);
 		return 0;
 	}
 
-	HDEBUG("Split or check ok: looking for pte for paddr (%#lx)\n",
+	OKDEBUG("Split or check ok: looking for pte for paddr (%#lx)\n",
 		(unsigned long)paddr);
 
 	if(!(pml1_p = find_pt_entry(vcpu, paddr))){
@@ -1004,30 +964,29 @@ static int remap_ept_page(struct vmx_vcpu *vcpu, u64 paddr, u64 new_paddr)
 		return 0;
 	}
 
-	HDEBUG("pte val for paddr (%#lx) is (%#lx)\n",
+	OKDEBUG("pte val for paddr (%#lx) is (%#lx)\n",
 		(unsigned long)paddr, (unsigned long)*pml1_p);
 
 	orig_paddr = (*pml1_p & ~(OK_FLAGS + PAGESIZE-1));
 
-	HDEBUG("orig paddr (%#lx)\n", (unsigned long)orig_paddr);
+	OKDEBUG("orig paddr (%#lx)\n", (unsigned long)orig_paddr);
 
 	if(orig_paddr != paddr){
-		printk(KERN_ERR "address mis-match in EPT tables.\n");
+		printk(KERN_ERR "okernel: address mis-match in EPT tables.\n");
 		return 0;
 	}
 
 	/* Hack perms for now to make RO */
 	perms =  EPT_R | EPT_CACHE_2 | EPT_CACHE_3;
 
-	HDEBUG("Replacing  pte (%#lx) as pte entry with (%#lx)\n",
+	OKDEBUG("Replacing  pte (%#lx) as pte entry with (%#lx)\n",
 	       (unsigned long)(*pml1_p), (unsigned long)(new_paddr | perms));
 
 	*pml1_p = new_paddr | perms;
 
-	HDEBUG("Done for pa (%#lx)\n", (unsigned long)paddr);
+	OKDEBUG("Done for pa (%#lx)\n", (unsigned long)paddr);
 	return 1;
 }
-
 
 static unsigned long  guest_physical_page_address(unsigned long addr,
 					   unsigned int *level,
@@ -1350,7 +1309,7 @@ int clone_kstack2(struct vmx_vcpu *vcpu, unsigned long perms)
 	nr_stack_canary = (unsigned int*)(k_stack + PAGE_SIZE - 4);
 	*nr_stack_canary = NR_STACK_END_MAGIC;
 
-        HDEBUG("kstack addr:=%#lx nr_stack_canary:=%#lx *nr_stack_canary:=%#x\n",
+        OKDEBUG("kstack addr:=%#lx nr_stack_canary:=%#lx *nr_stack_canary:=%#x\n",
 	       k_stack, (unsigned long)nr_stack_canary, *nr_stack_canary);
 
 #if !defined(CONFIG_VMAP_STACK)
@@ -1359,14 +1318,14 @@ int clone_kstack2(struct vmx_vcpu *vcpu, unsigned long perms)
 	paddr = page_to_phys(vmalloc_to_page(((void *)k_stack)));
 #endif
 	
-	HDEBUG("tsk->stack vaddr (%#lx) paddr (%#lx) top of stack (%#lx)\n",
+	OKDEBUG("tsk->stack vaddr (%#lx) paddr (%#lx) top of stack (%#lx)\n",
 	       k_stack, (unsigned long)paddr, current_top_of_stack());
 
 
-       HDEBUG("ept page clone on (%#lx)\n", (unsigned long)paddr);
+       OKDEBUG("ept page clone on (%#lx)\n", (unsigned long)paddr);
        /* also need replace_ept_contiguous_region */
        if(!(vaddr = replace_ept_page(vcpu, paddr, perms))){
-	       printk(KERN_ERR "failed to clone page at (%#lx)\n",
+	       printk(KERN_ERR "okernel: failed to clone page at (%#lx)\n",
 		      (unsigned long)paddr);
 	       return 0;
        }
@@ -1378,7 +1337,7 @@ int clone_kstack2(struct vmx_vcpu *vcpu, unsigned long perms)
        vcpu->nr_stack_canary = (unsigned int*)(vaddr + PAGE_SIZE -4);
 
 
-       HDEBUG("vaddr:=%#lx vaddr->nr_stack_canary:=%#lx *vaddr->nr_stack_canary:=%#x\n",
+       OKDEBUG("vaddr:=%#lx vaddr->nr_stack_canary:=%#lx *vaddr->nr_stack_canary:=%#x\n",
 	      (unsigned long)vaddr, (unsigned long)vcpu->nr_stack_canary, *vcpu->nr_stack_canary);
 
        /* Check the canary value */
@@ -1432,17 +1391,17 @@ int vt_ept_2M_init(struct vmx_vcpu *vcpu)
 	//mappingsize = e820_end_paddr(MAXMEM);
 	mappingsize = ept_limit;
 
-	HDEBUG("max address range to map under EPT: %#lx\n", (unsigned long)mappingsize);
+	OKDEBUG("max address range to map under EPT: %#lx\n", (unsigned long)mappingsize);
 
 	/* Round upp to closest Gigabyte of memory */
 	rounded_mappingsize = ((mappingsize + (GIGABYTE-1)) & (~(GIGABYTE-1)));
 
-	HDEBUG("Need EPT tables covering (%lu) Mb (%lu) bytes for Phys Mapping sz: %lu MB\n",
+	OKDEBUG("Need EPT tables covering (%lu) Mb (%lu) bytes for Phys Mapping sz: %lu MB\n",
 		rounded_mappingsize >> 20, rounded_mappingsize, mappingsize >> 20);
 
 	if((rounded_mappingsize >> GIGABYTE_SHIFT) >  PML4E_MAP_LIMIT){
 		/* Only setup one PDPTE entry for now so can map up to 512Gb */
-		printk(KERN_ERR "Physical memory greater than (%d) Gb not supported.\n",
+		printk(KERN_ERR "okernel: Physical memory greater than (%d) Gb not supported.\n",
 		       PML4E_MAP_LIMIT);
 		return 0;
 	}
@@ -1496,7 +1455,7 @@ int vt_ept_2M_init(struct vmx_vcpu *vcpu)
 	INIT_LIST_HEAD(&e_pt->list);
 	list_add(&e_pt->list, &vcpu->ept_table_pages.list);
 
-	HDEBUG("Allocated (%u) pdpt (%u) pd (%u) pt tables.\n", n_pdpt, n_pd, n_pt);
+	OKDEBUG("Allocated (%u) pdpt (%u) pd (%u) pt tables.\n", n_pdpt, n_pd, n_pt);
 
         /* Allocate the paging structures from bottom to top so we start
 	 * at the PT level (PML1) and finish with the PML4 table.
@@ -1520,7 +1479,7 @@ int vt_ept_2M_init(struct vmx_vcpu *vcpu)
 			return 0;
 		}
 		memset(pt[i].virt, 0, PAGESIZE);
-		HDEBUG("n=(%d) PML1 pt virt (%llX) pt phys (%llX)\n", i, (unsigned long long)pt[i].virt, pt[i].phys);
+		OKDEBUG("n=(%d) PML1 pt virt (%llX) pt phys (%llX)\n", i, (unsigned long long)pt[i].virt, pt[i].phys);
 	}
 
 	q = pt[0].virt;
@@ -1541,7 +1500,7 @@ int vt_ept_2M_init(struct vmx_vcpu *vcpu)
 			return 0;
 		}
 		memset(pd[i].virt, 0, PAGESIZE);
-		HDEBUG("n=(%d) PML2 pd virt (%llX) pd phys (%llX)\n", i, (unsigned long long)pd[i].virt, pd[i].phys);
+		OKDEBUG("n=(%d) PML2 pd virt (%llX) pd phys (%llX)\n", i, (unsigned long long)pd[i].virt, pd[i].phys);
 	}
 	/* XXXX todo cid: recheck correct CACHE / IPAT attribute setting. */
 	for(k = 0; k < n_pd; k++){
@@ -1549,7 +1508,7 @@ int vt_ept_2M_init(struct vmx_vcpu *vcpu)
 		for(i = 0; i < n_entries; i++){
 			addr = (((u64)(i + k*n_entries)) << 21);
 #if 0
-			HDEBUG("calculated addr (i=%d) (k=%d) (n_entries=%d) (%#llx)\n", i, k, n_entries, addr);
+			OKDEBUG("calculated addr (i=%d) (k=%d) (n_entries=%d) (%#llx)\n", i, k, n_entries, addr);
 #endif
 			if(no_cache_region(addr,  PAGESIZE2M)){
 				q[i] = (((u64)(i + k*n_entries)) << 21) | EPT_R | EPT_W | EPT_2M_PAGE;
@@ -1557,7 +1516,7 @@ int vt_ept_2M_init(struct vmx_vcpu *vcpu)
 				q[i] = (((u64)(i + k*n_entries)) << 21) | EPT_R | EPT_W | EPT_2M_PAGE | EPT_CACHE_2 | EPT_CACHE_3;
 			}
 #if 0
-			HDEBUG("pml2[%d] entry %d=%#llx\n", k, i, q[i]);
+			OKDEBUG("pml2[%d] entry %d=%#llx\n", k, i, q[i]);
 #endif
 		}
 	}
@@ -1577,7 +1536,7 @@ int vt_ept_2M_init(struct vmx_vcpu *vcpu)
 			return 0;
 		}
 		memset(pdpt[i].virt, 0, PAGESIZE);
-		HDEBUG("n=(%d) PML3 pdpt virt (%llX) pdpt phys (%llX)\n",
+		OKDEBUG("n=(%d) PML3 pdpt virt (%llX) pdpt phys (%llX)\n",
 			i, (u64)pdpt[i].virt, pdpt[i].phys);
 	}
 	/* And link to the PD (PML2) tables created earlier...*/
@@ -1603,7 +1562,7 @@ int vt_ept_2M_init(struct vmx_vcpu *vcpu)
 	       q[i] = (u64)(pdpt[i].phys + EPT_R + EPT_W + EPT_X);
        }
 
-       HDEBUG("PML4 plm4_virt (%#lx) *plm4_virt (%#lx) pml4_phys (%#lx)\n",
+       OKDEBUG("PML4 plm4_virt (%#lx) *plm4_virt (%#lx) pml4_phys (%#lx)\n",
 	       (unsigned long)pml4_virt, (unsigned long)*pml4_virt,
 	       (unsigned long)pml4_phys);
 
@@ -1791,7 +1750,7 @@ static void vmcs_load(struct vmcs *vmcs)
 			: "=qm"(error) : "a"(&phys_addr), "m"(phys_addr)
 			: "cc", "memory");
 	if (error)
-		printk(KERN_ERR "vmx: vmptrld %p/%llx failed\n",
+		printk(KERN_ERR "okernel: vmx: vmptrld %p/%llx failed\n",
 		       vmcs, phys_addr);
 }
 
@@ -1816,7 +1775,7 @@ static __always_inline u64 vmcs_read64(unsigned long field)
 
 static noinline void vmwrite_error(unsigned long field, unsigned long value)
 {
-	printk(KERN_ERR "vmwrite error: reg %lx value %lx (err %d)\n",
+	printk(KERN_ERR "okernel: vmwrite error: reg %lx value %lx (err %d)\n",
 	       field, value, vmcs_read32(VM_INSTRUCTION_ERROR));
 	//dump_stack();
 }
@@ -2077,10 +2036,10 @@ static void vmx_setup_constant_host_state(void)
 	vmcs_write16(HOST_GS_SELECTOR, 0);            /* 22.2.4 */
 
 	rdmsrl(MSR_FS_BASE, tmpl);
-	HDEBUG("setting host MSR_FS_BASE=%#lx\n", tmpl);
+	OKDEBUG("setting host MSR_FS_BASE=%#lx\n", tmpl);
 	vmcs_writel(HOST_FS_BASE, tmpl); /* 22.2.4 */
 	rdmsrl(MSR_GS_BASE, tmpl);
-	HDEBUG("setting host MSR_GS_BASE=%#lx\n", tmpl);
+	OKDEBUG("setting host MSR_GS_BASE=%#lx\n", tmpl);
 	vmcs_writel(HOST_GS_BASE, tmpl); /* 22.2.4 */
 }
 
@@ -2145,10 +2104,10 @@ static void __vmx_setup_cpu(void)
 	vmcs_writel(HOST_IA32_SYSENTER_ESP, sysenter_esp); /* 22.2.3 */
 
 	rdmsrl(MSR_FS_BASE, tmpl);
-	HDEBUG("setting host MSR_FS_BASE=%#lx\n", tmpl);
+	OKDEBUG("setting host MSR_FS_BASE=%#lx\n", tmpl);
 	vmcs_writel(HOST_FS_BASE, tmpl); /* 22.2.4 */
 	rdmsrl(MSR_GS_BASE, tmpl);
-	HDEBUG("setting host MSR_GS_BASE=%#lx\n", tmpl);
+	OKDEBUG("setting host MSR_GS_BASE=%#lx\n", tmpl);
 	vmcs_writel(HOST_GS_BASE, tmpl); /* 22.2.4 */
 }
 
@@ -2369,30 +2328,30 @@ struct vmcs_cpu_state {
 
 void show_cpu_state(struct vmcs_cpu_state state)
 {
-	HDEBUG("Control regs / flags: \n");
-	HDEBUG("rsp     (%#lx)\n", state.rsp);
-	HDEBUG("rbp     (%#lx)\n", state.rbp);
-	HDEBUG("cr0     (%#lx)\n", state.cr0);
-	HDEBUG("cr3     (%#lx)\n", state.cr3);
-	HDEBUG("cr4     (%#lx)\n", state.cr4);
-	HDEBUG("rflags  (%#lx)\n", state.rflags);
-	HDEBUG("efer    (%#lx)\n", state.efer);
+	OKLOG("Control regs / flags: \n");
+	OKLOG("rsp     (%#lx)\n", state.rsp);
+	OKLOG("rbp     (%#lx)\n", state.rbp);
+	OKLOG("cr0     (%#lx)\n", state.cr0);
+	OKLOG("cr3     (%#lx)\n", state.cr3);
+	OKLOG("cr4     (%#lx)\n", state.cr4);
+	OKLOG("rflags  (%#lx)\n", state.rflags);
+	OKLOG("efer    (%#lx)\n", state.efer);
 
-	HDEBUG("idt base (%#lx) limit (%#x)\n", state.idt_base, state.idt_limit);
-	HDEBUG("gdt base (%#lx) limit (%#x)\n", state.gdt_base, state.gdt_limit);
-	HDEBUG("ldt base (%#lx) limit (%#x)\n", state.ldt_base, state.ldt_limit);
+	OKLOG("idt base (%#lx) limit (%#x)\n", state.idt_base, state.idt_limit);
+	OKLOG("gdt base (%#lx) limit (%#x)\n", state.gdt_base, state.gdt_limit);
+	OKLOG("ldt base (%#lx) limit (%#x)\n", state.ldt_base, state.ldt_limit);
 
-	HDEBUG("Selectors: \n");
-	HDEBUG("cs_s (%#x) ds_s (%#x) es_s (%#x) ss_s (%#x) tr_s (%#x)\n",
+	OKLOG("Selectors: \n");
+	OKLOG("cs_s (%#x) ds_s (%#x) es_s (%#x) ss_s (%#x) tr_s (%#x)\n",
 		state.cs_selector, state.ds_selector, state.es_selector,
 		state.ss_selector, state.tr_selector);
-	HDEBUG("fs_s (%#x) gs_s (%#x)\n",
+	OKLOG("fs_s (%#x) gs_s (%#x)\n",
 		state.fs_selector, state.gs_selector);
 
-	HDEBUG("fs_base (%#lx) gs_base (%#lx)\n",
+	OKLOG("fs_base (%#lx) gs_base (%#lx)\n",
 		state.fs_base,state.gs_base);
 
-	HDEBUG("sysenter_cs (%lx), systenter_esp (%lx) systenter_eip (%lx)\n",
+	OKLOG("sysenter_cs (%lx), systenter_esp (%lx) systenter_eip (%lx)\n",
 		state.sysenter_cs, state.sysenter_esp, state.sysenter_eip);
 	return;
 }
@@ -2466,7 +2425,7 @@ void get_cpu_state(struct vmx_vcpu *vcpu, struct vmcs_cpu_state* cpu_state)
 	cpu_state->idt_base = idt.address;
 	cpu_state->idt_limit = idt.size;
 #endif
-	HDEBUG("setting IDT values from store_idt: vaddr=%#lx, paddr=%#lx, size=%#x\n",
+	OKDEBUG("setting IDT values from store_idt: vaddr=%#lx, paddr=%#lx, size=%#x\n",
 		cpu_state->idt_base, __pa(cpu_state->idt_base), cpu_state->idt_limit);
         //cpu_state->idt_limit = 0xFFFF;
 
@@ -2540,9 +2499,9 @@ static void vmx_setup_initial_guest_state(struct vmx_vcpu *vcpu)
 
 
 #if 0
-	HDEBUG("----start of 'current' regs from __show_regs:\n");
+	OKDEBUG("----start of 'current' regs from __show_regs:\n");
 	__show_regs(regs, 1);
-	HDEBUG("----end of 'current' regs from __show_regs.\n");
+	OKDEBUG("----end of 'current' regs from __show_regs.\n");
 #endif
 	/* Most likely will need to adjust */
 	cr4 = current_cpu_state.cr4;
@@ -2609,10 +2568,10 @@ static void vmx_setup_initial_guest_state(struct vmx_vcpu *vcpu)
 	vmcs_writel(GUEST_CS_BASE, 0);
 	vmcs_writel(GUEST_DS_BASE, 0);
 	vmcs_writel(GUEST_ES_BASE, 0);
-	HDEBUG("setting GUEST_GS_BASE=%#lx\n", current_cpu_state.gs_base);
+	OKDEBUG("setting GUEST_GS_BASE=%#lx\n", current_cpu_state.gs_base);
 	vmcs_writel(GUEST_GS_BASE, current_cpu_state.gs_base);
 	vmcs_writel(GUEST_SS_BASE, 0);
-	HDEBUG("setting GUEST_FS_BASE=%#lx\n", current_cpu_state.fs_base);
+	OKDEBUG("setting GUEST_FS_BASE=%#lx\n", current_cpu_state.fs_base);
 	vmcs_writel(GUEST_FS_BASE, current_cpu_state.fs_base);
 
         /* guest segment access rights */
@@ -2753,12 +2712,12 @@ static struct vmx_vcpu * vmx_create_vcpu(struct nr_cloned_state* cloned_thread)
 	struct vmx_vcpu *vcpu = kmalloc(sizeof(struct vmx_vcpu), GFP_KERNEL);
 
 	if (!vcpu){
-		printk(KERN_ERR "vmx_create_vcpu: failed to kmalloc vcpu.\n");
+		printk(KERN_ERR "okernel: vmx_create_vcpu: failed to kmalloc vcpu.\n");
 		return NULL;
 	}
 
 	if(!cloned_thread){
-		printk(KERN_ERR "vmx_create_vcpu: passed NULL cloned_thread_state.\n");
+		printk(KERN_ERR "okernel: vmx_create_vcpu: passed NULL cloned_thread_state.\n");
 		return NULL;
 	}
 
@@ -2795,19 +2754,19 @@ static struct vmx_vcpu * vmx_create_vcpu(struct nr_cloned_state* cloned_thread)
 #if 1
 	if (cpu_has_vmx_ept_ad_bits()) {
 		vcpu->ept_ad_enabled = true;
-		HDEBUG("enabled EPT A/D bits");
+		OKDEBUG("enabled EPT A/D bits");
 	}
 #endif
 #if defined (OKERNEL_PROTECTED_MEMORY)
 	/* Example of the kind of memory protection we can provide: unmap 'protected pages' from any EPT tables */
 	if(!(modify_ept_page_range_perms(vcpu, ok_protected_page, OK_NR_PROTECTED_PAGES, 0))){
-		printk("ok: failed to remove protected pages from EPT...\n");
+		printk("okernel: failed to remove protected pages from EPT...\n");
 		BUG();
 	}
 #endif
-	vcpu->lp = 0;
 
 	return vcpu;
+
 fail_ept:
 	vmx_free_vpid(vcpu);
 
@@ -2830,7 +2789,7 @@ void vmx_destroy_ept(struct vmx_vcpu *vcpu)
 		for(i = 0; i < entry->n_pages; i++){
 			vaddr = __va(entry->page[i].phys);
 			vaddr_p = (unsigned long)*vaddr;
-			HDEBUG("Freeing page phys=%#lx __va(phys)=%#lx *virtp=%#lx *virt=%#lx\n",
+			OKDEBUG("Freeing page phys=%#lx __va(phys)=%#lx *virtp=%#lx *virt=%#lx\n",
 			       (unsigned long)entry->page[i].phys,
 			       (unsigned long)vaddr,
 			       (unsigned long)vaddr_p,
@@ -2850,7 +2809,7 @@ void vmx_destroy_ept(struct vmx_vcpu *vcpu)
  */
 static void vmx_destroy_vcpu(struct vmx_vcpu *vcpu)
 {
-	HDEBUG("called.\n");
+	OKDEBUG("called.\n");
 	vmx_get_cpu(vcpu);
 	ept_sync_context(vcpu->eptp);
 	vmx_destroy_ept(vcpu);
@@ -3023,7 +2982,7 @@ static void vmx_handle_cpuid(struct vmx_vcpu *vcpu)
 
 	if(orig_eax == 1){
 		/* Requesting processor features, need to mask VMX (bit 5, ecx) */
-		HDEBUG("Masking cpuid ecx vmx bit");
+		OKDEBUG("Masking cpuid ecx vmx bit");
 		ecx &= ~(ECX_VMX_BIT);
 	}
 
@@ -3140,7 +3099,7 @@ static void check_int(struct vmx_vcpu *vcpu, char *s)
 {
 	vmx_get_cpu(vcpu);
 	if((vmcs_readl(GUEST_RFLAGS) & RFLAGS_IF_BIT)){
-		OKDEBUG("INFO: %s with interrupts enabled\n", s);
+		OKLOG("INFO: %s with interrupts enabled\n", s);
 	}else{
 		OKWARN("WARNING: %s with interrupts disabled\n",s);
 	}
@@ -3166,7 +3125,7 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu, int nr_irqs_enabled)
 	struct thread_info *r_ti;
 #endif
 	unsigned int cloned_tsk_state;
-#if defined(HPE_DEBUG)
+#if defined(OKERNEL_DEBUG)
 	unsigned long rbp;
 	unsigned long rsp;
 #endif
@@ -3194,23 +3153,17 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu, int nr_irqs_enabled)
 
 	cmd = vcpu->regs[VCPU_REGS_RAX];
 
-	TDEBUG(log_ptr(vcpu), "cmd (%lu)\n", cmd);
-	TDEBUG(log_ptr(vcpu), "in_atomic(): %d, irqs_disabled(): %d, pid: %d, name: %s\n",
+#if defined(OKERNEL_DEBUG)
+	OKDEBUG("cmd (%lu)\n", cmd);
+	OKDEBUG("in_atomic(): %d, irqs_disabled(): %d, pid: %d, name: %s\n",
 		 in_atomic(), irqs_disabled(), current->pid, current->comm);
-	TDEBUG(log_ptr(vcpu), "preempt_count (%d) rcu_preempt_depth (%d)\n",
-		preempt_count(), rcu_preempt_depth());
-
-#if defined(HPE_DEBUG)
-	HDEBUG2("cmd (%lu)\n", cmd);
-	HDEBUG2("in_atomic(): %d, irqs_disabled(): %d, pid: %d, name: %s\n",
-		 in_atomic(), irqs_disabled(), current->pid, current->comm);
-	HDEBUG2("preempt_count (%d) rcu_preempt_depth (%d)\n",
+	OKDEBUG("preempt_count (%d) rcu_preempt_depth (%d)\n",
 		preempt_count(), rcu_preempt_depth());
 
 	asm volatile ("mov %%rbp,%0" : "=rm" (rbp));
-	HDEBUG("rbp currently  (%#lx)\n", rbp);
+	OKDEBUG("rbp currently  (%#lx)\n", rbp);
 	asm volatile ("mov %%rsp,%0" : "=rm" (rsp));
-	HDEBUG("rsp currently  (%#lx)\n", rsp);
+	OKDEBUG("rsp currently  (%#lx)\n", rsp);
 #endif
 
 	if(cmd == VMCALL_DO_FORK_FIXUP){
@@ -3219,7 +3172,7 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu, int nr_irqs_enabled)
 		p = (struct task_struct*)vcpu->regs[VCPU_REGS_RBX];
 		tls = (unsigned long)vcpu->regs[VCPU_REGS_RCX];
 
-		HDEBUG("VMCALL_DO_FORK_FIXUP called for p (%#lx) (%s) tls (%#lx)\n",
+		OKDEBUG("VMCALL_DO_FORK_FIXUP called for p (%#lx) (%s) tls (%#lx)\n",
 			(unsigned long)p, p->comm, tls);
 		fork_frame = (struct fork_frame*) p->thread.sp;
 		frame = &fork_frame->frame;
@@ -3229,11 +3182,11 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu, int nr_irqs_enabled)
 		gs = vmcs_readl(GUEST_GS_BASE);
 		vmx_put_cpu(vcpu);
 
-		HDEBUG("current pid (%d) (%x)\n", current->pid, current->pid);
+		OKDEBUG("current pid (%d) (%x)\n", current->pid, current->pid);
 
 		p->okernel_fork_gs_base = gs;
 
-		HDEBUG("VMCALL_DO_FORK_FIXUP setting gs to (%#lx) for p (%#lx)\n",
+		OKDEBUG("VMCALL_DO_FORK_FIXUP setting gs to (%#lx) for p (%#lx)\n",
 			p->okernel_fork_gs_base, (unsigned long)p);
 
 		BXMAGICBREAK;
@@ -3246,34 +3199,34 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu, int nr_irqs_enabled)
 		fs = vmcs_readl(GUEST_FS_BASE);
 		vmx_put_cpu(vcpu);
 
-		HDEBUG("current pid (%d) (%x)\n", current->pid, current->pid);
+		OKDEBUG("current pid (%d) (%x)\n", current->pid, current->pid);
 
 		/* Need to look into TLS setting some more. */
 		if(tls){
-			HDEBUG("setting new process FS based on TLS=%#lx\n", tls);
+			OKDEBUG("setting new process FS based on TLS=%#lx\n", tls);
 			p->okernel_fork_fs_base = tls;
 		} else {
 			p->okernel_fork_fs_base = fs;
 
 		}
 
-		HDEBUG("VMCALL_TLS_FIXUP setting fs to (%#lx) for p (%#lx)\n",
+		OKDEBUG("VMCALL_TLS_FIXUP setting fs to (%#lx) for p (%#lx)\n",
 			p->okernel_fork_fs_base, (unsigned long)p);
 
-		HDEBUG("\nCurrent (pid=%d) Code  Segment start = 0x%lx, end = 0x%lx \n"
+		OKDEBUG("\nCurrent (pid=%d) Code  Segment start = 0x%lx, end = 0x%lx \n"
 		       "Data  Segment start = 0x%lx, end = 0x%lx\n"
 		       "Stack Segment start = 0x%lx\n",
 		       current->pid,
 		       current->mm->start_code, current->mm->end_code,
 		       current->mm->start_data, current->mm->end_data,
 		       current->mm->start_stack);
-		HDEBUG("Current (pid=%d) mm vma mappings done.\n", current->pid);
+		OKDEBUG("Current (pid=%d) mm vma mappings done.\n", current->pid);
 		BXMAGICBREAK;
 		ret = 0;
 	} else if(cmd == VMCALL_DO_EXEC_FIXUP_HOST){
 		/* Next time we take a vmexit we will return using these page tables - should validate the address */
 		h_cr3 = vcpu->regs[VCPU_REGS_RBX];
-		HDEBUG("excec_fixup: Setting saved HOST CR3 to (%#lx) __pa (%#lx)\n",
+		OKDEBUG("excec_fixup: Setting saved HOST CR3 to (%#lx) __pa (%#lx)\n",
 		       (unsigned long)h_cr3, __pa(h_cr3));
 		vmx_get_cpu(vcpu);
 		vmcs_writel(HOST_CR3, __pa(h_cr3));
@@ -3282,7 +3235,7 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu, int nr_irqs_enabled)
 		ret = 0;
 	} else if (cmd == VMCALL_DO_GET_CPU_HELPER){
 		cpu_ptr = (void*)vcpu->regs[VCPU_REGS_RBX];
-		HDEBUG("calling __vmx_get_cpu_helper.\n");
+		OKDEBUG("calling __vmx_get_cpu_helper.\n");
 		__vmx_get_cpu_helper(cpu_ptr);
 		ret = 0;
 	} else if (cmd == VMCALL_SCHED){
@@ -3295,59 +3248,59 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu, int nr_irqs_enabled)
 #endif
 		cloned_tsk_state = vcpu->cloned_tsk->state;
 
-		HDEBUG("in VMCALL schedule - current state (%lu) cloned state (%u)\n",
+		OKDEBUG("in VMCALL schedule - current state (%lu) cloned state (%u)\n",
 			current->state, cloned_tsk_state);
-		HDEBUG("VMCALL sched arg:=(%#lx)\n", arg1);
+		OKDEBUG("VMCALL sched arg:=(%#lx)\n", arg1);
 
 		switch(cloned_tsk_state){
 		case TASK_RUNNING:
-			HDEBUG("cloned_task (TASK_RUNNING)\n");
+			OKDEBUG("cloned_task (TASK_RUNNING)\n");
 			break;
 		case TASK_INTERRUPTIBLE:
-			HDEBUG("cloned_task (TASK_INTERRUPTIBLE)\n");
+			OKDEBUG("cloned_task (TASK_INTERRUPTIBLE)\n");
 			break;
 		case TASK_UNINTERRUPTIBLE:
-			HDEBUG("cloned_task (TASK_UNINTERRUPTIBLE)\n");
+			OKDEBUG("cloned_task (TASK_UNINTERRUPTIBLE)\n");
 			break;
 		default:
-			HDEBUG("cloned_task (OTHER STATE)\n");
+			OKDEBUG("cloned_task (OTHER STATE)\n");
 		}
 
 		switch(current->state){
 		case TASK_RUNNING:
-			HDEBUG("current (TASK_RUNNING)\n");
+			OKDEBUG("current (TASK_RUNNING)\n");
 			break;
 		case TASK_INTERRUPTIBLE:
-			HDEBUG("current (TASK_INTERRUPTIBLE)\n");
+			OKDEBUG("current (TASK_INTERRUPTIBLE)\n");
 			break;
 		case TASK_UNINTERRUPTIBLE:
-			HDEBUG("current (TASK_UNINTERRUPTIBLE)\n");
+			OKDEBUG("current (TASK_UNINTERRUPTIBLE)\n");
 			break;
 		default:
-			HDEBUG("current (OTHER STATE)\n");
+			OKDEBUG("current (OTHER STATE)\n");
 		}
 
 #ifdef CONFIG_DEBUG_ATOMIC_SLEEP
-		HDEBUG("state=%lx set at [<%p>] %pS\n",
+		OKDEBUG("state=%lx set at [<%p>] %pS\n",
 			current->state,
 			(void *)current->task_state_change,
 			(void *)current->task_state_change);
 #endif
 #if !defined(CONFIG_THREAD_INFO_IN_TASK)
                 /* Re-sync cloned-thread thread_info */
-		HDEBUG("syncing cloned thread_info state (NR->R) (original r_ti->flags=%#lx)\n",
+		OKDEBUG("syncing cloned thread_info state (NR->R) (original r_ti->flags=%#lx)\n",
 			r_ti->flags);
 		BXMAGICBREAK;
 
 		if((need_set_signal = signal_pending(current))){
-			HDEBUG("sig pending before copy thread_info from NR to R.\n");
+			OKDEBUG("sig pending before copy thread_info from NR to R.\n");
 		}
 
 
 		memcpy(r_ti, nr_ti, sizeof(struct thread_info));
 		//smp_mb();
 
-		HDEBUG("synced cloned thread_info state (NR->R) (new r_ti->flags=%#lx)\n",
+		OKDEBUG("synced cloned thread_info state (NR->R) (new r_ti->flags=%#lx)\n",
 		       r_ti->flags);
 
 		if(need_set_signal){
@@ -3355,9 +3308,9 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu, int nr_irqs_enabled)
 		}
 
 
-#if defined(HPE_DEBUG)
+#if defined(OKERNEL_DEBUG)
 		if(signal_pending(current)){
-			HDEBUG("sig pending after copy thread_info from NR to R.\n");
+			OKDEBUG("sig pending after copy thread_info from NR to R.\n");
 		}
 #endif
 #endif // CONFIG_THREAD_INFO_IN_TASK
@@ -3367,7 +3320,7 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu, int nr_irqs_enabled)
 		vmx_put_cpu(vcpu);
 		wrmsrl(MSR_FS_BASE, nr_fs);
 		wrmsrl(MSR_GS_BASE, nr_gs);
-#if defined(HPE_DEBUG)
+#if defined(OKERNEL_DEBUG)
 		/* Don't need this rdmsrl, just for debug output */
 		rdmsrl(MSR_FS_BASE, fs);
 		rdmsrl(MSR_GS_BASE, gs);
@@ -3375,16 +3328,16 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu, int nr_irqs_enabled)
 		cpu = smp_processor_id();
 		tss = &per_cpu(cpu_tss, cpu);
 
-		HDEBUG("calling schedule_r (pid %d) cpu_cur_tos (%#lx) tss.sp0 (%#lx) flgs (%#lx)\n",
+		OKDEBUG("calling schedule_r (pid %d) cpu_cur_tos (%#lx) tss.sp0 (%#lx) flgs (%#lx)\n",
 		       current->pid, current_top_of_stack(), (unsigned long)tss->x86_tss.sp0,
 		       current_thread_info()->flags);
 
-		HDEBUG("calling schedule_r MSR_FS_BASE=%#lx nr_fs=%#lx MSR_GS_BASE=%#lx nr_gs=%#lx\n",
+		OKDEBUG("calling schedule_r MSR_FS_BASE=%#lx nr_fs=%#lx MSR_GS_BASE=%#lx nr_gs=%#lx\n",
 		       fs, nr_fs, gs, nr_gs);
 
-		HDEBUG("calling schedule_r in_atomic(): %d, irqs_disabled(): %d, pid: %d, name: %s\n",
+		OKDEBUG("calling schedule_r in_atomic(): %d, irqs_disabled(): %d, pid: %d, name: %s\n",
 		       in_atomic(), irqs_disabled(), current->pid, current->comm);
-		HDEBUG("calling schedule_r preempt_count (%d) rcu_preempt_depth (%d)\n",
+		OKDEBUG("calling schedule_r preempt_count (%d) rcu_preempt_depth (%d)\n",
 		       preempt_count(), rcu_preempt_depth());
 #endif
 		r_irqs_disabled = irqs_disabled();
@@ -3406,7 +3359,7 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu, int nr_irqs_enabled)
 		} else if (arg1 == OK_SCHED_PREEMPT){
 			preempt_schedule_r_mode();
 		} else {
-			HDEBUG("Invalid vmcall schedule argument.\n");
+			OKERR("Invalid vmcall schedule argument.\n");
 			BUG();
 		}
 		vpid_sync_vcpu_global();
@@ -3420,22 +3373,22 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu, int nr_irqs_enabled)
 		cpu = smp_processor_id();
 		tss = &per_cpu(cpu_tss, cpu);
 
-		HDEBUG("ret schedule_r (pid %d) cpu_cur_tos (%#lx) tss.sp0 (%#lx) flgs (%#lx)\n",
+		OKDEBUG("ret schedule_r (pid %d) cpu_cur_tos (%#lx) tss.sp0 (%#lx) flgs (%#lx)\n",
 		       current->pid, current_top_of_stack(), (unsigned long)tss->x86_tss.sp0,
 		       current_thread_info()->flags);
 
-		HDEBUG("syncing cloned thread_info state (R->NR)...\n");
+		OKDEBUG("syncing cloned thread_info state (R->NR)...\n");
 		BXMAGICBREAK;
 
 #if !defined(CONFIG_THREAD_INFO_IN_TASK)
 		memcpy(nr_ti, r_ti, sizeof(struct thread_info));
-		HDEBUG("synced cloned thread_info state (R->NR) (nr_ti->flags=%#lx)\n",
+		OKDEBUG("synced cloned thread_info state (R->NR) (nr_ti->flags=%#lx)\n",
 		       nr_ti->flags);
 #endif
 
-		HDEBUG("ret from sched in_atomic(): %d, irqs_disabled(): %d, pid: %d, name: %s\n",
+		OKDEBUG("ret from sched in_atomic(): %d, irqs_disabled(): %d, pid: %d, name: %s\n",
 		       in_atomic(), irqs_disabled(), current->pid, current->comm);
-		HDEBUG("ret from preempt_count (%d) rcu_preempt_depth (%d)\n",
+		OKDEBUG("ret from preempt_count (%d) rcu_preempt_depth (%d)\n",
 		       preempt_count(), rcu_preempt_depth());
 
 		/* IRQs should be enabled on return from schedule()...check this */
@@ -3452,17 +3405,17 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu, int nr_irqs_enabled)
 		BXMAGICBREAK;
 	} else if(cmd == VMCALL_DOEXIT){
 		code = (long)vcpu->regs[VCPU_REGS_RBX];
-		HDEBUG("calling do_exit(%ld)...\n", code);
+		OKDEBUG("calling do_exit(%ld)...\n", code);
 		vmx_destroy_vcpu(vcpu);
 		do_exit(code);
 	} else {
-		HDEBUG("unexpected VMCALL argument.\n");
+		OKERR("unexpected VMCALL argument.\n");
 		BUG();
 		ret = -1;
 	}
-#if defined(HPE_DEBUG)
+#if defined(OKERNEL_DEBUG)
 	if(signal_pending(current)){
-		HDEBUG("sig pending on exit from vmcall.\n");
+		OKDEBUG("sig pending on exit from vmcall.\n");
 	}
 #endif
 	/* This is what vmcall() sees as the retun value */
@@ -3477,33 +3430,33 @@ void check_gva(unsigned long addr)
 	unsigned int level;
 	pgprot_t prot;
 
-	HDEBUG("Checking guest physical pg perms for guest virtual %#lx\n",
+	OKDEBUG("Checking guest physical pg perms for guest virtual %#lx\n",
 	       addr);
 	kpte = lookup_address(addr, &level);
 	if (!kpte){
-		HDEBUG("Address %#lx not found in guest page tables", addr);
+		OKDEBUG("Address %#lx not found in guest page tables", addr);
 		return;
 	}
 	prot = pte_pgprot(*kpte);
 	if (pgprot_val(prot) & pgprot_val(__pgprot(_PAGE_NX))){
-		HDEBUG("NX is set\n");
+		OKDEBUG("NX is set\n");
 	}
 	if (pgprot_val(prot) & pgprot_val(__pgprot(_PAGE_RW))){
-		HDEBUG("RW is set\n");
+		OKDEBUG("RW is set\n");
 	}
 }
 
 void check_gpa(struct vmx_vcpu *vcpu, unsigned long addr)
 {
-	HDEBUG("Checking EPT perms for %#lx\n", addr);
+	OKDEBUG("Checking EPT perms for %#lx\n", addr);
 	if (is_set_ept_page_flag(vcpu, addr, EPT_R)){
-		HDEBUG("EPT_R set\n");
+		OKDEBUG("EPT_R set\n");
 	}
 	if (is_set_ept_page_flag(vcpu, addr, EPT_W)){
-		HDEBUG("EPT_W set\n");
+		OKDEBUG("EPT_W set\n");
 	}
 	if (is_set_ept_page_flag(vcpu, addr, EPT_X)){
-		HDEBUG("EPT_X set\n");
+		OKDEBUG("EPT_X set\n");
 	}
 }
 
@@ -3890,7 +3843,7 @@ int vmx_launch(unsigned int mode, unsigned int flags, struct nr_cloned_state *cl
 	unsigned long new_rsp;
 	unsigned long new_rbp;
 	unsigned long current_frame_len;
-#ifdef HPE_DEBUG
+#ifdef OKERNEL_DEBUG
 	unsigned long fred = 7;
 #endif
 	unsigned long r_stack_top;
@@ -3903,7 +3856,7 @@ int vmx_launch(unsigned int mode, unsigned int flags, struct nr_cloned_state *cl
 
 	unsigned long k_stack;
 	unsigned long qual;
-#if defined(HPE_DEBUG)
+#if defined(OKERNEL_DEBUG)
 	int orig_cpu;
 	unsigned long nr_gs;
 	unsigned long nr_fs;
@@ -3928,14 +3881,14 @@ int vmx_launch(unsigned int mode, unsigned int flags, struct nr_cloned_state *cl
 
 	c_rip = cloned_thread->rip;
 
-	HDEBUG("c_rip: (#%#lx)\n", c_rip);
+	OKDEBUG("c_rip: (#%#lx)\n", c_rip);
 
 	vcpu = vmx_create_vcpu(cloned_thread);
 
 	if (!vcpu)
 		return -ENOMEM;
 
-	HDEBUG("created new VMX process context (VPID %d)\n", vcpu->vpid);
+	OKDEBUG("created new VMX process context (VPID %d)\n", vcpu->vpid);
 
 	//perms =  EPT_R | EPT_W | EPT_X | EPT_CACHE_2 | EPT_CACHE_3;
 	/* Could make this non-X too */
@@ -3961,18 +3914,18 @@ int vmx_launch(unsigned int mode, unsigned int flags, struct nr_cloned_state *cl
 	}
 
 
-	HDEBUG("reset stack to top of bottom page for orig thread: in use (%lu) new top (%#lx)\n",
+	OKDEBUG("reset stack to top of bottom page for orig thread: in use (%lu) new top (%#lx)\n",
 		in_use, r_stack_top);
 
-	HDEBUG("kernel thread_info (tsk->stack) vaddr (%#lx) paddr (%#lx) top of stack (%#lx)\n",
+	OKDEBUG("kernel thread_info (tsk->stack) vaddr (%#lx) paddr (%#lx) top of stack (%#lx)\n",
 		k_stack, __pa(k_stack), current_top_of_stack());
 
-	HDEBUG("sizeof(struct thread_info) (%lu)\n", sizeof(struct thread_info));
+	OKDEBUG("sizeof(struct thread_info) (%lu)\n", sizeof(struct thread_info));
 
 	asm volatile ("mov %%rbp,%0" : "=rm" (rbp));
-	HDEBUG("original thread rbp currently  (%#lx)\n", rbp);
+	OKDEBUG("original thread rbp currently  (%#lx)\n", rbp);
 	asm volatile ("mov %%rsp,%0" : "=rm" (rsp));
-	HDEBUG("orginal thread rsp currently  (%#lx)\n", rsp);
+	OKDEBUG("orginal thread rsp currently  (%#lx)\n", rsp);
 
 	/*
 	 * Ok we want to clone the stack contents from
@@ -3980,41 +3933,41 @@ int vmx_launch(unsigned int mode, unsigned int flags, struct nr_cloned_state *cl
 	 * to us
 	 */
 	current_frame_len = rbp - rsp;
-	HDEBUG("current stack from in use (%lu)\n", current_frame_len);
+	OKDEBUG("current stack from in use (%lu)\n", current_frame_len);
 
 	new_rbp = r_stack_top;
 	new_rsp = new_rbp - current_frame_len;
 	memcpy((u64 *)new_rsp, (u64 *)rsp, current_frame_len);
 
-	HDEBUG("setting rsp to (%#lx) rbp to (%#lx)\n", new_rsp, new_rbp);
+	OKDEBUG("setting rsp to (%#lx) rbp to (%#lx)\n", new_rsp, new_rbp);
 	asm volatile ("mov %0, %%rbp": : "r" (new_rbp));
 	asm volatile ("mov %0, %%rsp": : "r" (new_rsp));
 
 	BXMAGICBREAK;
 
 	/* Check our stack manipulation & sliding - can we still access fred? */
-#if defined(HPE_DEBUG)
-	HDEBUG("fred (%lu) address of fred (%#lx)\n", fred, (unsigned long)&fred);
+#if defined(OKERNEL_DEBUG)
+	OKDEBUG("fred (%lu) address of fred (%#lx)\n", fred, (unsigned long)&fred);
 	BXMAGICBREAK;
 #endif
 	vcpu->cloned_tsk = current;
 
 
 
-	HDEBUG("Before vmexit handling loop: in_atomic(): %d, irqs_disabled(): %d, pid: %d, name: %s\n",
+	OKDEBUG("Before vmexit handling loop: in_atomic(): %d, irqs_disabled(): %d, pid: %d, name: %s\n",
 		in_atomic(), irqs_disabled(), current->pid, current->comm);
-	HDEBUG("preempt_count (%d) rcu_preempt_depth (%d) cloned rflags (%lu)\n",
+	OKDEBUG("preempt_count (%d) rcu_preempt_depth (%d) cloned rflags (%lu)\n",
 	       preempt_count(), rcu_preempt_depth(), cloned_thread->rflags);
 
 	saved_irqs_on = (cloned_thread->rflags & RFLAGS_IF_BIT);
 
-	HDEBUG("saved_irqs_on (%#lx)\n", saved_irqs_on);
+	OKDEBUG("saved_irqs_on (%#lx)\n", saved_irqs_on);
 
 	kfree(cloned_thread);
 
-	HDEBUG("About to enter vmx handler while loop...\n");
+	OKDEBUG("About to enter vmx handler while loop...\n");
 
-#if defined(HPE_DEBUG)
+#if defined(OKERNEL_DEBUG)
 	orig_cpu = smp_processor_id();
 #endif
 
@@ -4036,15 +3989,14 @@ int vmx_launch(unsigned int mode, unsigned int flags, struct nr_cloned_state *cl
 			current_time = rdtsc();
 			/* Did we see more exits than we were expecting over a given time period? */
 			if((current_time - last_time) < COUNTER_THRESHOLD){
-				TDEBUG(log_ptr(vcpu), "vmexit threshold count exceed calling BUG()\n");
-				dump_log(vcpu);
+				printk(KERN_ERR "vmexit threshold count exceeded - calling BUG()\n");
 				BUG();
 			}
 			vmexit_counter = 0;
 			last_time = current_time;
 		}
 #endif
-		HDEBUG("Entering vmxit handler loop...\n");
+		OKDEBUG("Entering vmexit handler loop...\n");
 
 		vmx_get_cpu(vcpu);
 
@@ -4052,17 +4004,17 @@ int vmx_launch(unsigned int mode, unsigned int flags, struct nr_cloned_state *cl
 		 * As a consequence we need to be careful with percpu data.
 		 */
 
-#if defined(HPE_DEBUG)
+#if defined(OKERNEL_DEBUG)
 		nr_fs = vmcs_readl(GUEST_FS_BASE);
 		nr_gs = vmcs_readl(GUEST_GS_BASE);
-		HDEBUG("Before run,  nr_fs=%#lx nr_gs=%#lx\n", nr_fs, nr_gs);
+		OKDEBUG("Before run,  nr_fs=%#lx nr_gs=%#lx\n", nr_fs, nr_gs);
 #endif
 
-		HDEBUG("About to call vmx_run_vcpu...\n");
+		OKDEBUG("About to call vmx_run_vcpu...\n");
 
-#if defined(HPE_DEBUG)
+#if defined(OKERNEL_DEBUG)
 		if(signal_pending(current)){
-			HDEBUG("sig pending before vmx_run_vcpu...\n");
+			OKDEBUG("sig pending before vmx_run_vcpu...\n");
 		}
 #endif
 
@@ -4071,13 +4023,13 @@ int vmx_launch(unsigned int mode, unsigned int flags, struct nr_cloned_state *cl
 		/* Push signals to be handled in NR mode */
 		nr_ti = vcpu->cloned_thread_info;
 		if(test_tsk_thread_flag(current, TIF_SIGPENDING)){
-			HDEBUG("Setting sig pending flag before vmx_run_vcpu()\n");
+			OKDEBUG("Setting sig pending flag before vmx_run_vcpu()\n");
 			set_ti_thread_flag(nr_ti, TIF_SIGPENDING);
 			clear_tsk_thread_flag(current, TIF_SIGPENDING);
 		}
 #endif // CONFIG_THREAD_INFO_IN_TASK
 
-#if defined(HPE_DEBUG)
+#if defined(OKERNEL_DEBUG)
                 /* Are we about to inject an event to NR-mode? */
                 event_info = vmcs_read32(VMCS_VMENTRY_INTR_INFO_FIELD);
                 //event_err_code = vmcs_read32(VMCS_VMENTRY_EXCEPTION_ERR_CODE);
@@ -4086,9 +4038,9 @@ int vmx_launch(unsigned int mode, unsigned int flags, struct nr_cloned_state *cl
                 event_type = (event_info >> 8) & 7;
 
                 if(event_info & 0x80000000){
-                        HDEBUG("About to inject event on vmentry - event type (%#lx)\n", event_type);
+                        OKDEBUG("About to inject event on vmentry - event type (%#lx)\n", event_type);
                 } else {
-			HDEBUG("Not about to inject event on vmentry.\n");
+			OKDEBUG("Not about to inject event on vmentry.\n");
 		}
 #endif
                 /* Use this instead of local_irq_disable() to save getting tangled in irq on/off tracing stuff. */
@@ -4106,7 +4058,7 @@ int vmx_launch(unsigned int mode, unsigned int flags, struct nr_cloned_state *cl
 
 		//if((ret == EXIT_REASON_VMCALL) && (vcpu->regs[VCPU_REGS_RAX] == VMCALL_DO_GET_CPU_HELPER)){
 		//	/* Should always be called with interrupts disabled. */
-		//	HDEBUG("vmcall do_get_cpu_helper called.\n");
+		//	OKDEBUG("vmcall do_get_cpu_helper called.\n");
 		//	remote_vcpu = (struct vmx_vcpu*)vcpu->regs[VCPU_REGS_RBX];
 		//	vmcs_clear(remote_vcpu->vmcs);
 		//	vmx_step_instruction();
@@ -4117,14 +4069,14 @@ int vmx_launch(unsigned int mode, unsigned int flags, struct nr_cloned_state *cl
 			native_irq_enable();
 		}
 
-		HDEBUG("Returned from vmx_run_vcpu...handling exit condition...\n");
+		OKDEBUG("Returned from vmx_run_vcpu...handling exit condition...\n");
 
 		if (ret == EXIT_REASON_VMCALL || ret == EXIT_REASON_CPUID){
 			vmx_step_instruction();
 		}
 
 		if(*(vcpu->nr_stack_canary) != NR_STACK_END_MAGIC){
-			printk(KERN_ERR "Okernel: NR stack overflow detected.\n");
+			printk(KERN_ERR "okernel: NR stack overflow detected.\n");
 			BUG();
 		}
 
@@ -4138,40 +4090,40 @@ int vmx_launch(unsigned int mode, unsigned int flags, struct nr_cloned_state *cl
 			printk(KERN_CRIT "vmexit on external interrupt.\n");
 			BUG();
 		} else if (ret == EXIT_REASON_CPUID){
-			HDEBUG("cpuid called.\n");
+			OKDEBUG("cpuid called.\n");
 			vmx_handle_cpuid(vcpu);
 		} else if (ret == EXIT_REASON_VMCALL){
 			vmx_handle_vmcall(vcpu, saved_irqs_on);
 		} else if (ret == EXIT_REASON_CR_ACCESS){
 			if (!vmx_handle_CR_access(vcpu)){
-				printk(KERN_CRIT "Unhandled CR access \n");
+				printk(KERN_CRIT "okernel: Unhandled CR access \n");
 				BUG();
 			}
 		} else if (ret == EXIT_REASON_EPT_VIOLATION){
 			if (!vmx_handle_EPT_violation(vcpu)){
 				vmx_put_cpu(vcpu);
-				printk(KERN_CRIT "Unhandled EPT Violation\n");
+				printk(KERN_CRIT "okernel: Unhandled EPT Violation\n");
 				BUG();
 			}
 		} else if (ret == EXIT_REASON_EPT_MISCONFIG){
 			if (!vmx_handle_EPT_misconfig(vcpu)){
-				printk(KERN_CRIT "Unhandle EPT Misconfig\n");
+				printk(KERN_CRIT "okernel: Unhandle EPT Misconfig\n");
 				BUG();
 			}
 		} else if (ret == EXIT_REASON_EXCEPTION_NMI) {
 			if (!vmx_handle_exception_NMI(vcpu)){
-				printk(KERN_CRIT "Unhandled NMI exception\n");
+				printk(KERN_CRIT "okernel: Unhandled NMI exception\n");
 				BUG();
 			}
 		} else {
 			vmx_get_cpu(vcpu);
-			printk(KERN_CRIT "unhandled exit: reason %#x, "
+			printk(KERN_CRIT "okernel: unhandled exit: reason %#x, "
 			       "exit qualification %#lx\n",
 			       ret, vmcs_readl(EXIT_QUALIFICATION));
 			vmx_put_cpu(vcpu);
 			BUG();
 		}
-		HDEBUG("Done handling exit condition, looping...\n");
+		OKDEBUG("Done handling exit condition, looping...\n");
 	}
 
 	/* something went wrong - legitimate exit would have been through the
@@ -4224,7 +4176,7 @@ static __init int __vmx_enable(struct vmcs *vmxon_buf)
 			return -1;
 		}
 	} else { /* try enable since feature not locked */
-		HDEBUG("__vmx_enable trying to enable VMXON.\n");
+		OKDEBUG("__vmx_enable trying to enable VMXON.\n");
 		old |= FEATURE_CONTROL_VMXON_ENABLED_OUTSIDE_SMX;
 		old |= FEATURE_CONTROL_LOCKED;
 		wrmsrl(MSR_IA32_FEATURE_CONTROL, old);
@@ -4234,7 +4186,7 @@ static __init int __vmx_enable(struct vmcs *vmxon_buf)
 			printk(KERN_ERR "okernel: __vmx_enable failed to enable VXMON.\n");
 			return -1;
 		}
-		HDEBUG("__vmx_enable VMXON enabled.\n");
+		OKDEBUG("__vmx_enable VMXON enabled.\n");
 	}
 #endif
 #if 0
@@ -4247,7 +4199,7 @@ static __init int __vmx_enable(struct vmcs *vmxon_buf)
 	*/
 	if ((old & test_bits) != test_bits) {
 		/* enable and lock */
-	        HDEBUG("VMX_FEATURE_CONTROL NOT ENABLED - fixing...\n");
+	        OKDEBUG("VMX_FEATURE_CONTROL NOT ENABLED - fixing...\n");
 		wrmsrl(MSR_IA32_FEATURE_CONTROL, old | test_bits);
 	}
 #endif
@@ -4278,13 +4230,13 @@ static __init void vmx_enable(void *unused)
 	__this_cpu_write(vmx_enabled, 1);
 	native_store_gdt(this_cpu_ptr(&host_gdt));
 
-	printk(KERN_INFO "vmx: VMX enabled on CPU %d\n",
+	printk(KERN_INFO "okernel vmx: VMX enabled on CPU %d\n",
 	       raw_smp_processor_id());
 	return;
 
 failed:
 	atomic_inc(&vmx_enable_failed);
-	printk(KERN_ERR "vmx: failed to enable VMX, err = %d\n", ret);
+	printk(KERN_ERR "okernel vmx: failed to enable VMX, err = %d\n", ret);
 }
 
 /**
@@ -4342,23 +4294,23 @@ void ok_init_protected_pages(void)
 	struct page_ext *pg_ext;
 
 	if(!static_branch_unlikely(&okernel_inited)){
-		printk("ok: ext page info not available - can't init protected pages.\n");
+		printk(KERN_ERR "okernel: ext page info not available - can't init protected pages.\n");
 		return;
 	}
 
 	spin_lock(&ok_protected_pg_lock);
 	pg = alloc_pages(GFP_KERNEL, order_base_2(OK_NR_PROTECTED_PAGES));
 	if(!pg){
-		printk(KERN_ERR "ok: failed to allocate protected memory page array.\n");
+		printk(KERN_ERR "okernel: failed to allocate protected memory page array.\n");
 		BUG();
 	}
 	/* Set PG_protected attribute on the pages */
 	for(i = 0; i < OK_NR_PROTECTED_PAGES; i++){
-		printk(KERN_ERR "ok: protected page (%#lx) pfn (%#lx) vaddr (%#lx)\n",
+		printk(KERN_INFO "okernel: protected page (%#lx) pfn (%#lx) vaddr (%#lx)\n",
 		       (unsigned long)(pg + i), page_to_pfn(pg + i), (unsigned long)page_address(pg+i));
 		pg_ext = lookup_page_ext(pg + i);
 		if(!pg_ext){
-			printk("ok: pg_ext NULL\n");
+			printk("okernel: pg_ext NULL\n");
 			continue;
 		}
 		set_bit(PAGE_EXT_OK_PROTECTED, &pg_ext->flags);
@@ -4369,7 +4321,7 @@ void ok_init_protected_pages(void)
 	ok_protected_page = pg;
 	/* And the dummy page to redirect invalid access requests to */
 	if(!(pg = alloc_page(GFP_KERNEL))){
-		printk("ok: failed to alloc dummy protected page.\n");
+		printk(KERN_ERR "okernel: failed to alloc dummy protected page.\n");
 		BUG();
 	}
 	ok_protected_dummy_page = pg;
@@ -4425,7 +4377,7 @@ struct page *ok_alloc_protected_page(void)
 		pg_ext = lookup_page_ext(pg);
 		pg_ext->pid = current->pid;
 	} else {
-		printk("ok: out of protected memory pages.\n");
+		printk(KERN_ERR "okernel: out of protected memory pages.\n");
 		pg = NULL;
 	}
 	spin_unlock(&ok_protected_pg_lock);
@@ -4455,7 +4407,7 @@ int __ok_free_protected_page(struct page *pg)
 	pfn = page_to_pfn(pg);
 
 	if((pfn < ok_protected_pfn_start) || (pfn > ok_protected_pfn_end)){
-		printk("OK: tried to free invalid protected page (%#lx) pfn (%#lx) vaddr (%#lx)\n",
+		printk(KERN_ERR "okernel: tried to free invalid protected page (%#lx) pfn (%#lx) vaddr (%#lx)\n",
 		       (unsigned long)(pg), page_to_pfn(pg), (unsigned long)page_address(pg));
 		ret = 1;
 		goto fail;
@@ -4464,7 +4416,7 @@ int __ok_free_protected_page(struct page *pg)
 	i = (pfn - ok_protected_pfn_start);
 	memset(page_address(pg), 0, PAGE_SIZE);
 	__clear_bit(i, ok_protected_pg_bitmap);
-	printk(KERN_ERR "ok: free protected page (%#lx) pfn (%#lx) vaddr (%#lx) index:=(%d)\n",
+	printk(KERN_ERR "okernel: free protected page (%#lx) pfn (%#lx) vaddr (%#lx) index:=(%d)\n",
 	       (unsigned long)(pg), page_to_pfn(pg),
 	       (unsigned long)page_address(pg), i);
 	pg_ext = lookup_page_ext(pg);
@@ -4646,9 +4598,9 @@ int __init vmx_init(void)
 	}
 
 	if (cpu_has_vmx_ept_mode_ctl()){
-		printk("Mode-based execute control for EPT available\n");
+		printk(KERN_INFO "okernel: Mode-based execute control for EPT available\n");
 	} else {
-		printk("Mode-based execute control for EPT unavailable\n");
+		printk(KERN_INFO "okernel: Mode-based execute control for EPT unavailable\n");
 	}
 
 

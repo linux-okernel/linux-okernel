@@ -1709,9 +1709,9 @@ signed long __sched schedule_timeout(signed long timeout)
 	unsigned long expire;
 
 #if defined(CONFIG_OKERNEL)
-#ifdef HPE_DEBUG
+#ifdef OKERNEL_DEBUG
        if(is_in_vmx_nr_mode()){
-               HDEBUG("current state (%ld)\n", current->state);
+               OKDEBUG("current state (%ld)\n", current->state);
                //BUG();
                //dump_stack();
                BXMAGICBREAK;
@@ -1729,9 +1729,9 @@ signed long __sched schedule_timeout(signed long timeout)
 		 * the caller to do everything it want with the retval.
 		 */
 #if defined(CONFIG_OKERNEL)
-#ifdef HPE_DEBUG
+#ifdef OKERNEL_DEBUG
                if(is_in_vmx_nr_mode()){
-                       HDEBUG("(max timeout) calling schedule (pid=%d)...\n",
+                       OKDEBUG("(max timeout) calling schedule (pid=%d)...\n",
                                current->pid);
                        BXMAGICBREAK;
                }
@@ -1740,9 +1740,9 @@ signed long __sched schedule_timeout(signed long timeout)
 		schedule();
 
 #if defined(CONFIG_OKERNEL)
-#ifdef HPE_DEBUG
+#ifdef OKERNEL_DEBUG
                if(is_in_vmx_nr_mode()){
-                       HDEBUG("(max timeout) returned from schedule (pid=%d)\n",
+                       OKDEBUG("(max timeout) returned from schedule (pid=%d)\n",
                                current->pid);
                        BXMAGICBREAK;
                }
@@ -1771,9 +1771,9 @@ signed long __sched schedule_timeout(signed long timeout)
 	setup_timer_on_stack(&timer, process_timeout, (unsigned long)current);
 	__mod_timer(&timer, expire, false);
 #if defined(CONFIG_OKERNEL)
-#ifdef HPE_DEBUG
+#ifdef OKERNEL_DEBUG
        if(is_in_vmx_nr_mode()){
-               HDEBUG("(not max timeout) calling schedule (pid=%d)...\n",
+               OKDEBUG("(not max timeout) calling schedule (pid=%d)...\n",
                        current->pid);
                BXMAGICBREAK;
        }
@@ -1781,9 +1781,9 @@ signed long __sched schedule_timeout(signed long timeout)
 #endif
 	schedule();
 #if defined(CONFIG_OKERNEL)
-#ifdef HPE_DEBUG
+#ifdef OKERNEL_DEBUG
        if(is_in_vmx_nr_mode()){
-               HDEBUG("(not max timeout) returned from schedule (pid=%d)\n",
+               OKDEBUG("(not max timeout) returned from schedule (pid=%d)\n",
                        current->pid);
                BXMAGICBREAK;
        }

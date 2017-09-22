@@ -75,21 +75,6 @@ struct nr_cloned_state {
 #define RFLAGS_IF_BIT 0x200
 
 #if 0
-#define HPL_DEBUG
-#ifdef HPL_DEBUG
-#define HDEBUG(args) (printk(KERN_ERR "%s: cpu(%d) %s: ", vmx_nr_mode()?"NR":"R", raw_smp_processor_id(), __func__), printk args)
-#else
-#define HDEBUG(args)
-#endif
-//#define HPL_DEBUG2
-#ifdef HPL_DEBUG2
-#define HDEBUG2(args) (printk(KERN_ERR "NR(%u):  cpu(%d) %s: ", vmx_nr_mode(), raw_smp_processor_id(), __func__), printk args)
-#else
-#define HDEBUG2(args)
-#endif
-#endif
-
-#if 0
 #define read_cr4 native_read_cr4
 
 void write_cr4(unsigned long cr4_val)
@@ -156,8 +141,6 @@ struct ept_pt_list {
 	int n_pages;
 };
 
-#define VCPUBUFLEN 300
-#define NVCPUBUF 10
 
 struct vmx_vcpu {
 	int cpu;
@@ -192,11 +175,6 @@ struct vmx_vcpu {
 	struct nr_cloned_state *cloned_thread;
 	unsigned int *nr_stack_canary;
 	void *syscall_tbl;
-
-	/* Circular log pending NR-mode lock-safe logging*/
-	char log[NVCPUBUF][VCPUBUFLEN];
-	/* Pointer to next entry in circular log*/
-	int lp;
 };
 
 extern __init int vmx_init(void);

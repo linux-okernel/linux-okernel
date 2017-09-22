@@ -339,7 +339,7 @@ int copy_thread_tls(unsigned long clone_flags, unsigned long sp,
                         * NR-mode RIP will be set to
                         * return-from-fork.
                         */
-                       HDEBUG("about to vmcall DO_TLS_FIXUP in copy_thread_tls...\n");
+                       OKDEBUG("about to vmcall DO_TLS_FIXUP in copy_thread_tls...\n");
                        (void)vmcall3(VMCALL_DO_TLS_FIXUP, (unsigned long)p, (unsigned long)tls);
                }
 #endif
@@ -347,7 +347,7 @@ int copy_thread_tls(unsigned long clone_flags, unsigned long sp,
 #if defined(CONFIG_OKERNEL)
        else {
                if(is_in_vmx_nr_mode()){
-                       HDEBUG("about to vmcall DO_TLS_FIXUP (no TLS) in copy_thread_tls...\n");
+                       OKDEBUG("about to vmcall DO_TLS_FIXUP (no TLS) in copy_thread_tls...\n");
                        (void)vmcall3(VMCALL_DO_TLS_FIXUP, (unsigned long)p, 0);
                }
 	}
@@ -635,9 +635,9 @@ long do_arch_prctl_64(struct task_struct *task, int option, unsigned long arg2)
 	switch (option) {
 	case ARCH_SET_GS:
 #if defined(CONFIG_OKERNEL)
-#ifdef HPE_DEBUG
+#ifdef OKERNEL_DEBUG
                if(is_in_vmx_nr_mode()){
-                       HDEBUG("ARCH_SET_GS pid=%d arg2=%#lx\n", current->pid, arg2);
+                       OKDEBUG("ARCH_SET_GS pid=%d arg2=%#lx\n", current->pid, arg2);
                }
 #endif
 #endif
@@ -654,9 +654,9 @@ long do_arch_prctl_64(struct task_struct *task, int option, unsigned long arg2)
 		break;
 	case ARCH_SET_FS:
 #if defined(CONFIG_OKERNEL)
-#ifdef HPE_DEBUG
+#ifdef OKERNEL_DEBUG
                if(is_in_vmx_nr_mode()){
-                       HDEBUG("ARCH_SET_FS pid=%d arg2=%#lx\n", current->pid, arg2);
+                       OKDEBUG("ARCH_SET_FS pid=%d arg2=%#lx\n", current->pid, arg2);
                }
 #endif
 #endif
@@ -682,9 +682,9 @@ long do_arch_prctl_64(struct task_struct *task, int option, unsigned long arg2)
 		else
 			base = task->thread.fsbase;
 #if defined(CONFIG_OKERNEL)
-#ifdef HPE_DEBUG
+#ifdef OKERNEL_DEBUG
                 if(is_in_vmx_nr_mode()){
-                       HDEBUG("ARCH_GET_FS pid=%d base=%#lx\n", current->pid, base);
+                       OKDEBUG("ARCH_GET_FS pid=%d base=%#lx\n", current->pid, base);
                }
 #endif
 #endif
@@ -699,9 +699,9 @@ long do_arch_prctl_64(struct task_struct *task, int option, unsigned long arg2)
 		else
 			base = task->thread.gsbase;
 #if defined(CONFIG_OKERNEL)
-#ifdef HPE_DEBUG
+#ifdef OKERNEL_DEBUG
                 if(is_in_vmx_nr_mode()){
-                       HDEBUG("ARCH_GET_GS pid=%d base=%#lx\n", current->pid, base);
+                       OKDEBUG("ARCH_GET_GS pid=%d base=%#lx\n", current->pid, base);
                }
 #endif
 #endif

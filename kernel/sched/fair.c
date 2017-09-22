@@ -4890,9 +4890,9 @@ enqueue_task_fair(struct rq *rq, struct task_struct *p, int flags)
 		cpufreq_update_util(rq, SCHED_CPUFREQ_IOWAIT);
 
 #if defined(CONFIG_OKERNEL)
-#ifdef HPE_DEBUG
+#ifdef OKERNEL_DEBUG
        if(p->okernel_status == OKERNEL_ON){
-               HDEBUG("called for pid:=%d\n", p->pid);
+               OKDEBUG("called for pid:=%d\n", p->pid);
        }
 #endif
 #endif	
@@ -6906,9 +6906,9 @@ static int detach_tasks(struct lb_env *env)
 		if ((load / 2) > env->imbalance)
 			goto next;
 #if defined(CONFIG_OKERNEL)
-#ifdef HPE_DEBUG
+#ifdef OKERNEL_DEBUG
                if(p->okernel_status == OKERNEL_ON){
-                       HDEBUG("calling detach_task() for pid:=%d\n", p->pid);
+                       OKDEBUG("calling detach_task() for pid:=%d\n", p->pid);
                }
 #endif
 #endif
@@ -6959,9 +6959,9 @@ static void attach_task(struct rq *rq, struct task_struct *p)
 	lockdep_assert_held(&rq->lock);
 
 #if defined(CONFIG_OKERNEL)
-#ifdef HPE_DEBUG
+#ifdef OKERNEL_DEBUG
        if(p->okernel_status == OKERNEL_ON){
-               HDEBUG("calling activate_task() for pid:=%d\n", p->pid);
+               OKDEBUG("calling activate_task() for pid:=%d\n", p->pid);
        }
 #endif
 #endif

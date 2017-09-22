@@ -768,7 +768,7 @@ void __noreturn do_exit(long code)
 
 #ifdef CONFIG_OKERNEL
        if(is_in_vmx_nr_mode()){
-               HDEBUG("called (%ld)\n", code);
+               OKDEBUG("called (%ld)\n", code);
                BXMAGICBREAK;
                (void)vmcall2(VMCALL_DOEXIT, (unsigned long)code);
        }

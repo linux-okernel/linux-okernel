@@ -906,9 +906,9 @@ __bad_area_nosemaphore(struct pt_regs *regs, unsigned long error_code,
 	/* User mode accesses just cause a SIGSEGV */
 	if (error_code & PF_USER) {
 #if defined(CONFIG_OKERNEL)
-#ifdef HPE_DEBUG
+#ifdef OKERNEL_DEBUG
                if(is_in_vmx_nr_mode()){
-                       HDEBUG("starting user mode SIGSEGV processing...addr=%#lx err=%#lx\n",
+                       OKDEBUG("starting user mode SIGSEGV processing...addr=%#lx err=%#lx\n",
                                address, error_code);
                }
 #endif
@@ -955,9 +955,9 @@ __bad_area_nosemaphore(struct pt_regs *regs, unsigned long error_code,
 		tsk->thread.error_code	= error_code;
 		tsk->thread.trap_nr	= X86_TRAP_PF;
 #if defined(CONFIG_OKERNEL)
-#ifdef HPE_DEBUG
+#ifdef OKERNEL_DEBUG
                if(is_in_vmx_nr_mode()){
-                       HDEBUG("forcing sig_info_fault addr=%#lx si_code=%d\n",
+                       OKDEBUG("forcing sig_info_fault addr=%#lx si_code=%d\n",
                                address, si_code);
                }
 #endif
@@ -1286,7 +1286,7 @@ __do_page_fault(struct pt_regs *regs, unsigned long error_code,
 	int fault, major = 0;
 	unsigned int flags = FAULT_FLAG_ALLOW_RETRY | FAULT_FLAG_KILLABLE;
 #if defined(CONFIG_OKERNEL)
-#if defined(HPE_DEBUG)
+#if defined(OKERNEL_DEBUG)
        int count = 0;
 #endif
 #endif
@@ -1429,22 +1429,22 @@ retry:
 		goto good_area;
 	if (unlikely(!(vma->vm_flags & VM_GROWSDOWN))) {
 #if defined(CONFIG_OKERNEL)
-#if defined(HPE_DEBUG)
+#if defined(OKERNEL_DEBUG)
                if(is_in_vmx_nr_mode()){
-                       HDEBUG("calling bad area 2\n");
-                       HDEBUG("Current mm vma mappings: \n");
+                       OKDEBUG("calling bad area 2\n");
+                       OKDEBUG("Current mm vma mappings: \n");
                        for(vma = mm->mmap; vma; vma=vma->vm_next){
-                               HDEBUG("\nVMA Number %d: \n", ++count);
-                               HDEBUG("  Starts at 0x%lx, Ends at 0x%lx\n",
+                               OKDEBUG("\nVMA Number %d: \n", ++count);
+                               OKDEBUG("  Starts at 0x%lx, Ends at 0x%lx\n",
                                       vma->vm_start, vma->vm_end);
                        }
-                       HDEBUG("\nCode  Segment start = 0x%lx, end = 0x%lx \n"
+                       OKDEBUG("\nCode  Segment start = 0x%lx, end = 0x%lx \n"
                               "Data  Segment start = 0x%lx, end = 0x%lx\n"
                               "Stack Segment start = 0x%lx\n",
                               mm->start_code, mm->end_code,
                               mm->start_data, mm->end_data,
                               mm->start_stack);
-                       HDEBUG("Current mm vma mappings done.\n");
+                       OKDEBUG("Current mm vma mappings done.\n");
                }
 #endif
 #endif
@@ -1461,12 +1461,12 @@ retry:
 		if (unlikely(address + 65536 + 32 * sizeof(unsigned long) < regs->sp)) {
 #if defined(CONFIG_OKERNEL)
                        if(is_in_vmx_nr_mode()){
-                               HDEBUG("calling bad area 3 (regs->sp=%#lx)\n", regs->sp);
-                               HDEBUG("ptregs before do_page_fault_r call: \n");
-#ifdef HPE_DEBUG
+                               OKDEBUG("calling bad area 3 (regs->sp=%#lx)\n", regs->sp);
+                               OKDEBUG("ptregs before do_page_fault_r call: \n");
+#ifdef OKERNEL_DEBUG
                                __show_regs(regs, 1);
 #endif
-                               HDEBUG("ptregs before do_page_fault_r done.\n");
+                               OKDEBUG("ptregs before do_page_fault_r done.\n");
                        }
 #endif
 			bad_area(regs, error_code, address);
@@ -1477,7 +1477,7 @@ retry:
 #if defined(CONFIG_OKERNEL)
 #if 0
                if(is_in_vmx_nr_mode()){
-                       HDEBUG("calling bad area 4\n");
+                       OKDEBUG("calling bad area 4\n");
                }
 #endif
 #endif
@@ -1574,9 +1574,9 @@ do_page_fault(struct pt_regs *regs, unsigned long error_code)
 
 	prev_state = exception_enter();
 #if defined(CONFIG_OKERNEL)
-#ifdef HPE_DEBUG
+#ifdef OKERNEL_DEBUG
        if(is_in_vmx_nr_mode()){
-               HDEBUG("address=%#lx error_code=%#lx\n", address, error_code);
+               OKDEBUG("address=%#lx error_code=%#lx\n", address, error_code);
                //BXMAGICBREAK;
        }
 #endif
