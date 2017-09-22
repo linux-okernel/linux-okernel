@@ -89,9 +89,9 @@ void okernel_dump_stack_info(void)
 	sp  = current_stack_pointer();
 	end_stack = sp0 - THREAD_SIZE;
 
-	OKDEBUG("thread/stack size (%lu) thread_info* (%#lx) stack in-use (%#lx) (%lu)\n",
+	OKINFO("thread/stack size (%lu) thread_info* (%#lx) stack in-use (%#lx) (%lu)\n",
 		THREAD_SIZE, (unsigned long)current_thread_info(), okernel_stack_use(), okernel_stack_use());
-	OKDEBUG("stack sp0 (%#lx) current sp (%#lx) end stack (%#lx)\n",
+	OKINFO("stack sp0 (%#lx) current sp (%#lx) end stack (%#lx)\n",
 		sp0, sp, sp0-THREAD_SIZE);
 }
 
