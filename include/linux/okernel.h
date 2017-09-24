@@ -148,6 +148,15 @@ int ok_free_private_page(struct page *pg);
 #define BXMAGICBREAK_ASM
 #endif
 
+#define HPE_BREAKPOINTS2_ENABLED
+#ifdef HPE_BREAKPOINTS2_ENABLED
+#define BXMAGICBREAK2 asm volatile("xchg %bx,%bx")
+#define BXMAGICBREAK2_ASM xchg %bx,%bx
+#else
+#define BXMAGICBREAK2
+#define BXMAGICBREAK2_ASM
+#endif
+
 
 DECLARE_PER_CPU(int, __nr_mode);
 DECLARE_PER_CPU(int, __r_mode);

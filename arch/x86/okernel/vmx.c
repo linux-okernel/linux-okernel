@@ -48,6 +48,7 @@
  * Authors:
  *   Adam Belay   <abelay@stanford.edu>
  */
+
 #include <linux/module.h>
 #include <linux/kernel.h>
 #include <linux/mm.h>
@@ -86,7 +87,7 @@
 
 /* Master ept root page table */
 epte_t *init_ept_root;
-//unsigned long flags;
+unsigned long flags;
 static DEFINE_SPINLOCK(init_ept_root_lock);
 
 /* Keep track of all the ept roots we have in flight*/
@@ -992,7 +993,7 @@ int remap_ept_page(epte_t *root, u64 paddr, u64 new_paddr)
 	split_addr = (paddr & ~(PAGESIZE2M-1));
 
 	HDEBUG("Check or split 2M mapping at (%#lx)\n", (unsigned long)split_addr);
-
+	
 	if(!(split_2M_mapping(root, split_addr))){
 		printk(KERN_ERR "okernel %s: couldn't split 2MB mapping for (%#lx)\n",
 		       __func__, (unsigned long)paddr);
@@ -1322,11 +1323,11 @@ int clone_kstack2(struct vmx_vcpu *vcpu, unsigned long perms)
         /* Remove ept write perm on the stack page, don't actuall
 	 * clone anymore. */
 	//spin_lock_irqsave(&init_ept_root_lock,flags);
-	spin_lock(vcpu->ept_root_lock);
+	//spin_lock(vcpu->ept_root_lock);
 	modify_ept_physaddr_perms(vcpu->ept_root, paddr, perms);
 	ept_sync_global();
 	ept_invalidate_global(vcpu);
-	spin_unlock(vcpu->ept_root_lock);
+	//spin_unlock(vcpu->ept_root_lock);
 	//spin_unlock_irqrestore(&init_ept_root_lock,flags);
 	return 1;
 }
@@ -2683,7 +2684,7 @@ static void vmx_destroy_vcpu(struct vmx_vcpu *vcpu)
 	
 	vmx_get_cpu(vcpu);
 	//spin_lock_irqsave(&init_ept_root_lock,flags);
-	spin_lock(&init_ept_root_lock);
+	//spin_lock(&init_ept_root_lock);
 
 	list_for_each(q, root_list){
 		root_entry = list_entry(q, struct ept_root_list, list);
@@ -2697,7 +2698,7 @@ static void vmx_destroy_vcpu(struct vmx_vcpu *vcpu)
 	}
 	ept_sync_global();
 	ept_invalidate_global(vcpu);
-	spin_unlock(&init_ept_root_lock);
+	//spin_unlock(&init_ept_root_lock);
 	//spin_unlock_irqrestore(&init_ept_root_lock, flags);
 	
 	if(root != init_ept_root){
@@ -2943,13 +2944,13 @@ static int vmx_handle_EPT_misconfig(struct vmx_vcpu *vcpu)
 	vmx_put_cpu(vcpu);
 
 	//spin_lock_irqsave(&init_ept_root_lock,flags);
-	spin_lock(vcpu->ept_root_lock);	
+	//spin_lock(vcpu->ept_root_lock);	
 	if((pml2_e =  find_pd_entry(vcpu->ept_root, gp_addr))){
 		epte = ept_page_entry(vcpu->ept_root, gp_addr);
 	} else {
 		epte = 0;
 	}
-	spin_unlock(vcpu->ept_root_lock);
+	//spin_unlock(vcpu->ept_root_lock);
 	//spin_unlock_irqrestore(&init_ept_root_lock, flags);
 	printk(warning, gp_addr, (pml2_e) ? *pml2_e : 0, (epte) ? *epte : 0);
 	return 0;
@@ -3451,14 +3452,34 @@ int vmexit_private_page(struct vmx_vcpu *vcpu, unsigned long gp_addr)
 	uid_t uid;
 	pid_t pid;
 	char *comm;
-	epte_t *root = __va(vcpu->eptp & PAGE_MASK);
+	epte_t *root = vcpu->ept_root;
 	struct ept_root_list *root_entry;
 	struct list_head *q;
 	struct list_head *root_list = &ept_roots.list;
 
-        get_upc(&uid, &pid, &comm);
+	get_upc(&uid, &pid, &comm);
 
 	if(ok_allow_private_access(gp_addr)){
+		modify_ept_physaddr_perms(root, gp_addr, EPT_R | EPT_W);
+		return 1;
+	}
+
+	if(!remap_ept_page(root, gp_addr, ok_get_private_dummy_paddr())){
+		HDEBUG("Failed to remap dummy page.\n");
+	}
+	
+	BXMAGICBREAK2;
+	return 1;
+#if 0
+	modify_ept_physaddr_perms(root, gp_addr, EPT_R | EPT_W);
+	return 1;
+	
+        
+	barrier();
+	BUG();
+	
+	if(ok_allow_private_access(gp_addr)){
+		printk(KERN_ERR "Would allow access to private page.\n");
 		HDEBUG("Would allow access to private page.\n");
 		// Check if already using non-master EPT: if not start using one
 		if(root == init_ept_root){
@@ -3474,27 +3495,32 @@ int vmexit_private_page(struct vmx_vcpu *vcpu, unsigned long gp_addr)
 			}
 			vcpu->ept_root_entry->root = root;
 			list_add(&vcpu->ept_root_entry->list, &ept_roots.list);
-
+			
 			HDEBUG("Created new root ept from master.\n");
 			vcpu->ept_root = root;
-			vcpu->eptp = construct_eptp(__pa(root));
+			vcpu->eptp = construct_eptp(__pa(vcpu->ept_root));
 			vmx_get_cpu(vcpu);
 			vmcs_write64(EPT_POINTER, vcpu->eptp);
-			ept_sync_global();
 			vmx_put_cpu(vcpu);
+			ept_sync_global();
 		}
+		barrier();
 		if(!modify_ept_physaddr_perms(root, gp_addr, EPT_R | EPT_W)){
 			HDEBUG("Failed to modify private page perms.\n");
 			BUG();
 		}
+		ept_sync_global();
 		HDEBUG("Allow private access for uid %d pid %d command %s\n", uid, pid, comm);
 	} else {
+		BUG();
+		printk(KERN_ERR "Would DENY access to private page.\n");
 		HDEBUG("Deny private access for uid %d pid %d command %s\n", uid, pid, comm);
+		BUG();
 		/*
 		 * Map in 'dummy' page for now  - need to be careful
 		 * not to create another vulnerability.
 		 */
-		/*
+		
 		list_for_each(q, root_list){
 			root_entry = list_entry(q, struct ept_root_list, list);
 			if(root_entry->root != vcpu->ept_root){
@@ -3505,15 +3531,12 @@ int vmexit_private_page(struct vmx_vcpu *vcpu, unsigned long gp_addr)
 				}
 			}
 		}
-		*/
-		if(!remap_ept_page(init_ept_root, gp_addr,
-				   ok_get_private_dummy_paddr())){
-			HDEBUG("Failed to remap dummy page.\n");
-			printk("Failed to remap dummy page.\n");
-			BUG();
-		}
+		ept_sync_global();
+		
+		BUG();
 	}
 	return 1;
+#endif
 }
 
 /* 
@@ -3723,11 +3746,15 @@ static int vmx_handle_EPT_violation(struct vmx_vcpu *vcpu)
 	gva = (u64)vmcs_readl(GUEST_LINEAR_ADDRESS);
         vmx_put_cpu(vcpu);
 
-	spin_lock(vcpu->ept_root_lock);
-	
+	//spin_lock_irqsave(&init_ept_root_lock,flags);
+	//spin_lock(vcpu->ept_root_lock);
+
+	printk(KERN_ERR "EPT exit (%lx)\n", gpa);
 	/* Grant access to private pages lazily */
 	if(__ok_private_phys_addr(gpa)){
-		HDEBUG("Private page access.\n");
+		//printk(KERN_ERR "Private page access.\n");
+		//HDEBUG("Private page access.\n");
+		BXMAGICBREAK2;
 		ret = vmexit_private_page(vcpu, gpa);
 		goto done;
 	}
@@ -3756,7 +3783,8 @@ static int vmx_handle_EPT_violation(struct vmx_vcpu *vcpu)
 		}
 	}
 done:
-	spin_unlock(vcpu->ept_root_lock);
+	//spin_unlock_irqrestore(&init_ept_root_lock,flags);
+	//spin_unlock(vcpu->ept_root_lock);
 	return ret;
 }
 
@@ -4231,7 +4259,7 @@ void ok_init_private_pages(void)
 	/* Set PG_private attribute on the pages */
 	for(i = 0; i < OK_NR_PRIVATE_PAGES; i++){
 		printk(KERN_ERR "ok: private page (%#lx) pfn (%#lx) vaddr (%#lx)\n",
-		       (unsigned long)(pg + i), page_to_pfn(pg + i), (unsigned long)page_address(pg+i));
+		       (unsigned long)(page_to_phys(pg+i)), page_to_pfn(pg + i), (unsigned long)page_address(pg+i));
 		pg_ext = lookup_page_ext(pg + i);
 		if(!pg_ext){
 			printk("ok: pg_ext NULL\n");
@@ -4250,6 +4278,7 @@ void ok_init_private_pages(void)
 	}
 	ok_private_dummy_page = pg;
 	memset(page_address(ok_private_dummy_page), 0, PAGESIZE);
+	memcpy(page_address(ok_private_dummy_page), "eh up fred.", strlen("eh up fred."));
 	spin_unlock(&ok_private_pg_lock);
 }
 
@@ -4396,20 +4425,17 @@ bool ok_allow_private_access(unsigned long phys_addr)
 	struct page *pg;
 	struct page_ext *pg_ext;
 
+	//return false;
 	pg = pfn_to_page(phys_addr >> PAGE_SHIFT);
 	pg_ext = lookup_page_ext(pg);
+
+	//return false;
 	if(pg_ext->pid == current->pid){
 		return true;
 	}
 	return false;
 }
 
-
-// ept root list handling routines
-void ept_root_remove(struct ept_root_list *root)
-{
-	// Do nothing yet
-}
 
 static void __init printk_constants(void)
 {
@@ -4549,7 +4575,6 @@ int __init vmx_init(void)
 	if(!(init_ept_root = vt_ept_setup_master())){
 		printk(KERN_ERR "vmx: failed to setup master EPT page tables.\n");
 		r = -ENOMEM;
-		spin_unlock(&init_ept_root_lock);
 		goto failed2;
 	}
 
