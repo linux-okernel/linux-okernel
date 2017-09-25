@@ -916,7 +916,8 @@ static int set_clr_ept_page_flags(struct vmx_vcpu *vcpu, u64 paddr,
 			   int level)
 {
 	unsigned long *epte = ept_page_entry(vcpu, paddr);
-	unsigned long page2m = *epte & EPT_2M_PAGE;
+	//unsigned long page2m = *epte & EPT_2M_PAGE;
+
 	if (!epte) 
 		return 0;
 	if (level > PG_LEVEL_2M) {
