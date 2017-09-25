@@ -30,13 +30,15 @@ int do_ok_trace(unsigned long ip, const char *label, const char *fmt, ...)
 				    raw_smp_processor_id(), current->pid);
 	}
 
+	if (msg_len < sizeof(msgbuffer)) {
 	/* Append original message contents */
 	va_start(args, fmt);
-	msg_len += vscnprintf(msg + msg_len, sizeof(msgbuffer), fmt, args);
+	msg_len += vscnprintf(msg + msg_len, (sizeof(msgbuffer) - msg_len), fmt, args);
 	va_end(args);
 
 	//r = __trace_printk(ip, msg);
 	r = __trace_puts(ip, msg, msg_len);
+	}
 
 	return r;
 }
