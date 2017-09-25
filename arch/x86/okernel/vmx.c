@@ -2329,30 +2329,30 @@ struct vmcs_cpu_state {
 
 void show_cpu_state(struct vmcs_cpu_state state)
 {
-	OKLOG("Control regs / flags: \n");
-	OKLOG("rsp     (%#lx)\n", state.rsp);
-	OKLOG("rbp     (%#lx)\n", state.rbp);
-	OKLOG("cr0     (%#lx)\n", state.cr0);
-	OKLOG("cr3     (%#lx)\n", state.cr3);
-	OKLOG("cr4     (%#lx)\n", state.cr4);
-	OKLOG("rflags  (%#lx)\n", state.rflags);
-	OKLOG("efer    (%#lx)\n", state.efer);
+	OKDEBUG("Control regs / flags: \n");
+	OKDEBUG("rsp     (%#lx)\n", state.rsp);
+	OKDEBUG("rbp     (%#lx)\n", state.rbp);
+	OKDEBUG("cr0     (%#lx)\n", state.cr0);
+	OKDEBUG("cr3     (%#lx)\n", state.cr3);
+	OKDEBUG("cr4     (%#lx)\n", state.cr4);
+	OKDEBUG("rflags  (%#lx)\n", state.rflags);
+	OKDEBUG("efer    (%#lx)\n", state.efer);
 
-	OKLOG("idt base (%#lx) limit (%#x)\n", state.idt_base, state.idt_limit);
-	OKLOG("gdt base (%#lx) limit (%#x)\n", state.gdt_base, state.gdt_limit);
-	OKLOG("ldt base (%#lx) limit (%#x)\n", state.ldt_base, state.ldt_limit);
+	OKDEBUG("idt base (%#lx) limit (%#x)\n", state.idt_base, state.idt_limit);
+	OKDEBUG("gdt base (%#lx) limit (%#x)\n", state.gdt_base, state.gdt_limit);
+	OKDEBUG("ldt base (%#lx) limit (%#x)\n", state.ldt_base, state.ldt_limit);
 
-	OKLOG("Selectors: \n");
-	OKLOG("cs_s (%#x) ds_s (%#x) es_s (%#x) ss_s (%#x) tr_s (%#x)\n",
+	OKDEBUG("Selectors: \n");
+	OKDEBUG("cs_s (%#x) ds_s (%#x) es_s (%#x) ss_s (%#x) tr_s (%#x)\n",
 		state.cs_selector, state.ds_selector, state.es_selector,
 		state.ss_selector, state.tr_selector);
-	OKLOG("fs_s (%#x) gs_s (%#x)\n",
+	OKDEBUG("fs_s (%#x) gs_s (%#x)\n",
 		state.fs_selector, state.gs_selector);
 
-	OKLOG("fs_base (%#lx) gs_base (%#lx)\n",
+	OKDEBUG("fs_base (%#lx) gs_base (%#lx)\n",
 		state.fs_base,state.gs_base);
 
-	OKLOG("sysenter_cs (%lx), systenter_esp (%lx) systenter_eip (%lx)\n",
+	OKDEBUG("sysenter_cs (%lx), systenter_esp (%lx) systenter_eip (%lx)\n",
 		state.sysenter_cs, state.sysenter_esp, state.sysenter_eip);
 	return;
 }
@@ -2476,7 +2476,9 @@ static void vmx_setup_initial_guest_state(struct vmx_vcpu *vcpu)
 	regs = task_pt_regs(current);
 
 	get_cpu_state(vcpu, &current_cpu_state);
+#ifdef OKERNEL_DEBUG
 	show_cpu_state(current_cpu_state);
+#endif
 
 	cloned_thread = vcpu->cloned_thread;
 
