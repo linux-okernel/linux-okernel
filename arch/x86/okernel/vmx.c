@@ -3098,6 +3098,7 @@ static int vmx_handle_exception_NMI(struct vmx_vcpu *vcpu)
 	return 0;
 }
 
+#if 0
 static void check_int(struct vmx_vcpu *vcpu, char *s)
 {
 	vmx_get_cpu(vcpu);
@@ -3117,6 +3118,7 @@ static void check_int_enabled(struct vmx_vcpu *vcpu, char *s)
 	}
 	vmx_put_cpu(vcpu);
 }
+#endif
 
 void vmx_handle_vmcall(struct vmx_vcpu *vcpu, int nr_irqs_enabled)
 {
@@ -3846,9 +3848,6 @@ int vmx_launch(unsigned int mode, unsigned int flags, struct nr_cloned_state *cl
 	unsigned long new_rsp;
 	unsigned long new_rbp;
 	unsigned long current_frame_len;
-#ifdef OKERNEL_DEBUG
-	unsigned long fred = 7;
-#endif
 	unsigned long r_stack_top;
 	unsigned long in_use;
 	unsigned int ret = 0;
@@ -3856,15 +3855,17 @@ int vmx_launch(unsigned int mode, unsigned int flags, struct nr_cloned_state *cl
 	struct vmx_vcpu *vcpu;
 //	struct vmx_vcpu *remote_vcpu;
 	unsigned long saved_irqs_on;
-
 	unsigned long k_stack;
 	unsigned long qual;
-#if defined(OKERNEL_DEBUG)
+#ifdef OKERNEL_DEBUG
 	int orig_cpu;
+#ifdef OKERNEL_DEBUG_FULL
 	unsigned long nr_gs;
 	unsigned long nr_fs;
 	unsigned long event_type;
-        u32 event_info;
+    u32 event_info;
+	unsigned long fred = 7;
+#endif
 #endif
 	unsigned long perms = 0;
 #if !defined(CONFIG_THREAD_INFO_IN_TASK)
@@ -3875,6 +3876,7 @@ int vmx_launch(unsigned int mode, unsigned int flags, struct nr_cloned_state *cl
 	unsigned long current_time;
 	unsigned long vmexit_counter;
 #endif
+
 	if (in_atomic()) {
 		OKWARN("!!!!!!in_atomic() true - preemption disabled!!!!!\n");
 	}
@@ -3949,7 +3951,7 @@ int vmx_launch(unsigned int mode, unsigned int flags, struct nr_cloned_state *cl
 	BXMAGICBREAK;
 
 	/* Check our stack manipulation & sliding - can we still access fred? */
-#if defined(OKERNEL_DEBUG)
+#if defined(OKERNEL_DEBUG) && defined(OKERNEL_DEBUG_FULL)
 	OKDEBUG("fred (%lu) address of fred (%#lx)\n", fred, (unsigned long)&fred);
 	BXMAGICBREAK;
 #endif
@@ -3970,7 +3972,7 @@ int vmx_launch(unsigned int mode, unsigned int flags, struct nr_cloned_state *cl
 
 	OKDEBUG("About to enter vmx handler while loop...\n");
 
-#if defined(OKERNEL_DEBUG)
+#ifdef OKERNEL_DEBUG
 	orig_cpu = smp_processor_id();
 #endif
 
@@ -3984,6 +3986,8 @@ int vmx_launch(unsigned int mode, unsigned int flags, struct nr_cloned_state *cl
 	vmexit_counter = 0;
 	last_time = rdtsc();
 #endif
+
+
 	while(1){
 #if defined(HPE_LOOP_DETECT)
 
@@ -4007,7 +4011,7 @@ int vmx_launch(unsigned int mode, unsigned int flags, struct nr_cloned_state *cl
 		 * As a consequence we need to be careful with percpu data.
 		 */
 
-#if defined(OKERNEL_DEBUG)
+#if defined(OKERNEL_DEBUG) && defined(OKERNEL_DEBUG_FULL)
 		nr_fs = vmcs_readl(GUEST_FS_BASE);
 		nr_gs = vmcs_readl(GUEST_GS_BASE);
 		OKDEBUG("Before run,  nr_fs=%#lx nr_gs=%#lx\n", nr_fs, nr_gs);
@@ -4015,7 +4019,7 @@ int vmx_launch(unsigned int mode, unsigned int flags, struct nr_cloned_state *cl
 
 		OKDEBUG("About to call vmx_run_vcpu...\n");
 
-#if defined(OKERNEL_DEBUG)
+#if defined(OKERNEL_DEBUG) && defined(OKERNEL_DEBUG_FULL)
 		if(signal_pending(current)){
 			OKDEBUG("sig pending before vmx_run_vcpu...\n");
 		}
@@ -4032,7 +4036,7 @@ int vmx_launch(unsigned int mode, unsigned int flags, struct nr_cloned_state *cl
 		}
 #endif // CONFIG_THREAD_INFO_IN_TASK
 
-#if defined(OKERNEL_DEBUG)
+#if defined(OKERNEL_DEBUG) && defined(OKERNEL_DEBUG_FULL)
                 /* Are we about to inject an event to NR-mode? */
                 event_info = vmcs_read32(VMCS_VMENTRY_INTR_INFO_FIELD);
                 //event_err_code = vmcs_read32(VMCS_VMENTRY_EXCEPTION_ERR_CODE);
@@ -4165,7 +4169,10 @@ KEEP
 static __init int __vmx_enable(struct vmcs *vmxon_buf)
 {
 	u64 phys_addr = __pa(vmxon_buf);
-	u64 old, test_bits;
+	u64 old;
+#if 0
+	u64 test_bits;
+#endif
 
 	if (native_read_cr4() & X86_CR4_VMXE)
 		return -EBUSY;

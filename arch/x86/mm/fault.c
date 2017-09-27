@@ -1285,8 +1285,8 @@ __do_page_fault(struct pt_regs *regs, unsigned long error_code,
 	int fault, major = 0;
 	unsigned int flags = FAULT_FLAG_ALLOW_RETRY | FAULT_FLAG_KILLABLE;
 #if defined(CONFIG_OKERNEL)
-#if defined(OKERNEL_DEBUG)
-       int count = 0;
+#if defined(OKERNEL_DEBUG) && defined(OKERNEL_DEBUG_FULL)
+    int count = 0;
 #endif
 #endif
 
@@ -1428,7 +1428,7 @@ retry:
 		goto good_area;
 	if (unlikely(!(vma->vm_flags & VM_GROWSDOWN))) {
 #if defined(CONFIG_OKERNEL)
-#if defined(OKERNEL_DEBUG)
+#if defined(OKERNEL_DEBUG) && defined(OKERNEL_DEBUG_FULL)
                if(is_in_vmx_nr_mode()){
                        OKDEBUG("calling bad area 2\n");
                        OKDEBUG("Current mm vma mappings: \n");
@@ -1459,14 +1459,13 @@ retry:
 		 */
 		if (unlikely(address + 65536 + 32 * sizeof(unsigned long) < regs->sp)) {
 #if defined(CONFIG_OKERNEL)
-                       if(is_in_vmx_nr_mode()){
-                               OKDEBUG("calling bad area 3 (regs->sp=%#lx)\n", regs->sp);
-                               OKDEBUG("ptregs before do_page_fault_r call: \n");
-#ifdef OKERNEL_DEBUG
-                               __show_regs(regs, 1);
+#if defined(OKERNEL_DEBUG) && defined(OKERNEL_DEBUG_FULL)
+	   if(is_in_vmx_nr_mode()){
+			   printk("okernel: calling bad area 3 (regs->sp=%#lx)\n", regs->sp);
+			   printk("okernel: ptregs before do_page_fault_r call: \n");
+			   __show_regs(regs, 1);
+	   }
 #endif
-                               OKDEBUG("ptregs before do_page_fault_r done.\n");
-                       }
 #endif
 			bad_area(regs, error_code, address);
 			return;
@@ -1573,7 +1572,7 @@ do_page_fault(struct pt_regs *regs, unsigned long error_code)
 
 	prev_state = exception_enter();
 #if defined(CONFIG_OKERNEL)
-#ifdef OKERNEL_DEBUG
+#if defined(OKERNEL_DEBUG) && defined(OKERNEL_DEBUG_FULL)
        if(is_in_vmx_nr_mode()){
                OKDEBUG("address=%#lx error_code=%#lx\n", address, error_code);
                //BXMAGICBREAK;
