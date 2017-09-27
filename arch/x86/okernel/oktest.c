@@ -118,8 +118,8 @@ static void ok_test_dev_remove(void)
 	return;
 }
 
-EXPORT_SYMBOL_GPL(ok_test_dev_init);
-EXPORT_SYMBOL_GPL(ok_test_dev_remove);
-EXPORT_SYMBOL_GPL(oktargets);
+EXPORT_SYMBOL(ok_test_dev_init);
+EXPORT_SYMBOL(ok_test_dev_remove);
+EXPORT_SYMBOL(oktargets);
 
 
