@@ -3654,10 +3654,8 @@ static unsigned long virt_from_pgva_pa(unsigned long pgva, unsigned long pa)
 	}
 	switch (level) {
 	case PG_LEVEL_4K:
-		OKLOG("PG_LEVEL_4K");
 		return pgva + (pa & (PAGE_SIZE-1));
 	case PG_LEVEL_2M:
-		OKLOG("PG_LEVEL_2M");
 		return pgva + (pa & (PAGESIZE2M-1));
 	default:
 		OKERR("Unsupported page level");
