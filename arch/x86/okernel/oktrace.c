@@ -11,7 +11,7 @@
 int do_ok_trace(unsigned long ip, const char *label, const char *fmt, ...)
 {
 	va_list args;
-	int r;
+	int r = 0;
 	static char msgbuffer[OKERNEL_LOG_BUFFER_MAX];
 	char *msg = msgbuffer;
 	size_t msg_len = 0;
@@ -30,13 +30,16 @@ int do_ok_trace(unsigned long ip, const char *label, const char *fmt, ...)
 				    raw_smp_processor_id(), current->pid);
 	}
 
+
 	/* Append original message contents */
+	if (msg_len < sizeof(msgbuffer)) {
 	va_start(args, fmt);
-	msg_len += vscnprintf(msg + msg_len, sizeof(msgbuffer), fmt, args);
+	msg_len += vscnprintf(msg + msg_len, (sizeof(msgbuffer) - msg_len), fmt, args);
 	va_end(args);
 
 	//r = __trace_printk(ip, msg);
 	r = __trace_puts(ip, msg, msg_len);
+	}
 
 	return r;
 }
