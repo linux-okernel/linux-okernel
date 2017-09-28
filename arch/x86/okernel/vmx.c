@@ -916,7 +916,6 @@ static int set_clr_ept_page_flags(struct vmx_vcpu *vcpu, u64 paddr,
 			   int level)
 {
 	unsigned long *epte = ept_page_entry(vcpu, paddr);
-	//unsigned long page2m = *epte & EPT_2M_PAGE;
 
 	if (!epte) 
 		return 0;
@@ -1079,7 +1078,7 @@ static unsigned long find_pg_va(struct vmx_vcpu *vcpu, unsigned long paddr,
 			OKWARN("Unsupported page size, level %u\n", level);
 			return 0;
 		}
-		if (pa == match) { 
+		if (pa == match) {
 			return vaddr;
 		}
 	}
@@ -1211,7 +1210,7 @@ static void set_kmem_ept(struct vmx_vcpu *vcpu, unsigned long start,
 			OKERR("PA not 4k aligned kernel protection failed\n");
 			return;
 		}
-		/* 
+		/*
 		 * Split explicitly to avoid using and exhausting
 		 * okmm. okmm is only needed when we've started
 		 * running in NR mode
@@ -1244,11 +1243,11 @@ static void set_clr_module_ept_flags(struct vmx_vcpu *vcpu)
 			return;
 		}
 		ept_flags_from_prot(prot, &set, &clr);
-		if (x_or_ro(set)) 
+		if (x_or_ro(set))
 			set |= OK_MOD;
 		if ((set & EPT_W) && (set & EPT_X))
 				OKSEC("WX on pa %lx\n", pa);
-		/* 
+		/*
 		 * Split explicitly to avoid using and exhausting
 		 * okmm. okmm is only needed when we've started
 		 * running in NR mode
@@ -1318,7 +1317,7 @@ int clone_kstack2(struct vmx_vcpu *vcpu, unsigned long perms)
 #else
 	paddr = page_to_phys(vmalloc_to_page(((void *)k_stack)));
 #endif
-	
+
 	OKDEBUG("tsk->stack vaddr (%#lx) paddr (%#lx) top of stack (%#lx)\n",
 	       k_stack, (unsigned long)paddr, current_top_of_stack());
 
@@ -3562,7 +3561,7 @@ int vmexit_protected_page(struct vmx_vcpu *vcpu)
 
 	if(ok_allow_protected_access(gp_addr)){
 		(void)add_ept_page_perms(vcpu, gp_addr);
-		OKDEBUG("Allow protected access for uid %d pid %d command %s\n",
+		OKLOG("Allow protected access for uid %d pid %d command %s\n",
 			uid, pid, comm);
 	} else {
 		OKSEC("Deny protected access for uid %d pid %d command %s\n",
@@ -3577,7 +3576,7 @@ int vmexit_protected_page(struct vmx_vcpu *vcpu)
 	return 1;
 }
 
-/* 
+/*
  * Handler for ept violation that are a result of page walks or the
  * dirty bit being  set
  */
@@ -3618,7 +3617,7 @@ static int kro_userspace_eptv(struct eptvc *e, int level)
 		eprot = *epte & (EPT_W | EPT_R | EPT_X);
 		ept_flags_from_qual(e->qual, &set, &clr);
 		n_eprot = set | eprot;
-		OKDEBUG("VDSO fix up for protected 4k page %#lx"
+		OKLOG("VDSO fix up for protected 4k page %#lx"
 			" OK_DATA %d kernel va %#lx, user space va "
 			"%#lx EPT exit qual %#lx, new EPT prot %#lx\n",
 			e->gpa & ~(PAGESIZE - 1), (*epte & OK_DATA)?1:0,
@@ -3631,13 +3630,36 @@ static int kro_userspace_eptv(struct eptvc *e, int level)
 		add_fixup(e->gpa, n_eprot);
 		return 1;
 	} else {
-		OKDEBUG("Protected 4k block %#lx released to user space"
+		OKLOG("Protected 4k block %#lx released to user space"
 			" OK_TEXT %d OK_MOD %d OK_DATA %d no longer mapped by "
 			"kernel exit qual %#lx guest virtual %#lx\n",
 			e->gpa & ~(PAGESIZE - 1), (*epte & OK_TEXT)?1:0,
 			(*epte & OK_MOD)?1:0, (*epte & OK_DATA)?1:0, e->qual,
 			e->gva);
 		return grant_all(e, level);
+	}
+}
+static unsigned long virt_from_pgva_pa(unsigned long pgva, unsigned long pa)
+{
+	/* Construct the virtual address from the page virtual
+	 * address and physical address to diagnose aliasing */
+	int level;
+	pgprot_t prot;
+	unsigned long ppa;
+
+	ppa = guest_physical_page_address(pgva, &level, &prot);
+	if (!ppa) {
+		OKERR("Unable to find physical address for %#lx\n", pgva);
+		return 0;
+	}
+	switch (level) {
+	case PG_LEVEL_4K:
+		return pgva + (pa & (PAGE_SIZE-1));
+	case PG_LEVEL_2M:
+		return pgva + (pa & (PAGESIZE2M-1));
+	default:
+		OKERR("Unsupported page level");
+		return 0;
 	}
 }
 
@@ -3650,6 +3672,7 @@ static int kro_mapped_eptv(struct eptvc *e, unsigned long ma, int level)
 	uid_t uid;
 	char *comm;
 	struct patch_addr *p;
+	unsigned long ava;
 
 	epte = ept_page_entry(e->vcpu, e->gpa);
 	eprot = *epte & (EPT_W | EPT_R | EPT_X);
@@ -3659,20 +3682,21 @@ static int kro_mapped_eptv(struct eptvc *e, unsigned long ma, int level)
 	comm = current->comm;
 	/* New prots = guest prot + old prot */
 	n_eprot = set | eprot;
-	if (p)
-		OKDEBUG("Patch of pa %#lx with EPT prot %#lx for %s. Alias"
-			" for kernel protected code mapped at page %#lx being "
-			"created at page %#lx for virtual address %#lx, "
-			"new EPT prot %#lx, uid %d, command %s\n", e->gpa, eprot,
-			p->tag, ma, e->gva & ~(PAGESIZE2M - 1), e->gva, n_eprot,
-			uid, comm);
-	else
-		OKSEC("Physical address %#lx with EPT prot %#lx alias or change"
+	if (p) {
+		OKLOG("Patch of pa %#lx with EPT prot %#lx for %s. Alias"
 		      " for kernel protected code mapped at page %#lx being "
-		      "created at page %#lx for virtual address %#lx, "
-		      "new EPT prot %#lx, uid %d, command %s\n", e->gpa, eprot,
-		      ma, e->gva & ~(PAGESIZE2M - 1), e->gva, n_eprot,
-		      uid, comm);
+		      "created for virtual address %#lx, new EPT prot %#lx, "
+		      "uid %d, command %s\n", e->gpa, eprot, p->tag, ma, e->gva,
+		      n_eprot, uid, comm);
+	}
+	else {
+		ava = virt_from_pgva_pa(ma, e->gpa);
+		OKSEC("Physical address %#lx with EPT prot %#lx alias or change"
+		      " for kernel protected code mapped at %#lx being "
+		      "created for virtual address %#lx, new EPT prot %#lx, "
+		      "uid %d, command %s\n", e->gpa, eprot, ava, e->gva,
+		      n_eprot, uid, comm);
+	}
 	if(!set_clr_ept_page_flags(e->vcpu, e->gpa, n_eprot, 0, level)) {
 		OKERR("set_clr_ept_page_flags failed.\n");
 		BUG();
@@ -3684,7 +3708,7 @@ static int kro_mapped_eptv(struct eptvc *e, unsigned long ma, int level)
 /*
  * Handler for EPT violations on kernel RO memory we've previously marked
  * for protection with OK_FLAGS.
- * 
+ *
  * If the gva is kernel integrity memory, in an ideal world we
  * wouldn't need to change it. Unfortunately, sometimes aliases are
  * created. So we have to allow changes and log them.
@@ -3716,7 +3740,7 @@ static int kernel_ro_ept_violation(struct eptvc *e)
 			      "at guest virtual %#lx, new EPT prot %#lx\n",
 			      e->gpa, eprot, e->gva, set);
 		else
-			OKDEBUG("Physical address %#lx with EPT prot %#lx no "
+			OKLOG("Physical address %#lx with EPT prot %#lx no "
 				"longer at original mapping. New mapping created"
 				" at guest virtual %#lx, new EPT prot %#lx"
 				" OK_TEXT %d OK_MOD %d OK_DATA %d"
@@ -3753,7 +3777,7 @@ int module_ept_violation(struct eptvc *e)
 	ept_flags_from_qual(e->qual, &s_flags, &c_flags);
 	set_clr_ok_tags(e->gva, &s_flags, &c_flags);
 	if (set_clr_ept_page_flags(e->vcpu, e->gpa, s_flags, c_flags, level)) {
-		if (s_flags & EPT_X) 
+		if (s_flags & EPT_X)
 			OKSEC("New module code at pa %#lx va %#lx\n",
 			      e->gpa, e->gva);
 		return 1;
@@ -3774,12 +3798,12 @@ int kernel_ept_violation(struct eptvc *e)
 	int level;
 	unsigned long s_flags, c_flags;
 	pgprot_t prot;
-	
+
 	BUG_ON(!guest_physical_page_address(e->gva, &level, &prot));
 	ept_flags_from_qual(e->qual, &s_flags, &c_flags);
 	set_clr_ok_tags(e->gva, &s_flags, &c_flags);
 	if (set_clr_ept_page_flags(e->vcpu, e->gpa, s_flags, c_flags, level)) {
-		if (s_flags & EPT_X) 
+		if (s_flags & EPT_X)
 			OKSEC("New kernel code at pa %#lx va %#lx\n", e->gpa,
 			      e->gva);
 		return 1;
@@ -3811,7 +3835,7 @@ static int vmx_handle_EPT_violation(struct vmx_vcpu *vcpu)
 
 	/* Guest linear (virtual address) is valid */
 	if(e.qual & EPT_GLV){
-		/* 
+		/*
 		 * If EPT_LT is set, the violation was a result of a
 		 * result of a translation of a linear address,
 		 * otherwise it was a result of a page walk or update
@@ -4054,7 +4078,7 @@ int vmx_launch(unsigned int mode, unsigned int flags, struct nr_cloned_state *cl
 		native_irq_disable();
 
 		//fast_path:
-		
+
                 /**************************** GO FOR IT ***************************/
 		ret = vmx_run_vcpu(vcpu);
                 /*************************** GONE FOR IT! *************************/

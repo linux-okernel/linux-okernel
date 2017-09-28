@@ -1,1 +1,1 @@
-obj-y	:= core.o vmx.o okmm.o oktrace.o
+obj-y	:= core.o vmx.o okmm.o oktrace.o oktest.o
