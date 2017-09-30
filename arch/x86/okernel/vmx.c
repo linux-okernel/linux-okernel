@@ -1320,15 +1320,12 @@ int clone_kstack2(struct vmx_vcpu *vcpu, unsigned long perms)
 	
 	HDEBUG("ept page clone on (%#lx)\n", (unsigned long)paddr);
 
-        /* Remove ept write perm on the stack page, don't actuall
-	 * clone anymore. */
-	//spin_lock_irqsave(&init_ept_root_lock,flags);
-	//spin_lock(vcpu->ept_root_lock);
+        /* Remove ept write perm on the stack page, don't actually clone anymore. */
+	spin_lock_irqsave(&init_ept_root_lock,flags);
 	modify_ept_physaddr_perms(vcpu->ept_root, paddr, perms);
 	ept_sync_global();
 	ept_invalidate_global(vcpu);
-	//spin_unlock(vcpu->ept_root_lock);
-	//spin_unlock_irqrestore(&init_ept_root_lock,flags);
+	spin_unlock_irqrestore(&init_ept_root_lock,flags);
 	return 1;
 }
 
@@ -2683,9 +2680,9 @@ static void vmx_destroy_vcpu(struct vmx_vcpu *vcpu)
 	root = vcpu->ept_root;
 	
 	vmx_get_cpu(vcpu);
-	//spin_lock_irqsave(&init_ept_root_lock,flags);
-	//spin_lock(&init_ept_root_lock);
 
+	spin_lock_irqsave(&init_ept_root_lock,flags);
+	
 	list_for_each(q, root_list){
 		root_entry = list_entry(q, struct ept_root_list, list);
 		if(!reset_ept_page(root_entry->root,
@@ -2698,8 +2695,7 @@ static void vmx_destroy_vcpu(struct vmx_vcpu *vcpu)
 	}
 	ept_sync_global();
 	ept_invalidate_global(vcpu);
-	//spin_unlock(&init_ept_root_lock);
-	//spin_unlock_irqrestore(&init_ept_root_lock, flags);
+	spin_unlock_irqrestore(&init_ept_root_lock, flags);
 	
 	if(root != init_ept_root){
 		printk("Removing entry from ept_roots list...\n");
@@ -2943,15 +2939,15 @@ static int vmx_handle_EPT_misconfig(struct vmx_vcpu *vcpu)
 	gp_addr = vmcs_readl(GUEST_PHYSICAL_ADDRESS);
 	vmx_put_cpu(vcpu);
 
-	//spin_lock_irqsave(&init_ept_root_lock,flags);
-	//spin_lock(vcpu->ept_root_lock);	
+	spin_lock_irqsave(&init_ept_root_lock,flags);
+	
 	if((pml2_e =  find_pd_entry(vcpu->ept_root, gp_addr))){
 		epte = ept_page_entry(vcpu->ept_root, gp_addr);
 	} else {
 		epte = 0;
 	}
-	//spin_unlock(vcpu->ept_root_lock);
-	//spin_unlock_irqrestore(&init_ept_root_lock, flags);
+	
+	spin_unlock_irqrestore(&init_ept_root_lock, flags);
 	printk(warning, gp_addr, (pml2_e) ? *pml2_e : 0, (epte) ? *epte : 0);
 	return 0;
 }
@@ -3460,38 +3456,19 @@ int vmexit_private_page(struct vmx_vcpu *vcpu, unsigned long gp_addr)
 	get_upc(&uid, &pid, &comm);
 
 	if(ok_allow_private_access(gp_addr)){
-		modify_ept_physaddr_perms(root, gp_addr, EPT_R | EPT_W);
-		return 1;
-	}
-
-	if(!remap_ept_page(root, gp_addr, ok_get_private_dummy_paddr())){
-		HDEBUG("Failed to remap dummy page.\n");
-	}
-	
-	BXMAGICBREAK2;
-	return 1;
-#if 0
-	modify_ept_physaddr_perms(root, gp_addr, EPT_R | EPT_W);
-	return 1;
-	
-        
-	barrier();
-	BUG();
-	
-	if(ok_allow_private_access(gp_addr)){
-		printk(KERN_ERR "Would allow access to private page.\n");
 		HDEBUG("Would allow access to private page.\n");
-		// Check if already using non-master EPT: if not start using one
+		/* Check if already using non-master EPT: if not start using one */
 		if(root == init_ept_root){
 			if(!(root = copy_eptp(init_ept_root))){
 				HDEBUG("Failed to copy eptp.\n");
-				BUG();
+				return 0;
 			}
+
 			vcpu->ept_root_entry = (struct ept_root_list *)kmalloc(sizeof(struct ept_root_list),
 									       GFP_KERNEL);
 			if(!vcpu->ept_root_entry){
 				HDEBUG("Failed to alloc list entry.\n");
-				BUG();
+				return 0;
 			}
 			vcpu->ept_root_entry->root = root;
 			list_add(&vcpu->ept_root_entry->list, &ept_roots.list);
@@ -3502,41 +3479,29 @@ int vmexit_private_page(struct vmx_vcpu *vcpu, unsigned long gp_addr)
 			vmx_get_cpu(vcpu);
 			vmcs_write64(EPT_POINTER, vcpu->eptp);
 			vmx_put_cpu(vcpu);
-			ept_sync_global();
 		}
-		barrier();
 		if(!modify_ept_physaddr_perms(root, gp_addr, EPT_R | EPT_W)){
 			HDEBUG("Failed to modify private page perms.\n");
-			BUG();
+			return 0;
 		}
+		//ept_invalidate_global(vcpu);
 		ept_sync_global();
 		HDEBUG("Allow private access for uid %d pid %d command %s\n", uid, pid, comm);
-	} else {
-		BUG();
-		printk(KERN_ERR "Would DENY access to private page.\n");
-		HDEBUG("Deny private access for uid %d pid %d command %s\n", uid, pid, comm);
-		BUG();
-		/*
-		 * Map in 'dummy' page for now  - need to be careful
-		 * not to create another vulnerability.
-		 */
-		
-		list_for_each(q, root_list){
-			root_entry = list_entry(q, struct ept_root_list, list);
-			if(root_entry->root != vcpu->ept_root){
-				if(!remap_ept_page(root_entry->root, gp_addr,
-						   ok_get_private_dummy_paddr())){
-					HDEBUG("Failed to remap dummy page.\n");
-					BUG();
-				}
-			}
-		}
-		ept_sync_global();
-		
-		BUG();
+		return 1;
 	}
+
+	HDEBUG("Denied private access (pa:=%#lx) for uid %d pid %d command %s\n",
+	       gp_addr, uid, pid, comm);
+
+	/*
+	 * Map in 'dummy' page for now  - need to be careful
+	 * not to create another vulnerability.
+	 */
+	if(!remap_ept_page(root, gp_addr, ok_get_private_dummy_paddr())){
+		HDEBUG("Failed to remap dummy page.\n");
+	}
+	ept_sync_global();
 	return 1;
-#endif
 }
 
 /* 
@@ -3746,14 +3711,13 @@ static int vmx_handle_EPT_violation(struct vmx_vcpu *vcpu)
 	gva = (u64)vmcs_readl(GUEST_LINEAR_ADDRESS);
         vmx_put_cpu(vcpu);
 
-	//spin_lock_irqsave(&init_ept_root_lock,flags);
-	//spin_lock(vcpu->ept_root_lock);
+	spin_lock_irqsave(&init_ept_root_lock,flags);
+	
+	HDEBUG("EPT exit (%lx)\n", gpa);
 
-	printk(KERN_ERR "EPT exit (%lx)\n", gpa);
-	/* Grant access to private pages lazily */
+        /* Grant access to private pages lazily */
 	if(__ok_private_phys_addr(gpa)){
-		//printk(KERN_ERR "Private page access.\n");
-		//HDEBUG("Private page access.\n");
+		HDEBUG("Private page access.\n");
 		BXMAGICBREAK2;
 		ret = vmexit_private_page(vcpu, gpa);
 		goto done;
@@ -3783,8 +3747,7 @@ static int vmx_handle_EPT_violation(struct vmx_vcpu *vcpu)
 		}
 	}
 done:
-	//spin_unlock_irqrestore(&init_ept_root_lock,flags);
-	//spin_unlock(vcpu->ept_root_lock);
+	spin_unlock_irqrestore(&init_ept_root_lock,flags);
 	return ret;
 }
 
@@ -4250,7 +4213,6 @@ void ok_init_private_pages(void)
 		return;
 	}
 
-	spin_lock(&ok_private_pg_lock);
 	pg = alloc_pages(GFP_KERNEL, order_base_2(OK_NR_PRIVATE_PAGES));
 	if(!pg){
 		printk(KERN_ERR "ok: failed to allocate private memory page array.\n");
@@ -4279,7 +4241,6 @@ void ok_init_private_pages(void)
 	ok_private_dummy_page = pg;
 	memset(page_address(ok_private_dummy_page), 0, PAGESIZE);
 	memcpy(page_address(ok_private_dummy_page), "eh up fred.", strlen("eh up fred."));
-	spin_unlock(&ok_private_pg_lock);
 }
 
 
@@ -4425,11 +4386,9 @@ bool ok_allow_private_access(unsigned long phys_addr)
 	struct page *pg;
 	struct page_ext *pg_ext;
 
-	//return false;
 	pg = pfn_to_page(phys_addr >> PAGE_SHIFT);
 	pg_ext = lookup_page_ext(pg);
 
-	//return false;
 	if(pg_ext->pid == current->pid){
 		return true;
 	}
