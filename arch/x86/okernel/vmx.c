@@ -79,6 +79,7 @@
 #include <linux/cgroup-defs.h>
 /* End of #includes for static_key patching*/
 
+#include <asm/asm.h>
 #include <asm/mtrr.h>
 #include <asm/desc.h>
 #include <asm/vmx.h>
@@ -3929,14 +3930,14 @@ int vmx_launch(unsigned int mode, unsigned int flags, struct nr_cloned_state *cl
 	}
 
 	/* To do: Need to take a copy of the orignal stack contents, restore when/if we leave */
-	in_use = current_top_of_stack() - current_stack_pointer();
+	in_use = current_top_of_stack() - current_stack_pointer;
 
 	k_stack = (unsigned long)current->stack;
 
 	r_stack_top = k_stack + PAGE_SIZE;
 
         /* Check currently not using last page of stack otherwise we break */
-	if((current_stack_pointer() & PAGE_MASK) == (r_stack_top & PAGE_SIZE)){
+	if((current_stack_pointer & PAGE_MASK) == (r_stack_top & PAGE_SIZE)){
 		OKERR("Process already using last page of kernel stack - can't continue.\n");
 		printk(KERN_ERR "okernel: stack slide failed.\n");
 		return -ENOMEM;

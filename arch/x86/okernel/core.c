@@ -36,6 +36,7 @@
 #include <linux/percpu.h>
 #include <linux/syscalls.h>
 
+#include <asm/asm.h>
 #include <asm/desc.h>
 #include <asm/vmx.h>
 #include <asm/unistd_64.h>
@@ -78,7 +79,7 @@ int okernel_enabled;
 
 unsigned long okernel_stack_use(void)
 {
-	return  (current_top_of_stack() - current_stack_pointer());
+	return  (current_top_of_stack() - current_stack_pointer);
 }
 
 void okernel_dump_stack_info(void)
@@ -86,7 +87,7 @@ void okernel_dump_stack_info(void)
 	unsigned long sp, sp0, end_stack;
 
 	sp0 = current_top_of_stack();
-	sp  = current_stack_pointer();
+	sp  = current_stack_pointer;
 	end_stack = sp0 - THREAD_SIZE;
 
 	OKINFO("thread/stack size (%lu) thread_info* (%#lx) stack in-use (%#lx) (%lu)\n",
