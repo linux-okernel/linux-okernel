@@ -86,6 +86,7 @@ extern unsigned long ok_protected_pfn_start;
 extern unsigned long ok_protected_pfn_end;
 struct page *ok_alloc_protected_page(void);
 int ok_free_protected_page(struct page *pg);
+extern int ok_trace_init(void);
 extern int do_ok_trace(unsigned long, const char *, const char *, ...);
 
 
@@ -94,7 +95,6 @@ extern int do_ok_trace(unsigned long, const char *, const char *, ...);
 
 #ifdef OKERNEL_DEBUG
 
-#define OKERNEL_LOG_BUFFER_MAX 512
 #define ok_pr_fmt(fmt) fmt
 
 #define ok_trace(label, fmt, ...) do_ok_trace(_THIS_IP_, label, fmt, ## __VA_ARGS__)

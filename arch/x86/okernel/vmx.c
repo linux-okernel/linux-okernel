@@ -4688,6 +4688,14 @@ int __init vmx_init(void)
 
 	(void)ok_init_protected_pages();
 
+#ifdef OKERNEL_DEBUG
+	if(!ok_trace_init()) {
+		r = -ENOMEM;
+		printk(KERN_ERR "okernel: could not allocate memory buffer for tracing.");
+		goto failed2;
+	}
+#endif
+
 	if ((r = okmm_init())) {
 		goto failed2;
 	}
