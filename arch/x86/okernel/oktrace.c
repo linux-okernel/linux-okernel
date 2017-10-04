@@ -34,13 +34,13 @@ int do_ok_trace(unsigned long ip, const char *label, const char *fmt, ...)
 		/* Generate header */
 		if (label != NULL) {
 			msg_len = scnprintf(msg, OK_BUFFER_SIZE,
-					    "[%s] [%s, cpu(%d),pid(%d)] : ",
+					    "[%s] [%s,cpu(%d),pid(%d)]: ",
 					    label, vmx_nr_mode()? "NR" : "R",
 					    raw_smp_processor_id(),
 					    current->pid);
 		} else {
 			msg_len = scnprintf(msg, OK_BUFFER_SIZE,
-					    "[%s, cpu(%d),pid(%d)] : ",
+					    "[%s,cpu(%d),pid(%d)]: ",
 					    vmx_nr_mode()? "NR" : "R",
 					    raw_smp_processor_id(),
 					    current->pid);

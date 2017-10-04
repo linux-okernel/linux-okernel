@@ -116,7 +116,7 @@ extern int do_ok_trace(unsigned long, const char *, const char *, ...);
 #define OKSEC(fmt, ...)		\
 	do {					\
 		ok_trace("OK_SEC", ok_pr_fmt(fmt), ## __VA_ARGS__);		\
-		printk("okernel: [OK_SEC] [%s - cpu(%d) pid(%d)] : " fmt, vmx_nr_mode()?"NR":"R", raw_smp_processor_id(), current->pid, ## __VA_ARGS__);	\
+		printk("okernel: [OK_SEC] [%s - cpu(%d) pid(%d)]: " fmt, vmx_nr_mode()?"NR":"R", raw_smp_processor_id(), current->pid, ## __VA_ARGS__);	\
 } while (0)
 
 //#define OKERNEL_DEBUG_FULL
@@ -134,7 +134,7 @@ extern int do_ok_trace(unsigned long, const char *, const char *, ...);
 #define OKDEBUG(fmt, ...)
 #define ok_trace(label, fmt, ...)
 /* Have OKSEC resolve to a printk() when OKERNEL_DEBUG is undefined. */
-#define OKSEC(fmt, ...)	printk(KERN_ERR "okernel: [OK_SEC] [%s - cpu(%d) pid(%d)] : " fmt, vmx_nr_mode()?"NR":"R", raw_smp_processor_id(), current->pid, ## __VA_ARGS__);
+#define OKSEC(fmt, ...)	printk(KERN_ERR "okernel: [OK_SEC] [%s - cpu(%d) pid(%d)]: " fmt, vmx_nr_mode()?"NR":"R", raw_smp_processor_id(), current->pid, ## __VA_ARGS__);
 #endif /* OKERNEL_DEBUG */
 
 
