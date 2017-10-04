@@ -4332,7 +4332,6 @@ void ok_init_protected_pages(void)
 		return;
 	}
 
-	spin_lock(&ok_protected_pg_lock);
 	pg = alloc_pages(GFP_KERNEL, order_base_2(OK_NR_PROTECTED_PAGES));
 	if(!pg){
 		printk(KERN_ERR "okernel: failed to allocate protected memory page array.\n");
@@ -4363,7 +4362,6 @@ void ok_init_protected_pages(void)
 #ifdef OK_DEMO_HACK_MESSAGE
 	memcpy(page_address(ok_protected_dummy_page), OK_DUMMY_TEXT, strlen(OK_DUMMY_TEXT)+1);
 #endif
-	spin_unlock(&ok_protected_pg_lock);
 }
 
 unsigned long ok_get_protected_dummy_paddr(void)
@@ -4689,6 +4687,14 @@ int __init vmx_init(void)
 	in_vmx_nr_mode = real_in_vmx_nr_mode;
 
 	(void)ok_init_protected_pages();
+
+#ifdef OKERNEL_DEBUG
+	if(!ok_trace_init()) {
+		r = -ENOMEM;
+		printk(KERN_ERR "okernel: could not allocate memory buffer for tracing.");
+		goto failed2;
+	}
+#endif
 
 	if ((r = okmm_init())) {
 		goto failed2;

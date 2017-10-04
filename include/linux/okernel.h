@@ -86,6 +86,7 @@ extern unsigned long ok_protected_pfn_start;
 extern unsigned long ok_protected_pfn_end;
 struct page *ok_alloc_protected_page(void);
 int ok_free_protected_page(struct page *pg);
+extern int ok_trace_init(void);
 extern int do_ok_trace(unsigned long, const char *, const char *, ...);
 
 
@@ -94,7 +95,6 @@ extern int do_ok_trace(unsigned long, const char *, const char *, ...);
 
 #ifdef OKERNEL_DEBUG
 
-#define OKERNEL_LOG_BUFFER_MAX 512
 #define ok_pr_fmt(fmt) fmt
 
 #define ok_trace(label, fmt, ...) do_ok_trace(_THIS_IP_, label, fmt, ## __VA_ARGS__)
@@ -116,7 +116,7 @@ extern int do_ok_trace(unsigned long, const char *, const char *, ...);
 #define OKSEC(fmt, ...)		\
 	do {					\
 		ok_trace("OK_SEC", ok_pr_fmt(fmt), ## __VA_ARGS__);		\
-		printk("okernel: [OK_SEC] [%s - cpu(%d) pid(%d)] : " fmt, vmx_nr_mode()?"NR":"R", raw_smp_processor_id(), current->pid, ## __VA_ARGS__);	\
+		printk("okernel: [OK_SEC] [%s - cpu(%d) pid(%d)]: " fmt, vmx_nr_mode()?"NR":"R", raw_smp_processor_id(), current->pid, ## __VA_ARGS__);	\
 } while (0)
 
 //#define OKERNEL_DEBUG_FULL
@@ -134,7 +134,7 @@ extern int do_ok_trace(unsigned long, const char *, const char *, ...);
 #define OKDEBUG(fmt, ...)
 #define ok_trace(label, fmt, ...)
 /* Have OKSEC resolve to a printk() when OKERNEL_DEBUG is undefined. */
-#define OKSEC(fmt, ...)	printk(KERN_ERR "okernel: [OK_SEC] [%s - cpu(%d) pid(%d)] : " fmt, vmx_nr_mode()?"NR":"R", raw_smp_processor_id(), current->pid, ## __VA_ARGS__);
+#define OKSEC(fmt, ...)	printk(KERN_ERR "okernel: [OK_SEC] [%s - cpu(%d) pid(%d)]: " fmt, vmx_nr_mode()?"NR":"R", raw_smp_processor_id(), current->pid, ## __VA_ARGS__);
 #endif /* OKERNEL_DEBUG */
 
 
