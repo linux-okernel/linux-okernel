@@ -1323,9 +1323,9 @@ int clone_kstack2(struct vmx_vcpu *vcpu, unsigned long perms)
         /* Remove ept write perm on the stack page, don't actually clone anymore. */
 	spin_lock_irqsave(&init_ept_root_lock,flags);
 	modify_ept_physaddr_perms(vcpu->ept_root, paddr, perms);
+	spin_unlock_irqrestore(&init_ept_root_lock,flags);
 	ept_sync_global();
 	ept_invalidate_global(vcpu);
-	spin_unlock_irqrestore(&init_ept_root_lock,flags);
 	return 1;
 }
 
@@ -2693,9 +2693,13 @@ static void vmx_destroy_vcpu(struct vmx_vcpu *vcpu)
 			BUG();
 		}
 	}
+	
+	spin_unlock_irqrestore(&init_ept_root_lock, flags);
+
 	ept_sync_global();
 	ept_invalidate_global(vcpu);
-	spin_unlock_irqrestore(&init_ept_root_lock, flags);
+	
+	ok_free_private_page_by_id(current->pid);
 	
 	if(root != init_ept_root){
 		printk("Removing entry from ept_roots list...\n");
@@ -3449,9 +3453,6 @@ int vmexit_private_page(struct vmx_vcpu *vcpu, unsigned long gp_addr)
 	pid_t pid;
 	char *comm;
 	epte_t *root = vcpu->ept_root;
-	struct ept_root_list *root_entry;
-	struct list_head *q;
-	struct list_head *root_list = &ept_roots.list;
 
 	get_upc(&uid, &pid, &comm);
 
@@ -3465,7 +3466,7 @@ int vmexit_private_page(struct vmx_vcpu *vcpu, unsigned long gp_addr)
 			}
 
 			vcpu->ept_root_entry = (struct ept_root_list *)kmalloc(sizeof(struct ept_root_list),
-									       GFP_KERNEL);
+									       GFP_ATOMIC);
 			if(!vcpu->ept_root_entry){
 				HDEBUG("Failed to alloc list entry.\n");
 				return 0;
@@ -3484,8 +3485,6 @@ int vmexit_private_page(struct vmx_vcpu *vcpu, unsigned long gp_addr)
 			HDEBUG("Failed to modify private page perms.\n");
 			return 0;
 		}
-		//ept_invalidate_global(vcpu);
-		ept_sync_global();
 		HDEBUG("Allow private access for uid %d pid %d command %s\n", uid, pid, comm);
 		return 1;
 	}
@@ -3500,7 +3499,6 @@ int vmexit_private_page(struct vmx_vcpu *vcpu, unsigned long gp_addr)
 	if(!remap_ept_page(root, gp_addr, ok_get_private_dummy_paddr())){
 		HDEBUG("Failed to remap dummy page.\n");
 	}
-	ept_sync_global();
 	return 1;
 }
 
@@ -3748,6 +3746,7 @@ static int vmx_handle_EPT_violation(struct vmx_vcpu *vcpu)
 	}
 done:
 	spin_unlock_irqrestore(&init_ept_root_lock,flags);
+	ept_sync_global();
 	return ret;
 }
 
