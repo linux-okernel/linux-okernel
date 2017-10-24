@@ -7,5 +7,6 @@
 
 void ok_clr_eptx(struct vmx_vcpu *vcpu, struct page *page);
 void okernel_tum_x(u64 pa);
+bool okernel_page_user_x(struct page *page);
 
 #endif /* OKTUM_H */

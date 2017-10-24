@@ -104,6 +104,21 @@ void okernel_kmap(struct page *page)
 }
 EXPORT_SYMBOL(okernel_kmap);
 
+bool okernel_page_user_x(struct page *page)
+{
+	struct ok_tum *ok_tum;
+
+	if(!static_branch_unlikely(&ok_tum_inited))
+		return false;
+
+	if (!(ok_tum = lookup_ok_tum(page)))
+		return false;
+	else
+		return test_bit(OK_USER_X, &ok_tum->flags);
+}
+
+
+
 void okernel_tum_x(u64 pa)
 {
 	struct ok_tum *ok_tum;
