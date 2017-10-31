@@ -79,6 +79,8 @@ void okernel_free_pages(struct page *page, unsigned int order)
 		return;
 	for (i = 0; i < (1 << order); i++) {
 		ok_tum = lookup_ok_tum(page + i);
+		if (!ok_tum)
+			continue;
 		/*
 		 * Clear the EPT_X bit if previously set
 		 */
@@ -99,6 +101,8 @@ void okernel_kmap(struct page *page)
 	 * Clear the EPT_X bit if previously set
 	 */
 	ok_tum = lookup_ok_tum(page);
+	if (!ok_tum)
+		return;
 	if (test_and_clear_bit(OK_USER_X, &ok_tum->flags))
 		__clr_eptx(page);
 }
@@ -111,7 +115,8 @@ bool okernel_page_user_x(struct page *page)
 	if(!static_branch_unlikely(&ok_tum_inited))
 		return false;
 
-	if (!(ok_tum = lookup_ok_tum(page)))
+	ok_tum = lookup_ok_tum(page);
+	if (!ok_tum)
 		return false;
 	else
 		return test_bit(OK_USER_X, &ok_tum->flags);
@@ -139,5 +144,7 @@ void okernel_tum_x(u64 pa)
 		      page_to_phys(pfn_to_page(PHYS_PFN(pa))));
 	}
 	ok_tum = lookup_ok_tum(page);
+	if(!ok_tum)
+		return;
 	set_bit(OK_USER_X, &ok_tum->flags);
 }
