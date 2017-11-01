@@ -3554,9 +3554,10 @@ static void flags_from_qual(unsigned long qual, unsigned long *s,
 	*c = ((~*s) & EPT_PERM_MASK);
 }
 
-static int grant_all(struct eptvc *e, int level)
+static int grant_user_all(struct eptvc *e, int level)
 {
 	unsigned long s_flags, c_flags;
+
 	c_flags = OK_FLAGS;
 	s_flags = EPT_W | EPT_R | EPT_X;
 
@@ -3658,7 +3659,7 @@ static int kro_userspace_eptv(struct eptvc *e, int level)
 			e->gpa & ~(PAGESIZE - 1), (*epte & OK_TEXT)?1:0,
 			(*epte & OK_MOD)?1:0, (*epte & OK_DATA)?1:0, e->qual,
 			e->gva);
-		return grant_all(e, level);
+		return grant_user_all(e, level);
 	}
 }
 static unsigned long virt_from_pgva_pa(unsigned long pgva, unsigned long pa)
@@ -3873,7 +3874,7 @@ static int vmx_handle_EPT_violation(struct vmx_vcpu *vcpu)
 		} else if (is_user_space(e.gva)){
 			BUG_ON(!guest_physical_page_address(e.gva, &level,
 							    &prot));
-			return grant_all(&e, level);
+			return grant_user_all(&e, level);
 
 		} else {
 			return kernel_ept_violation(&e);
