@@ -7,6 +7,10 @@
 #include<linux/mm.h>
 #include<linux/syscalls.h>
 
+#ifdef CONFIG_XPFO
+#include<linux/xpfo.h>
+#endif
+
 #include<asm/page_types.h>
 #include<asm/set_memory.h>
 #include<asm/text-patching.h>
@@ -62,6 +66,10 @@ static void tracememory(void)
 	unsigned long count = 0;
 	unsigned long nmapped = 0;
 	struct page *page;
+#ifdef CONFIG_XPFO
+	unsigned long xpfo_user = 0;
+	unsigned long xpfo_unmapped = 0;
+#endif
 
 	printk("oktest max_pfn_mapped %ld \n", max_pfn_mapped);
 	for (i = 0; i <= max_pfn_mapped; i++) {
@@ -70,11 +78,22 @@ static void tracememory(void)
 		if (!(page = pfn_to_page(i)))
 			continue;
 		nmapped++;
-		if (okernel_page_user_x(page))
+		if (okernel_page_user_x(page)) {
 			count++;
+#ifdef CONFIG_XPFO
+			if (xpfo_page_is_user(page))
+			    xpfo_user++;
+			if (xpfo_page_is_unmapped(page))
+			    xpfo_unmapped++;
+#endif
+		}
 	}
-	printk("oktest %ld pages from %ld marked for EPT_X tracking", count,
-	       nmapped);
+	printk("oktest total pages %ld", nmapped);
+	printk("oktest pages tagged user EPT_X %ld", count);
+#ifdef CONFIG_XPFO
+	printk(KERN_CONT " of which xpfo_user %ld  and xpfo_unmapped %ld ",
+	       xpfo_user, xpfo_unmapped);
+#endif
 }
 
 long oktest_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
