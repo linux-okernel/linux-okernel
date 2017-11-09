@@ -1,10 +1,10 @@
 /*
- * Tracks code being released from user space memory. We need to clear
- * the EPT_X bit in the EPTs on this memory, so it isn't executable
- * when it gets reused. This machinery is only necessary on processors
- * without mode-based execute control for EPT. With mode-based execute
- * control for EPT, provided we can control execution rights in
- * supervisor and user mode separately.
+ * Tracks code being released from user space memory (Track User
+ * Memory - TUM). We need to clear the EPT_X bit in the EPTs on this
+ * memory, so it isn't executable when it gets reused. This machinery
+ * is only necessary on processors without mode-based execute control
+ * for EPT. With mode-based execute control for EPT, provided we can
+ * control execution rights in supervisor and user mode separately.
  *
  * Author: Nigel Edwards, 2017
  */
@@ -18,7 +18,7 @@
 #include "oktum.h"
 
 /* Page state flags */
-enum xpfo_flags {
+enum ok_user_flags {
 	OK_USER_X,         /* Page is executable in user space*/
 };
 
