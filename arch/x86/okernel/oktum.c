@@ -60,14 +60,10 @@ static inline struct ok_tum *lookup_ok_tum(struct page *page)
 
 static inline void __clr_eptx(struct page *page)
 {
-	if(is_in_vmx_nr_mode()) {
-		OKLOG("in **NR** mode");
+	if(is_in_vmx_nr_mode())
 		(void)vmcall2(VMCALL_CLR_EPTX, (unsigned long) page);
-	}
-	else {
-		OKLOG("in **R** mode");
+	else
 		ok_clr_eptx(NULL, page);
-	}
 }
 
 void okernel_free_pages(struct page *page, unsigned int order)

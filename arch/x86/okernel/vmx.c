@@ -942,10 +942,9 @@ void ok_clr_eptx(struct vmx_vcpu *vcpu, struct page *page)
 {
 	u64 pa;
 
-	if (vcpu == NULL) {
-		OKLOG("NULL vcpu, nothing to do for now...");
-		return;
-	}
+	if (vcpu == NULL) 
+		return; /* FIXME: update when have shared EPTs*/
+
 	pa = page_to_phys(page);
 	if (!set_clr_ept_page_flags(vcpu, pa, 0, EPT_X, PG_LEVEL_NONE))
 		OKLOG("set_clr_ept_page_flags failed");
