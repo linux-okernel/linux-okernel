@@ -68,7 +68,8 @@ static struct page_ext_operations *page_ext_ops[] = {
 	&page_idle_ops,
 #endif
 #if defined(CONFIG_OKERNEL)
-       &page_okernel_ops,
+       &page_okernel_pm_ops,
+	&page_okernel_tum_ops,
 #endif
 };
 

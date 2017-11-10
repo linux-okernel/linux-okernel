@@ -50,6 +50,7 @@
 #define VMCALL_DO_GET_CPU_HELPER 5
 #define VMCALL_DO_EXEC_FIXUP_HOST 10
 #define VMCALL_DO_TLS_FIXUP 11
+#define VMCALL_CLR_EPTX 12
 
 #define OK_SCHED         1
 #define OK_SCHED_PREEMPT 2
@@ -65,10 +66,13 @@ int vmcall6(unsigned int cmd, unsigned long arg1, unsigned long arg2, unsigned l
 /* Keep these in here for now so that our dependencies are tracked until we find a better place */
 void do_page_fault_r(struct pt_regs *regs, unsigned long error_code, unsigned long address);
 
+/* page_extension operations needed to track user space memory
+ * allocation and release */
+extern struct page_ext_operations page_okernel_tum_ops;
 
 /* Enforce rudimentary protected interface */
 #define OKERNEL_PROTECTED_MEMORY
-extern struct page_ext_operations page_okernel_ops;
+extern struct page_ext_operations page_okernel_pm_ops;
 
 struct protected_data {
         /* This is a physical address we will ask the kernel vuln module to
@@ -201,5 +205,11 @@ void okernel_schedule_helper(void);
 void okernel_dump_stack_info(void);
 bool __ok_protected_phys_addr(unsigned long paddr);
 void ok_free_protected_page_by_id(pid_t pid);
-#endif
+void okernel_free_pages(struct page *page, unsigned int order);
+void okernel_kmap(struct page *page);
+
+#else /* CONFIG_OKERNEL */
+static inline void okernel_free_pages(struct page *page, unsigned int order) {}
+static inline void okernel_kmap(struct page *page) {}
+#endif /* CONFIG_OKERNEL */
 #endif /* _LINUX_OKERNEL_H */

@@ -96,6 +96,7 @@
 #include "constants2.h"
 #include "vmx.h"
 #include "okmm.h"
+#include "oktum.h"
 
 static atomic_t vmx_enable_failed;
 
@@ -935,6 +936,18 @@ static int set_clr_ept_page_flags(struct vmx_vcpu *vcpu, u64 paddr,
 	*epte |= s_flags;
 	*epte &= ~(c_flags);
 	return 1;
+}
+
+void ok_clr_eptx(struct vmx_vcpu *vcpu, struct page *page)
+{
+	u64 pa;
+
+	if (vcpu == NULL) 
+		return; /* FIXME: update when have shared EPTs*/
+
+	pa = page_to_phys(page);
+	if (!set_clr_ept_page_flags(vcpu, pa, 0, EPT_X, PG_LEVEL_NONE))
+		OKLOG("set_clr_ept_page_flags failed");
 }
 
 /* Need to sort out code duplication amongst replace/modify/rmap ept pages */
@@ -3238,6 +3251,11 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu, int nr_irqs_enabled)
 		vmx_put_cpu(vcpu);
 		BXMAGICBREAK;
 		ret = 0;
+	} else if (cmd == VMCALL_CLR_EPTX) {
+		vmx_get_cpu(vcpu);
+		ok_clr_eptx(vcpu, (struct page*)vcpu->regs[VCPU_REGS_RBX]);
+		vmx_put_cpu(vcpu);
+		ret = 0;
 	} else if (cmd == VMCALL_DO_GET_CPU_HELPER){
 		cpu_ptr = (void*)vcpu->regs[VCPU_REGS_RBX];
 		OKDEBUG("calling __vmx_get_cpu_helper.\n");
@@ -3535,12 +3553,15 @@ static void flags_from_qual(unsigned long qual, unsigned long *s,
 	*c = ((~*s) & EPT_PERM_MASK);
 }
 
-static int grant_all(struct eptvc *e, int level)
+static int grant_user_all(struct eptvc *e, int level)
 {
 	unsigned long s_flags, c_flags;
+
 	c_flags = OK_FLAGS;
 	s_flags = EPT_W | EPT_R | EPT_X;
-	if(set_clr_ept_page_flags(e->vcpu, e->gpa, s_flags, c_flags, level)){
+
+	if(set_clr_ept_page_flags(e->vcpu, e->gpa, s_flags, c_flags, level)) {
+		okernel_tum_x(e->gpa);
 		return 1;
 	} else {
 		OKERR("set_clr_ept_page_flags failed.\n");
@@ -3637,7 +3658,7 @@ static int kro_userspace_eptv(struct eptvc *e, int level)
 			e->gpa & ~(PAGESIZE - 1), (*epte & OK_TEXT)?1:0,
 			(*epte & OK_MOD)?1:0, (*epte & OK_DATA)?1:0, e->qual,
 			e->gva);
-		return grant_all(e, level);
+		return grant_user_all(e, level);
 	}
 }
 static unsigned long virt_from_pgva_pa(unsigned long pgva, unsigned long pa)
@@ -3852,7 +3873,7 @@ static int vmx_handle_EPT_violation(struct vmx_vcpu *vcpu)
 		} else if (is_user_space(e.gva)){
 			BUG_ON(!guest_physical_page_address(e.gva, &level,
 							    &prot));
-			return grant_all(&e, level);
+			return grant_user_all(&e, level);
 
 		} else {
 			return kernel_ept_violation(&e);
@@ -4301,24 +4322,23 @@ static void vmx_free_vmxon_areas(void)
 	}
 }
 
+DEFINE_STATIC_KEY_FALSE(ok_pm_inited);
 
-DEFINE_STATIC_KEY_FALSE(okernel_inited);
-
-static bool need_okernel(void)
+static bool need_ok_pm(void)
 {
 	return true;
 }
 
-static void init_okernel(void)
+static void init_ok_pm(void)
 {
 	/* safe to use page extensions after this */
-	static_branch_enable(&okernel_inited);
+	static_branch_enable(&ok_pm_inited);
 }
 
 
-struct page_ext_operations page_okernel_ops = {
-	.need = need_okernel,
-	.init = init_okernel,
+struct page_ext_operations page_okernel_pm_ops = {
+	.need = need_ok_pm,
+	.init = init_ok_pm,
 };
 
 /* Rudimentry 'protected' memory allocator  - use PG_protected flag for consistency checks */
@@ -4328,7 +4348,7 @@ void ok_init_protected_pages(void)
 	struct page *pg;
 	struct page_ext *pg_ext;
 
-	if(!static_branch_unlikely(&okernel_inited)){
+	if(!static_branch_unlikely(&ok_pm_inited)){
 		printk(KERN_ERR "okernel: ext page info not available - can't init protected pages.\n");
 		return;
 	}

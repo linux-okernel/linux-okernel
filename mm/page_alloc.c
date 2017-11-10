@@ -68,6 +68,7 @@
 #include <linux/ftrace.h>
 #include <linux/lockdep.h>
 #include <linux/nmi.h>
+#include <linux/okernel.h>
 
 #include <asm/sections.h>
 #include <asm/tlbflush.h>
@@ -1060,6 +1061,7 @@ static __always_inline bool free_pages_prepare(struct page *page,
 	kernel_poison_pages(page, 1 << order, 0);
 	kernel_map_pages(page, 1 << order, 0);
 	kasan_free_pages(page, order);
+	okernel_free_pages(page, order);
 
 	return true;
 }

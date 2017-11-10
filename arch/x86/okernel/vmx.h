@@ -3,6 +3,9 @@
  * vmx.h - header file for USM VMX driver.
  */
 
+#ifndef OKVMX_H
+#define OKVMX_H
+
 #include <linux/mmu_notifier.h>
 #include <linux/types.h>
 //#include <asm/tlbflush.h>
@@ -259,3 +262,5 @@ static inline int epte_big(epte_t epte)
 }
 
 #define ADDR_INVAL ((unsigned long) -1)
+
+#endif /* OKVMX_H */

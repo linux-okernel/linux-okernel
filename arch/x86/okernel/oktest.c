@@ -2,13 +2,23 @@
  * Author: Nigel Edwards, 2017
  */
 
+#include<linux/kmod.h>
 #include<linux/memory.h>
 #include<linux/mm.h>
 #include<linux/syscalls.h>
-#include<linux/kmod.h>
-#include<asm-generic/sections.h>
-#include<asm/text-patching.h>
+
+#ifdef CONFIG_XPFO
+#include<linux/xpfo.h>
+#endif
+
+#include<asm/page_types.h>
 #include<asm/set_memory.h>
+#include<asm/text-patching.h>
+
+#include<asm-generic/sections.h>
+
+#include "constants2.h"
+#include "oktum.h"
 
 
 
@@ -18,6 +28,7 @@
 #define MAGIC_NO '4'
 
 #define OKTEST_EXEC _IOW(MAGIC_NO, 0, unsigned long)
+#define OKTEST_USER_MEM_TRACK _IO(MAGIC_NO, 1)
 
 static struct class *oktest_dev_class;
 static int major_no;
@@ -49,6 +60,42 @@ static int oktest_device_open(struct inode *inode, struct file *file)
 	return 0;
 }
 
+static void tracememory(void)
+{
+	unsigned long  i;
+	unsigned long count = 0;
+	unsigned long nmapped = 0;
+	struct page *page;
+#ifdef CONFIG_XPFO
+	unsigned long xpfo_user = 0;
+	unsigned long xpfo_unmapped = 0;
+#endif
+
+	printk("oktest max_pfn_mapped %ld \n", max_pfn_mapped);
+	for (i = 0; i <= max_pfn_mapped; i++) {
+		if (!pfn_range_is_mapped(i, i + 1))
+			continue;
+		if (!(page = pfn_to_page(i)))
+			continue;
+		nmapped++;
+		if (okernel_page_user_x(page)) {
+			count++;
+#ifdef CONFIG_XPFO
+			if (xpfo_page_is_user(page))
+			    xpfo_user++;
+			if (xpfo_page_is_unmapped(page))
+			    xpfo_unmapped++;
+#endif
+		}
+	}
+	printk("oktest total pages %ld", nmapped);
+	printk("oktest pages tagged user EPT_X %ld", count);
+#ifdef CONFIG_XPFO
+	printk(KERN_CONT " of which xpfo_user %ld  and xpfo_unmapped %ld ",
+	       xpfo_user, xpfo_unmapped);
+#endif
+}
+
 long oktest_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 {
 	void (*func)(void);
@@ -70,6 +117,12 @@ long oktest_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 		return 0;
 		break;
 
+	case OKTEST_USER_MEM_TRACK:
+		printk("oktest executing trace on physical memory\n");
+		tracememory();
+		printk("oktest trace finished\n");
+		return 0;
+		break;
 	default:
 
 		printk(KERN_ERR "oktest invalid IOCTL cmd.\n");
