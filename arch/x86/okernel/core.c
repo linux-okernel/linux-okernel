@@ -2,7 +2,7 @@
  * linux/arch/x86/okernel/core.c
  *
  * Copyright (C) 2015 - Chris Dalton (cid@hpe.com), HPE Corp.
- * Support for splitting the kernel into inner and outer regions,
+ * Suport for splitting the kernel into inner and outer regions,
  * with the aim of achieving some degree of intra-kernel protection.
  * Processes marked as 'OKERNEL' run under vmx non-root mode (x86).
  * They enter the kernel in that mode too (outer-kernel mode)
@@ -57,11 +57,11 @@ MODULE_DESCRIPTION("Okernel intra-kernel protection");
 
 #define OKERNEL_ON_CMD _IOW(MAGIC_NO, 0, unsigned int)
 
-/* Rudimentary protected memory user space ioctl interface */
-#define OKERNEL_ALLOCATE_PROTECTED_PAGE _IOR(MAGIC_NO, 1, unsigned long)
-#define OKERNEL_FREE_PROTECTED_PAGE     _IOW(MAGIC_NO, 2, unsigned long)
-#define OKERNEL_PROTECTED_PAGE_READ     _IOW(MAGIC_NO, 3, char *)
-#define OKERNEL_PROTECTED_PAGE_WRITE    _IOW(MAGIC_NO, 4, char *)
+/* Rudimentary private memory user space ioctl interface */
+#define OKERNEL_ALLOCATE_PRIVATE_PAGE _IOR(MAGIC_NO, 1, unsigned long)
+#define OKERNEL_FREE_PRIVATE_PAGE     _IOW(MAGIC_NO, 2, unsigned long)
+#define OKERNEL_PRIVATE_PAGE_READ     _IOW(MAGIC_NO, 3, char *)
+#define OKERNEL_PRIVATE_PAGE_WRITE    _IOW(MAGIC_NO, 4, char *)
 
 static struct class *okernel_dev_class;
 static int major_no;
@@ -311,41 +311,44 @@ long ok_device_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 	unsigned long val;
 	int ret;
 	struct thread_info *ti;
+#if 1
 	struct page *pg;
 	unsigned long phys_addr = 0;
-	struct protected_data pd;
+	struct private_data pd;
 	unsigned long pfn;
 	unsigned long p_addr;
 	char *p;
 	unsigned long *v_addr;
+#endif
 
 	OKDEBUG("called.\n");
 	switch(cmd)
 	{
-		/* Really we should do an mmap interface above protected pages - this will suffice for now */
-	case OKERNEL_ALLOCATE_PROTECTED_PAGE:
-		if(!(pg = ok_alloc_protected_page())){
-			printk("okernel: failed to alloc protected page.\n");
+#if 1
+		/* Really we should do an mmap interface above private pages - this will suffice for now */
+	case OKERNEL_ALLOCATE_PRIVATE_PAGE:
+		if(!(pg = ok_alloc_private_page())){
+			printk("okernel: failed to alloc private page.\n");
 			return -EINVAL;
 		}
 
 		phys_addr = page_to_phys(pg);
 
-		OKDEBUG("ok: allocated protected page at phys addr (%#lx)\n", phys_addr);
+		OKDEBUG("ok: allocated private page at phys addr (%#lx)\n", phys_addr);
 
 		if(copy_to_user((void*)arg, &phys_addr, sizeof(unsigned long))){
 			return -EFAULT;
 		}
 		return 0;
 		break;
-	case OKERNEL_FREE_PROTECTED_PAGE:
+	case OKERNEL_FREE_PRIVATE_PAGE:
 		phys_addr = arg;
 		OKDEBUG("ok: Passed physical Address for permission removal:=(%#lx)\n", phys_addr);
-		(void)ok_free_protected_page(pfn_to_page(__phys_to_pfn(phys_addr)));
+		(void)ok_free_private_page(pfn_to_page(__phys_to_pfn(phys_addr)));
 		return 0;
 		break;
-	case OKERNEL_PROTECTED_PAGE_READ:
-		copy_from_user(&pd, (void*)arg, sizeof(struct protected_data));
+	case OKERNEL_PRIVATE_PAGE_READ:
+		copy_from_user(&pd, (void*)arg, sizeof(struct private_data));
 		p_addr = pd.p_addr;
 
 		OKDEBUG("OK page read: Passed physical Address <%#lx>\n", p_addr);
@@ -353,7 +356,7 @@ long ok_device_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 		/* In range? */
 		pfn = __phys_to_pfn(p_addr);
 
-		if((pfn < ok_protected_pfn_start) || (pfn > ok_protected_pfn_end)){
+		if((pfn < ok_private_pfn_start) || (pfn > ok_private_pfn_end)){
 			return -EINVAL;
 		}
 
@@ -366,8 +369,8 @@ long ok_device_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 		       p_addr, (unsigned long)v_addr, p);
 		copy_to_user(pd.p_data, p, PAGE_SIZE);
 		break;
-	case OKERNEL_PROTECTED_PAGE_WRITE:
-		copy_from_user(&pd, (void*)arg, sizeof(struct protected_data));
+	case OKERNEL_PRIVATE_PAGE_WRITE:
+		copy_from_user(&pd, (void*)arg, sizeof(struct private_data));
 		p_addr = pd.p_addr;
 
 		OKDEBUG("OK page write: Passed physical Address <%#lx>\n", p_addr);
@@ -375,7 +378,7 @@ long ok_device_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 		/* In range? */
 		pfn = __phys_to_pfn(p_addr);
 
-		if((pfn < ok_protected_pfn_start) || (pfn > ok_protected_pfn_end)){
+		if((pfn < ok_private_pfn_start) || (pfn > ok_private_pfn_end)){
 			return -EINVAL;
 		}
 
@@ -389,6 +392,7 @@ long ok_device_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 		OKDEBUG("OK: write to p_addr/vaddr (%#lx/%#lx) in kernel: %s\n",
 		       p_addr, (unsigned long)v_addr, p);
 		break;
+#endif
 	case OKERNEL_ON_CMD:
 		set_vmx_r_mode();
 		val = arg;

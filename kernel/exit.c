@@ -772,9 +772,11 @@ void __noreturn do_exit(long code)
                BXMAGICBREAK;
                (void)vmcall2(VMCALL_DOEXIT, (unsigned long)code);
        }
+#if 0
        /* Will move this call to free later. */
        ok_free_protected_page_by_id(current->pid);
 #endif
+#endif /* CONFIG_OKERNEL */
 
 	profile_task_exit(tsk);
 	kcov_task_exit(tsk);

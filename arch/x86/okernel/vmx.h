@@ -138,6 +138,14 @@ enum vmx_reg {
 	NR_VCPU_REGS
 };
 
+typedef unsigned long epte_t;
+
+struct ept_root_list {
+	struct list_head list;
+	epte_t *root;
+};
+
+
 struct ept_pt_list {
 	struct list_head list;
 	pt_page* page;
@@ -151,12 +159,15 @@ struct vmx_vcpu {
 	int launched;
 
 	//struct mmu_notifier mmu_notifier;
-	struct ept_pt_list ept_table_pages;
-	spinlock_t ept_lock;
-	unsigned long ept_root;
+	struct ept_root_list *ept_root_entry;
+	spinlock_t *ept_root_lock;
+	epte_t *ept_root;
 	unsigned long eptp;
-	bool ept_ad_enabled;
 
+	bool ept_ad_enabled;
+	u64 stack_clone_paddr;
+	u64 stack_clone_vaddr;
+	
 	u8  fail;
 	u64 exit_reason;
 	u64 host_rsp;
@@ -176,7 +187,6 @@ struct vmx_vcpu {
 	struct thread_info *cloned_thread_info;
 	struct task_struct *cloned_tsk;
 	struct nr_cloned_state *cloned_thread;
-	unsigned int *nr_stack_canary;
 	void *syscall_tbl;
 };
 
@@ -209,8 +219,6 @@ static __always_inline unsigned long vmcs_readl(unsigned long field)
 #define VMX_EPT_FAULT_READ	0x01
 #define VMX_EPT_FAULT_WRITE	0x02
 #define VMX_EPT_FAULT_INS	0x04
-
-typedef unsigned long epte_t;
 
 #define __EPTE_READ	0x01
 #define __EPTE_WRITE	0x02
@@ -262,5 +270,3 @@ static inline int epte_big(epte_t epte)
 }
 
 #define ADDR_INVAL ((unsigned long) -1)
-
-#endif /* OKVMX_H */

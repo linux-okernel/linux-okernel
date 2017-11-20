@@ -48,6 +48,8 @@
 #define VMCALL_DOEXIT 3
 #define VMCALL_DO_FORK_FIXUP 4
 #define VMCALL_DO_GET_CPU_HELPER 5
+#define VMCALL_DO_EPT_SYNC_HELPER 6
+#define VMCALL_DO_IPI_CALLBACK_HELPER 7
 #define VMCALL_DO_EXEC_FIXUP_HOST 10
 #define VMCALL_DO_TLS_FIXUP 11
 #define VMCALL_CLR_EPTX 12
@@ -70,11 +72,11 @@ void do_page_fault_r(struct pt_regs *regs, unsigned long error_code, unsigned lo
  * allocation and release */
 extern struct page_ext_operations page_okernel_tum_ops;
 
-/* Enforce rudimentary protected interface */
-#define OKERNEL_PROTECTED_MEMORY
+/* Enforce rudimentary private interface */
+#define OKERNEL_PRIVATE_MEMORY
 extern struct page_ext_operations page_okernel_pm_ops;
 
-struct protected_data {
+struct private_data {
         /* This is a physical address we will ask the kernel vuln module to
            access.
         */
@@ -86,10 +88,10 @@ struct protected_data {
         */
         char *p_data;
 };
-extern unsigned long ok_protected_pfn_start;
-extern unsigned long ok_protected_pfn_end;
-struct page *ok_alloc_protected_page(void);
-int ok_free_protected_page(struct page *pg);
+extern unsigned long ok_private_pfn_start;
+extern unsigned long ok_private_pfn_end;
+struct page *ok_alloc_private_page(void);
+int ok_free_private_page(struct page *pg);
 extern int ok_trace_init(void);
 extern int do_ok_trace(unsigned long, const char *, const char *, ...);
 
@@ -153,6 +155,15 @@ extern int do_ok_trace(unsigned long, const char *, const char *, ...);
 #define BXMAGICBREAK_ASM
 #endif
 
+#define HPE_BREAKPOINTS2_ENABLED
+#ifdef HPE_BREAKPOINTS2_ENABLED
+#define BXMAGICBREAK2 asm volatile("xchg %bx,%bx")
+#define BXMAGICBREAK2_ASM xchg %bx,%bx
+#else
+#define BXMAGICBREAK2
+#define BXMAGICBREAK2_ASM
+#endif
+
 
 DECLARE_PER_CPU(int, __nr_mode);
 DECLARE_PER_CPU(int, __r_mode);
@@ -203,8 +214,8 @@ void okernel_enter_test(unsigned long flags);
 
 void okernel_schedule_helper(void);
 void okernel_dump_stack_info(void);
-bool __ok_protected_phys_addr(unsigned long paddr);
-void ok_free_protected_page_by_id(pid_t pid);
+bool __ok_private_phys_addr(unsigned long paddr);
+void ok_free_private_page_by_id(pid_t pid);
 void okernel_free_pages(struct page *page, unsigned int order);
 void okernel_kmap(struct page *page);
 
