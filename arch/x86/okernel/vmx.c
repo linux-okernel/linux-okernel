@@ -111,7 +111,7 @@ struct ept_root_list init_ept_root_entry;
 static atomic_t vmx_enable_failed;
 
 static DECLARE_BITMAP(vmx_vpid_bitmap, VMX_NR_VPIDS);
-static DEFINE_SPINLOCK(vmx_vpid_lock);
+//static DEFINE_SPINLOCK(vmx_vpid_lock);
 
 
 /* Rudimentary 'private' memory allocator */
