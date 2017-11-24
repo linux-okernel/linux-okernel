@@ -264,13 +264,13 @@ static int insert_patch_addr(struct rb_root *root, struct patch_addr *new)
 		else if (new->pa > this->pa)
 			data = &((*data)->rb_right);
 		else
-			return FALSE;
+			return 0;
 	}
 	/* Add new node and rebalance tree. */
 	rb_link_node(&new->node, parent, data);
 	rb_insert_color(&new->node, root);
 
-	return TRUE;
+	return 1;
 }
 
 
