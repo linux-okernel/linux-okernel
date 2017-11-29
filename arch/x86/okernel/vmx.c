@@ -3975,9 +3975,15 @@ int vmx_launch(unsigned int mode, unsigned int flags, struct nr_cloned_state *cl
 	unsigned long current_time;
 	unsigned long vmexit_counter;
 #endif
+	static int init_kintegrity = 1;
 
 	if (in_atomic()) {
 		OKWARN("!!!!!!in_atomic() true - preemption disabled!!!!!\n");
+	}
+
+	if (init_kintegrity) {
+		protect_kernel_integrity(init_ept_root);
+		init_kintegrity = 0;
 	}
 
 	if(!cloned_thread)
@@ -4789,7 +4795,7 @@ int __init vmx_init(void)
 	 * This splits up the tables to match the perms of the kernel
 	 * text regions, etc. 
 	 */
-	protect_kernel_integrity(init_ept_root);
+	//protect_kernel_integrity(init_ept_root);
 
 #if defined (OKERNEL_PRIVATE_MEMORY)
 
