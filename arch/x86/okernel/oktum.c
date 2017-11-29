@@ -63,7 +63,7 @@ static inline void __clr_eptx(struct page *page)
 	if(is_in_vmx_nr_mode())
 		(void)vmcall2(VMCALL_CLR_EPTX, (unsigned long) page);
 	else
-		ok_clr_eptx(NULL, page);
+		ok_clr_eptx(page);
 }
 
 void okernel_free_pages(struct page *page, unsigned int order)

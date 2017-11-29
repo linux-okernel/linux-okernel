@@ -1072,16 +1072,23 @@ static int set_clr_ept_page_flags(epte_t *root, u64 paddr,
 	return 1;
 }
 
-void ok_clr_eptx(struct vmx_vcpu *vcpu, struct page *page)
+void ok_clr_eptx(struct page *page)
 {
 	u64 pa;
+	struct ept_root_list *e, *t;
 
-	if (vcpu == NULL) 
-		return; /* FIXME: update when have shared EPTs*/
-
+	/*
+	 * Only required if we don't have mode-based execute control.
+	 * This is called when user-space executable memory is freed
+	 * We need to call clear EPT_X on all Extended Page Tables
+	 * that we have.
+	 */
 	pa = page_to_phys(page);
-	if (!set_clr_ept_page_flags(vcpu->ept_root, pa, 0, EPT_X, PG_LEVEL_NONE))
-		OKLOG("set_clr_ept_page_flags failed");
+	list_for_each_entry_safe(e, t, &ept_roots.list, list) {
+		if (!set_clr_ept_page_flags(e->root, pa, 0, EPT_X,
+					    PG_LEVEL_NONE))
+			OKLOG("set_clr_ept_page_flags failed");
+	}
 }
 
 /* Need to sort out code duplication amongst replace/modify/remap ept pages */
@@ -3264,7 +3271,7 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu, int nr_irqs_enabled)
 		ret = 0;
 	} else if (cmd == VMCALL_CLR_EPTX) {
 		vmx_get_cpu(vcpu);
-		ok_clr_eptx(vcpu, (struct page*)vcpu->regs[VCPU_REGS_RBX]);
+		ok_clr_eptx((struct page*)vcpu->regs[VCPU_REGS_RBX]);
 		vmx_put_cpu(vcpu);
 		ret = 0;
 	} else if (cmd == VMCALL_DO_GET_CPU_HELPER){
