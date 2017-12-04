@@ -187,17 +187,22 @@ extern struct static_key_true **ok_cgrp_subsys_on_dfl_key;
 #ifdef CONFIG_NF_TABLES
 extern struct static_key_false nft_trace_enabled;
 #endif
+
 static struct key_tag static_key_tags[] = {
+#ifdef CONFIG_CPUSETS
 	{&cpusets_pre_enable_key.key, "cpusets_pre_enable_key"},
 	{&cpusets_enabled_key.key, "cpusets_enabled_key"},
+#endif
 	{&sched_smt_present.key, "sched_smt_present"},
 	{&sched_numa_balancing.key, "sched_numa_balancing"},
 	{&sched_schedstats.key, "sched_schedstats"},
 #ifdef CONFIG_NF_TABLES
 	{&nft_trace_enabled.key, "nft_trace_enabled"},
 #endif
+#ifdef CONFIG_MEMCG
 	{&memcg_sockets_enabled_key.key, "memcg_sockets_enabled_key"},
 	{&memcg_kmem_enabled_key.key, "memcg_kmem_enabled_key"},
+#endif
 	{&perf_sched_events.key, "perf_sched_events"},
 #ifdef CONFIG_PAGE_OWNER
 	{&page_owner_inited.key, "page_owner_inited"},
@@ -205,7 +210,9 @@ static struct key_tag static_key_tags[] = {
 #ifdef CONFIG_CGROUP_BPF
 	{&cgroup_bpf_enabled_key.key, "cgroup_bpf_enabled_key"},
 #endif
+#ifdef CONFIG_FRONTSWAP
 	{&frontswap_enabled_key.key, "frontswap_enabled_key"},
+#endif
 #ifdef CONFIG_CONTEXT_TRACKING
 	{&context_tracking_enabled.key, "context_tracking_enabled"},
 #endif
@@ -264,13 +271,13 @@ static int insert_patch_addr(struct rb_root *root, struct patch_addr *new)
 		else if (new->pa > this->pa)
 			data = &((*data)->rb_right);
 		else
-			return FALSE;
+			return 0;
 	}
 	/* Add new node and rebalance tree. */
 	rb_link_node(&new->node, parent, data);
 	rb_insert_color(&new->node, root);
 
-	return TRUE;
+	return 1;
 }
 
 
