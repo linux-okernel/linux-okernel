@@ -989,9 +989,10 @@ ENDPROC(do_softirq_own_stack)
 
 #ifdef CONFIG_OKERNEL
 ENTRY(okernel_ret_from_fork)
-       FRAME_BEGIN                     /* help unwinder find end of stack */
+       UNWIND_HINT_EMPTY
        movq    %rax, %rdi
 
+	/* TODO: Theo: eflags reset step is no longer performed - NT bit filtered by SYSENTER */
        pushq   $0x0002
        popfq                                   /* reset kernel eflags */
 
@@ -1006,7 +1007,8 @@ ENTRY(okernel_ret_from_fork)
 
        //xchg %bx, %bx
 
-       leaq    FRAME_OFFSET(%rsp),%rdi /* pt_regs pointer */
+	UNWIND_HINT_REGS
+	movq	%rsp, %rdi
        call    syscall_return_slowpath /* returns with IRQs disabled */
 
        /* okernel debugging to cause a breakpoint - don't need rmode check in this position
@@ -1023,9 +1025,7 @@ rmode:
        */
 
        TRACE_IRQS_ON                   /* user mode is traced as IRQS on */
-       SWAPGS
-       FRAME_END
-       jmp     restore_regs_and_iret
+       jmp	swapgs_restore_regs_and_return_to_usermode
 END(okernel_ret_from_fork)
 #endif
 
