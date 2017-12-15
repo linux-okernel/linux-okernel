@@ -195,6 +195,7 @@ void generic_smp_call_function_single_interrupt(void)
 		/* cid: Run this in R-mode for now - need to fix properly
 		   since this allows arbitray functions from NR-mode
 		   to be run in R-mode. */
+/* TODO: look at splitting the function queues into R/NR mode queues */
 		(void)vmcall(VMCALL_DO_IPI_CALLBACK_HELPER);
 	} else {
 #endif

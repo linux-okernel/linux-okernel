@@ -557,7 +557,7 @@ static void vmcs_clear(struct vmcs *vmcs)
 		      : "=qm"(error) : "a"(&phys_addr), "m"(phys_addr)
 		      : "cc", "memory");
 	if (error)
-		printk(KERN_ERR "okernel: vmclear fail: %p/%llx\n",
+		printk(KERN_ERR "okernel: vmcs_clear failed: %p/%llx\n",
 		       vmcs, phys_addr);
 }
 
@@ -570,7 +570,7 @@ static void vmcs_load(struct vmcs *vmcs)
 			: "=qm"(error) : "a"(&phys_addr), "m"(phys_addr)
 			: "cc", "memory");
 	if (error)
-		printk(KERN_ERR "vmx: vmptrld %p/%llx failed\n",
+		printk(KERN_ERR "okernel: vmcs_load %p/%llx failed\n",
 		       vmcs, phys_addr);
 }
 
@@ -1882,14 +1882,24 @@ static struct vmcs *__vmx_alloc_vmcs(int cpu)
 }
 
 /**
+ * vmx_alloc_vmcs - allocates a VMCS region
+ *
+ * NOTE: Assumes the new region will be used by the current CPU.
+ *
+ * Returns a valid VMCS region.
+ */
+static struct vmcs *vmx_alloc_vmcs(void)
+{
+	return __vmx_alloc_vmcs(raw_smp_processor_id());
+}
+
+/**
  * vmx_free_vmcs - frees a VMCS region
  */
 static void vmx_free_vmcs(struct vmcs *vmcs)
 {
 	free_pages((unsigned long)vmcs, vmcs_config.order);
 }
-
-
 
 
 /*-------------------------------------------------------------------------------------*/
@@ -1947,7 +1957,6 @@ static void vmx_setup_constant_host_state(void)
 	OKDEBUG("setting host MSR_GS_BASE=%#lx\n", tmpl);
 	vmcs_writel(HOST_GS_BASE, tmpl); /* 22.2.4 */
 }
-
 
 static inline u16 vmx_read_ldt(void)
 {
@@ -2051,7 +2060,7 @@ void vmx_update_nr_cpu_state(void)
 	return;
 }
 
-/* This needs to be run in R-mode and need to make it more robust / secure  */
+/* This needs to be run in R-mode and need to make it more robust/secure  */
 static void __vmx_get_cpu_helper(void *ptr)
 {
 	unsigned int cmd = VMCALL_DO_GET_CPU_HELPER;
@@ -2310,18 +2319,6 @@ static u64 construct_eptp(unsigned long root_hpa)
 	eptp |= (root_hpa & PAGE_MASK);
 
 	return eptp;
-}
-
-/**
- * vmx_alloc_vmcs - allocates a VMCS region
- *
- * NOTE: Assumes the new region will be used by the current CPU.
- *
- * Returns a valid VMCS region.
- */
-static struct vmcs *vmx_alloc_vmcs(void)
-{
-	return __vmx_alloc_vmcs(raw_smp_processor_id());
 }
 
 struct vmcs_cpu_state {
@@ -2755,7 +2752,7 @@ static struct vmx_vcpu * vmx_create_vcpu(struct nr_cloned_state* cloned_thread)
 	}
 
 	if(!cloned_thread){
-		printk(KERN_ERR "okernel: vmx_create_vcpu: passed NULL cloned_thread_state.\n");
+		printk(KERN_ERR "okernel: vmx_create_vcpu: passed NULL cloned_thread state.\n");
 		return NULL;
 	}
 
@@ -4004,7 +4001,6 @@ int vmx_launch(unsigned int mode, unsigned int flags, struct nr_cloned_state *cl
 		return -EINVAL;
 
 	c_rip = cloned_thread->rip;
-
 	OKDEBUG("c_rip: (#%#lx)\n", c_rip);
 
 	vcpu = vmx_create_vcpu(cloned_thread);
@@ -4354,13 +4350,13 @@ static __init void vmx_enable(void *unused)
 	__this_cpu_write(vmx_enabled, 1);
 	native_store_gdt(this_cpu_ptr(&host_gdt));
 
-	printk(KERN_INFO "okernel vmx: VMX enabled on CPU %d\n",
+	printk(KERN_INFO "okernel: vmx: VMX enabled on CPU %d\n",
 	       raw_smp_processor_id());
 	return;
 
 failed:
 	atomic_inc(&vmx_enable_failed);
-	printk(KERN_ERR "okernel vmx: failed to enable VMX, err = %d\n", ret);
+	printk(KERN_ERR "okernel: vmx: failed to enable VMX, err = %d\n", ret);
 }
 
 /**
@@ -4811,8 +4807,7 @@ int __init vmx_init(void)
 	 */
 	//protect_kernel_integrity(init_ept_root);
 
-#if defined (OKERNEL_PRIVATE_MEMORY)
-
+#ifdef OKERNEL_PRIVATE_MEMORY
        (void)ok_init_private_pages();
 
 	/* 

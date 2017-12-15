@@ -2,7 +2,7 @@
  * linux/arch/x86/okernel/core.c
  *
  * Copyright (C) 2015 - Chris Dalton (cid@hpe.com), HPE Corp.
- * Suport for splitting the kernel into inner and outer regions,
+ * Support for splitting the kernel into inner and outer regions,
  * with the aim of achieving some degree of intra-kernel protection.
  * Processes marked as 'OKERNEL' run under vmx non-root mode (x86).
  * They enter the kernel in that mode too (outer-kernel mode)
@@ -48,7 +48,7 @@
 #include "vmx.h"
 
 MODULE_LICENSE("GPL");
-MODULE_DESCRIPTION("Okernel intra-kernel protection");
+MODULE_DESCRIPTION("okernel intra-kernel protection");
 
 /* For the okernel ioctl device */
 #define DEVICE_NAME "okernel"
@@ -73,7 +73,7 @@ int okernel_enabled;
 
 /* Start a new tree of NR-processes */
 #define OKERNEL_ENTER_IOCTL 1
-/* Fork from an exisiting NR-process */
+/* Fork from an existing NR-process */
 #define OKERNEL_ENTER_FORK  2
 
 
@@ -138,16 +138,17 @@ asmlinkage void __noclone okernel_enter_fork_debug(void)
 asmlinkage int okernel_enter_core(unsigned int mode, unsigned long flags)
 {
 	/* Flags unused at the moment - reserve for different EPT settings, etc. */
-	unsigned long tmpl;
+
+	unsigned long rip_label;
 
 	/* Malloc this since the stack will get over written later
 	 * when the cloned thread is running. And passing a pointer
 	 * allows us to save stack space. */
-
 	struct nr_cloned_state *cloned_thread = kmalloc(sizeof(struct nr_cloned_state), GFP_KERNEL);
 
 	unsigned long rbp,rsp,rflags,cr2,rax,rcx,rdx,rbx,rsi,rdi,r8,r9,r10,r11,r12,r13,r14,r15;
 	int ret;
+
 
 	if(!cloned_thread){
 		OKDEBUG("Failed to allocate cloned thread structure.\n");
@@ -168,15 +169,12 @@ asmlinkage int okernel_enter_core(unsigned int mode, unsigned long flags)
 	}
 
 	cr2 = read_cr2();
-
-	asm volatile ("mov %%rbp,%0" : "=rm" (rbp));
-
-	OKDEBUG("cloned thread rbp will be set to  (%#lx)\n", rbp);
-
-	cloned_thread->rbp = rbp;
-
 	OKDEBUG("cloned thread cr2 will be set to  (%#lx)\n", cr2);
 	cloned_thread->cr2 = cr2;
+
+	asm volatile ("mov %%rbp,%0" : "=rm" (rbp));
+	OKDEBUG("cloned thread rbp will be set to  (%#lx)\n", rbp);
+	cloned_thread->rbp = rbp;
 
 	asm volatile ("mov %%rax,%0" : "=rm" (rax));
 	OKDEBUG("cloned thread rax will be set to  (%#lx)\n", rax);
@@ -237,21 +235,18 @@ asmlinkage int okernel_enter_core(unsigned int mode, unsigned long flags)
 	asm volatile ( "pushf\n\t"
 		       "pop %0"
 		       : "=g"(rflags) );
-
-	cloned_thread->rflags = rflags;
 	OKDEBUG("cloned thread rflags will be set to  (%#lx)\n", rflags);
+	cloned_thread->rflags = rflags;
 
-	asm("mov $.Lc_ret_from_vmlaunch_label, %0" : "=r"(tmpl));
-	OKDEBUG("cloned thread RIP will be set to: (%#lx)\n", tmpl);
-	cloned_thread->rip = tmpl;
+	asm("mov $.Lc_ret_from_vmlaunch_label, %0" : "=r"(rip_label));
+	OKDEBUG("cloned thread RIP will be set to: (%#lx)\n", rip_label);
+	cloned_thread->rip = rip_label;
 
 	cloned_thread->msr_fs_base = current->okernel_fork_fs_base;
 	cloned_thread->msr_gs_base = current->okernel_fork_gs_base;
 
 	asm volatile ("mov %%rsp,%0" : "=rm" (rsp));
-
 	OKDEBUG("cloned thread rsp will be set to  (%#lx)\n", rsp);
-
 	cloned_thread->rsp = rsp;
 
 	BXMAGICBREAK;
@@ -311,7 +306,7 @@ long ok_device_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 	unsigned long val;
 	int ret;
 	struct thread_info *ti;
-#if 1
+#ifdef OKERNEL_PRIVATE_MEMORY
 	struct page *pg;
 	unsigned long phys_addr = 0;
 	struct private_data pd;
@@ -324,7 +319,7 @@ long ok_device_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 	OKDEBUG("called.\n");
 	switch(cmd)
 	{
-#if 1
+#ifdef OKERNEL_PRIVATE_MEMORY
 		/* Really we should do an mmap interface above private pages - this will suffice for now */
 	case OKERNEL_ALLOCATE_PRIVATE_PAGE:
 		if(!(pg = ok_alloc_private_page())){
@@ -458,12 +453,13 @@ long ok_device_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 		OKDEBUG("outer kernel off for <%d>\n", current->pid);
 		unset_vmx_r_mode();
 		break;
-	default:
 
+	default:
 		printk(KERN_ERR "okernel: invalid IOCTL cmd.\n");
 		return -ENODEV;
 
 	}
+
 nr_exit:
 	return 0;
 }
@@ -486,7 +482,6 @@ static struct file_operations fops={
 
 static int __init okernel_init(void)
 {
-
 	OKDEBUG("Start initialization...\n");
 
 	major_no = register_chrdev(0, DEVICE_NAME, &fops);
@@ -509,7 +504,7 @@ static int __init okernel_init(void)
 
 static void  __exit okernel_exit(void)
 {
-	OKDEBUG("exit called.\n");
+	OKDEBUG("Exit called.\n");
 	okernel_enabled = 0;
 	OKDEBUG("Removing device (%s)\n", DEVICE_NAME);
 	device_destroy(okernel_dev_class,MKDEV(major_no,0));
