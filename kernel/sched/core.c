@@ -3499,8 +3499,6 @@ asmlinkage __visible void __sched schedule(void)
 #if defined(CONFIG_OKERNEL)
 #ifdef OKERNEL_DEBUG
        volatile struct thread_info *ti;
-       int cpu = smp_processor_id();
-       struct tss_struct *tss = &per_cpu(cpu_tss, cpu);
        unsigned long fs;
        int orig_cpu = 0;
        int new_cpu = 0;
@@ -3513,7 +3511,7 @@ asmlinkage __visible void __sched schedule(void)
                ti = current_thread_info();
                rdmsrl(MSR_FS_BASE, fs);
                OKDEBUG("called (pid=%d)  cpu_cur_tos (%#lx) flgs(%#lx) MSR_FS_BASE=%#lx\n",
-                      current->pid, (unsigned long)tss->x86_tss.sp0, ti->flags, fs);
+                      current->pid, (unsigned long) cpu_current_top_of_stack, ti->flags, fs);
                BXMAGICBREAK;
                OKDEBUG("in_atomic(): %d, irqs_disabled(): %d, pid: %d, name: %s\n",
                       in_atomic(), irqs_disabled(), current->pid, current->comm);
@@ -3543,11 +3541,9 @@ asmlinkage __visible void __sched schedule(void)
                }
                ti = current_thread_info();
                rdmsrl(MSR_FS_BASE, fs);
-               cpu = smp_processor_id();
-               tss = &per_cpu(cpu_tss, cpu);
 
                OKDEBUG("returned from VMCALL schedule (pid=%d)  cpu_cur_tos (%#lx) flgs (%#lx)\n",
-                      current->pid, (unsigned long)tss->x86_tss.sp0, ti->flags);
+                      current->pid, (unsigned long)cpu_current_top_of_stack, ti->flags);
                OKDEBUG("returned from VMCALL schedule (pid=%d) MSR_FS_BASE=%#lx\n",
                       current->pid, fs);
                BXMAGICBREAK;

@@ -3380,11 +3380,10 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu, int nr_irqs_enabled)
 		rdmsrl(MSR_GS_BASE, gs);
 
 		cpu = smp_processor_id();
-		tss = &per_cpu(cpu_tss, cpu);
+		tss = &per_cpu(cpu_tss_rw, cpu);
 
-		OKDEBUG("calling schedule_r (pid %d) cpu_cur_tos (%#lx) tss.sp0 (%#lx) flgs (%#lx)\n",
-		       current->pid, current_top_of_stack(), (unsigned long)tss->x86_tss.sp0,
-		       current_thread_info()->flags);
+		OKDEBUG("calling schedule_r (pid %d) cpu_cur_tos (%#lx) tss.sp0 (%#lx) tss.sp1 (%#lx) flgs (%#lx)\n",
+		       current->pid, current_top_of_stack(), (unsigned long)tss->x86_tss.sp0, (unsigned long)tss->x86_tss.sp1, current_thread_info()->flags);
 
 		OKDEBUG("calling schedule_r MSR_FS_BASE=%#lx nr_fs=%#lx MSR_GS_BASE=%#lx nr_gs=%#lx\n",
 		       fs, nr_fs, gs, nr_gs);
@@ -3416,11 +3415,9 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu, int nr_irqs_enabled)
 
                 /* Re-sync cloned-thread thread_info */
 		cpu = smp_processor_id();
-		tss = &per_cpu(cpu_tss, cpu);
+		tss = &per_cpu(cpu_tss_rw, cpu);
 
-		OKDEBUG("ret schedule_r (pid %d) cpu_cur_tos (%#lx) tss.sp0 (%#lx) flgs (%#lx)\n",
-		       current->pid, current_top_of_stack(), (unsigned long)tss->x86_tss.sp0,
-		       current_thread_info()->flags);
+		OKDEBUG("ret schedule_r (pid %d) cpu_cur_tos (%#lx) tss.sp0 (%#lx), tss.sp1 (%#lx), flgs (%#lx)\n", current->pid, current_top_of_stack(), (unsigned long)tss->x86_tss.sp0, (unsigned long)tss->x86_tss.sp1, current_thread_info()->flags);
 
 		OKDEBUG("syncing cloned thread_info state (R->NR)...\n");
 		BXMAGICBREAK;
