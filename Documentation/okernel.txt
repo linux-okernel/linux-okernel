@@ -1,4 +1,4 @@
-Authors: Chris Dalton <cid@hpi.com>, Nigel Edwards <nigel.edwards@hpe.com>
+Authors: Chris Dalton <cid@hpi.com>, Nigel Edwards <nigel.edwards@hpe.com>, Theo Koulouris <theo.koulouris@hpe.com>
 
 Split Kernel
 
